@@ -43,9 +43,9 @@ jobs:
         image: mysql:8.4
         env:
           MYSQL_ROOT_PASSWORD: root1234
-          MYSQL_DATABASE: lirouti
-          MYSQL_USER: lirouti
-          MYSQL_PASSWORD: lirouti1234
+          MYSQL_DATABASE: moeasy
+          MYSQL_USER: moeasy
+          MYSQL_PASSWORD: moeasy1234
         ports:
           - 3306:3306
         options: >-
