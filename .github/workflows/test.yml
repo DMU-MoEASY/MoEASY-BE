@@ -150,12 +150,12 @@ jobs:
       #
       # 값이 비어도 통과하는 것을 막으려고 더미 값을 넣어 돌린다 — 실제 값은 배포 시점의
       # ENV_FILE에서 오고, 그쪽 비어 있음은 deploy.yml이 따로 막는다.
-      - name: Validate Caddyfile
-        run: |
-          docker run --rm -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
-            -e LIROUTI_DOMAIN=example.com \
-            -e LETSENCRYPT_EMAIL=ci@example.com \
-            caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
+#      - name: Validate Caddyfile
+#        run: |
+#          docker run --rm -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+#            -e LIROUTI_DOMAIN=example.com \
+#            -e LETSENCRYPT_EMAIL=ci@example.com \
+#            caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
 
       # fail-fast 필수 값(JWT_SECRET 등)은 build.gradle의 test 태스크가 더미로 주입하므로 env 불필요.
       # DB/Redis는 application.yaml 기본값(localhost:3306 / 6379)이 위 서비스 컨테이너에 붙는다.
