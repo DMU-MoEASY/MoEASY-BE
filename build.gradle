@@ -38,4 +38,6 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // Gradle로 실행하는 모든 테스트는 application-test.yml을 사용한다.
+    systemProperty 'spring.profiles.active', 'test'
 }

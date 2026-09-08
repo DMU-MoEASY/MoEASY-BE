@@ -301,4 +301,4 @@ management:
         include: health,metrics,prometheus
   metrics:
     tags:
-      application: lirouti
+      application: moeasy

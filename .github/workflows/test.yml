@@ -153,7 +153,7 @@ jobs:
 #      - name: Validate Caddyfile
 #        run: |
 #          docker run --rm -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
-#            -e LIROUTI_DOMAIN=example.com \
+#            -e MOEASY_DOMAIN=example.com \
 #            -e LETSENCRYPT_EMAIL=ci@example.com \
 #            caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
 
