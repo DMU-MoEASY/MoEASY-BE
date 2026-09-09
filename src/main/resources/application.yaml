@@ -80,6 +80,17 @@ spring:
       repositories:
         enabled: false
 
+# OpenAPI/Swagger 문서 설정
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+  packages-to-scan: com.moeasy.moeasybe
+  show-actuator: false
+
 # jwt 설정 관련
 jwt:
   secret: ${JWT_SECRET}
