@@ -1,0 +1,5 @@
+# actionlint는 GitHub-hosted runner 이름은 알고 있지만, 자체 runner의 라벨은 알 수 없다.
+# 라즈베리파이 등록 시 ./config.sh --labels moeasy-dev 로 부여한 라벨을 선언한다.
+self-hosted-runner:
+  labels:
+    - moeasy-dev
