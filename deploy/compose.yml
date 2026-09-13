@@ -1,0 +1,53 @@
+# 라즈베리파이 개발 서버용 Compose 구성.
+# 실행 위치: ~/project/moeasy/compose.yml
+# 실제 값은 같은 디렉터리의 .env에만 둔다.
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set in .env}
+      MYSQL_DATABASE: moeasy
+      MYSQL_USER: ${DB_USERNAME:?DB_USERNAME must be set in .env}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+      TZ: Asia/Seoul
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - ${DATA_DIR:?DATA_DIR must be set in .env}/mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    volumes:
+      - ${DATA_DIR:?DATA_DIR must be set in .env}/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  app:
+    image: ${APP_IMAGE:?APP_IMAGE must be set in .env}:${IMAGE_TAG:?IMAGE_TAG must be set in .env or deploy.sh}
+    env_file:
+      - .env
+    environment:
+      # 컨테이너 안에서는 localhost가 아니라 서비스 이름으로 연결한다.
+      DB_URL: jdbc:mysql://mysql:3306/moeasy?serverTimezone=Asia/Seoul&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "0.0.0.0:8080:8080"
+    restart: unless-stopped
