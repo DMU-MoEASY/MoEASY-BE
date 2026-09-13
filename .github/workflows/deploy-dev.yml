@@ -1,0 +1,36 @@
+name: Deploy development
+
+# develop에 반영된 코드만 테스트·빌드한 뒤 라즈베리파이 개발 서버에 배포한다.
+# PR 이벤트에서는 실행하지 않아 외부 기여 코드가 self-hosted runner에서 실행되지 않는다.
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+# build.yml의 GITHUB_TOKEN이 GHCR에 ARM64 이미지를 올리는 데 필요하다.
+permissions:
+  contents: read
+  packages: write
+
+# 동시에 두 커밋이 배포되어 이전 커밋이 나중에 서버를 덮어쓰지 않게 한다.
+concurrency:
+  group: moeasy-development-deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  build:
+    needs: test
+    uses: ./.github/workflows/build.yml
+    with:
+      push_latest: false
+
+  deploy:
+    needs: build
+    # 라즈베리파이에 runner 설정 시 붙일 사용자 정의 라벨이다.
+    runs-on: [self-hosted, linux, ARM64, moeasy-dev]
+    steps:
+      - name: Replace application container
+        run: /home/jjascd/project/moeasy/deploy.sh "${{ github.sha }}"
