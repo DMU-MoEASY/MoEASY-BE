@@ -11,7 +11,9 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestControllerAdvice
@@ -29,12 +31,16 @@ public class GeneralExceptionAdvice {
 
     // @Valid 검증 실패 (RequestBody)
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ApiResponse<Map<String, String>>> handleMethodArgumentNotValidException(
+    public ResponseEntity<ApiResponse<Map<String, List<String>>>> handleMethodArgumentNotValidException(
             MethodArgumentNotValidException ex
     ) {
-        Map<String, String> errors = new HashMap<>();
+        Map<String, List<String>> errors = new HashMap<>();
+
         ex.getBindingResult().getFieldErrors().forEach(error ->
-                errors.put(error.getField(), error.getDefaultMessage())
+                errors.computeIfAbsent(
+                        error.getField(),
+                        key -> new ArrayList<>()
+                ).add(error.getDefaultMessage())
         );
 
         GeneralErrorCode code = GeneralErrorCode.VALID_FAIL;
@@ -44,14 +50,19 @@ public class GeneralExceptionAdvice {
 
     // @Validated 검증 실패 (RequestParam, PathVariable)
     @ExceptionHandler(ConstraintViolationException.class)
-    public ResponseEntity<ApiResponse<Map<String, String>>> handleConstraintViolationException(
+    public ResponseEntity<ApiResponse<Map<String, List<String>>>> handleConstraintViolationException(
             ConstraintViolationException ex
     ) {
-        Map<String, String> errors = new HashMap<>();
+        Map<String, List<String>> errors = new HashMap<>();
+
         ex.getConstraintViolations().forEach(violation -> {
             String fieldName = violation.getPropertyPath().toString();
             String simpleName = fieldName.substring(fieldName.lastIndexOf('.') + 1);
-            errors.put(simpleName, violation.getMessage());
+
+            errors.computeIfAbsent(
+                    simpleName,
+                    key -> new ArrayList<>()
+            ).add(violation.getMessage());
         });
 
         GeneralErrorCode code = GeneralErrorCode.VALID_FAIL;
@@ -61,7 +72,7 @@ public class GeneralExceptionAdvice {
 
     // 잘못된 요청 파라미터
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ApiResponse<String>> handleIllegalArgument(
+    public ResponseEntity<ApiResponse<Void>> handleIllegalArgument(
             IllegalArgumentException ex
     ) {
         GeneralErrorCode code = GeneralErrorCode.BAD_REQUEST;
@@ -74,7 +85,7 @@ public class GeneralExceptionAdvice {
 
     // 그 외의 정의되지 않은 모든 예외 처리
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiResponse<String>> handleUnhandledException(
+    public ResponseEntity<ApiResponse<Void>> handleUnhandledException(
             Exception ex
     ) {
         BaseErrorCode code = GeneralErrorCode.INTERNAL_SERVER_ERROR;
