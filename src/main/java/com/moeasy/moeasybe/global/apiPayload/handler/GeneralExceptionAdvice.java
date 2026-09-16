@@ -5,6 +5,7 @@ import com.moeasy.moeasybe.global.apiPayload.code.BaseErrorCode;
 import com.moeasy.moeasybe.global.apiPayload.code.GeneralErrorCode;
 import com.moeasy.moeasybe.global.apiPayload.exception.GeneralException;
 import jakarta.validation.ConstraintViolationException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -14,6 +15,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 @RestControllerAdvice
+@Slf4j
 public class GeneralExceptionAdvice {
 
     // 프로젝트 공통 커스텀 예외 처리
@@ -63,8 +65,11 @@ public class GeneralExceptionAdvice {
             IllegalArgumentException ex
     ) {
         GeneralErrorCode code = GeneralErrorCode.BAD_REQUEST;
+
+        log.warn("잘못된 요청이 발생했습니다.", ex);
+
         return ResponseEntity.status(code.getStatus())
-                .body(ApiResponse.onFailure(code, ex.getMessage()));
+                .body(ApiResponse.onFailure(code, null));
     }
 
     // 그 외의 정의되지 않은 모든 예외 처리
@@ -73,7 +78,14 @@ public class GeneralExceptionAdvice {
             Exception ex
     ) {
         BaseErrorCode code = GeneralErrorCode.INTERNAL_SERVER_ERROR;
+
+        log.error(
+                "처리되지 않은 예외가 발생했습니다. ErrorCode={}",
+                code.getCode(),
+                ex
+        );
+
         return ResponseEntity.status(code.getStatus())
-                .body(ApiResponse.onFailure(code, ex.getMessage()));
+                .body(ApiResponse.onFailure(code, null));
     }
 }
