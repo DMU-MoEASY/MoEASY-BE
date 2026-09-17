@@ -7,7 +7,7 @@ import io.swagger.v3.oas.annotations.info.Info;
 import io.swagger.v3.oas.annotations.security.SecurityScheme;
 import org.springframework.context.annotation.Configuration;
 
-/** Configures the OpenAPI definition and bearer authentication scheme. */
+/** OpenAPI 정의와 Bearer 인증 방식을 구성합니다. */
 @Configuration
 @OpenAPIDefinition(
         info = @Info(
@@ -25,7 +25,7 @@ import org.springframework.context.annotation.Configuration;
 )
 public class OpenApiConfig {
 
-    /** Creates the OpenAPI configuration. */
+    /** OpenAPI 설정을 생성합니다. */
     public OpenApiConfig() {
     }
 }

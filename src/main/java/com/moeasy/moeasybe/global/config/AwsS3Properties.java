@@ -12,14 +12,14 @@ import org.springframework.validation.annotation.Validated;
 import org.hibernate.validator.constraints.time.DurationMax;
 import org.hibernate.validator.constraints.time.DurationMin;
 
-/** Binds and validates the AWS S3 settings used by the application. */
+/** 애플리케이션에서 사용하는 AWS S3 설정을 바인딩하고 검증합니다. */
 @ConfigurationProperties(prefix = "aws")
 @Validated
 @Getter
 @Setter
 public class AwsS3Properties {
 
-    /** Creates the AWS S3 properties with its nested settings container. */
+    /** 중첩 설정 객체를 포함한 AWS S3 설정을 생성합니다. */
     public AwsS3Properties() {
     }
 
@@ -29,12 +29,12 @@ public class AwsS3Properties {
     @Valid
     private S3 s3 = new S3();
 
-    /** Contains the bucket and presigned URL expiration settings. */
+    /** Bucket과 Presigned URL 만료 시간 설정을 포함합니다. */
     @Getter
     @Setter
     public static class S3 {
 
-        /** Creates the nested S3 settings. */
+        /** 중첩된 S3 설정을 생성합니다. */
         public S3() {
         }
 

@@ -5,6 +5,7 @@ import java.net.URI;
 import org.springframework.stereotype.Service;
 
 import com.moeasy.moeasybe.global.config.AwsS3Properties;
+import com.moeasy.moeasybe.storage.code.StorageErrorCode;
 import com.moeasy.moeasybe.storage.exception.StorageValidationException;
 
 import software.amazon.awssdk.services.s3.S3Client;
@@ -15,7 +16,7 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
-/** Provides presigned S3 URLs and object deletion for application storage. */
+/** 애플리케이션 스토리지를 위한 Presigned S3 URL 생성 및 객체 삭제를 제공합니다. */
 @Service
 public class S3StorageService {
 
@@ -24,11 +25,11 @@ public class S3StorageService {
     private final AwsS3Properties properties;
 
     /**
-     * Creates a storage service backed by S3.
+     * S3 기반 스토리지 서비스를 생성합니다.
      *
-     * @param s3Client client used for object deletion
-     * @param s3Presigner presigner used for temporary PUT and GET URLs
-     * @param properties validated S3 configuration
+     * @param s3Client 객체 삭제에 사용하는 S3 클라이언트
+     * @param s3Presigner 임시 PUT/GET URL 생성에 사용하는 Presigner
+     * @param properties 검증된 S3 설정
      */
     public S3StorageService(
             S3Client s3Client,
@@ -41,16 +42,16 @@ public class S3StorageService {
     }
 
     /**
-     * Creates a temporary PUT URL whose request includes the given content type.
+     * 주어진 Content-Type을 요청에 포함한 임시 PUT URL을 생성합니다.
      *
-     * @param objectKey key of the object to upload
-     * @param contentType content type to sign into the PUT request
-     * @return temporary S3 PUT URL
-     * @throws StorageValidationException if the object key or content type is null or blank
+     * @param objectKey 업로드할 객체의 키
+     * @param contentType PUT 요청에 서명할 Content-Type
+     * @return 임시 S3 PUT URL
+     * @throws StorageValidationException object key 또는 content type이 null이거나 공백인 경우
      */
     public URI createPresignedPutUrl(String objectKey, String contentType) {
-        String key = requireText(objectKey, "objectKey");
-        String type = requireText(contentType, "contentType");
+        String key = requireText(objectKey, StorageErrorCode.INVALID_OBJECT_KEY);
+        String type = requireText(contentType, StorageErrorCode.INVALID_CONTENT_TYPE);
 
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                 .bucket(properties.getS3().getBucket())
@@ -67,14 +68,14 @@ public class S3StorageService {
     }
 
     /**
-     * Creates a temporary GET URL for an object.
+     * 객체에 대한 임시 GET URL을 생성합니다.
      *
-     * @param objectKey key of the object to read
-     * @return temporary S3 GET URL
-     * @throws StorageValidationException if the object key is null or blank
+     * @param objectKey 조회할 객체의 키
+     * @return 임시 S3 GET URL
+     * @throws StorageValidationException object key가 null이거나 공백인 경우
      */
     public URI createPresignedGetUrl(String objectKey) {
-        String key = requireText(objectKey, "objectKey");
+        String key = requireText(objectKey, StorageErrorCode.INVALID_OBJECT_KEY);
 
         GetObjectRequest getObjectRequest = GetObjectRequest.builder()
                 .bucket(properties.getS3().getBucket())
@@ -90,13 +91,13 @@ public class S3StorageService {
     }
 
     /**
-     * Requests deletion of an object by key.
+     * 객체 키를 기준으로 삭제를 요청합니다.
      *
-     * @param objectKey key of the object to delete
-     * @throws StorageValidationException if the object key is null or blank
+     * @param objectKey 삭제할 객체의 키
+     * @throws StorageValidationException object key가 null이거나 공백인 경우
      */
     public void deleteObject(String objectKey) {
-        String key = requireText(objectKey, "objectKey");
+        String key = requireText(objectKey, StorageErrorCode.INVALID_OBJECT_KEY);
 
         s3Client.deleteObject(DeleteObjectRequest.builder()
                 .bucket(properties.getS3().getBucket())
@@ -104,12 +105,12 @@ public class S3StorageService {
                 .build());
     }
 
-    private String requireText(String value, String fieldName) {
+    private String requireText(String value, StorageErrorCode errorCode) {
         if (value == null) {
-            throw new StorageValidationException(fieldName + " must not be null");
+            throw new StorageValidationException(errorCode);
         }
         if (value.isBlank()) {
-            throw new StorageValidationException(fieldName + " must not be blank");
+            throw new StorageValidationException(errorCode);
         }
         return value;
     }

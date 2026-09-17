@@ -13,12 +13,14 @@ import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.function.Executable;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.moeasy.moeasybe.global.config.AwsS3Properties;
+import com.moeasy.moeasybe.storage.code.StorageErrorCode;
 import com.moeasy.moeasybe.storage.exception.StorageValidationException;
 
 import software.amazon.awssdk.services.s3.S3Client;
@@ -113,25 +115,38 @@ class S3StorageServiceTest {
 
     @Test
     void rejectsNullObjectKey() {
-        assertThrows(StorageValidationException.class,
-                () -> service.createPresignedPutUrl(null, "image/jpeg"));
+        assertStorageValidationFailure(
+                () -> service.createPresignedPutUrl(null, "image/jpeg"),
+                StorageErrorCode.INVALID_OBJECT_KEY);
     }
 
     @Test
     void rejectsBlankObjectKey() {
-        assertThrows(StorageValidationException.class,
-                () -> service.createPresignedPutUrl("   ", "image/jpeg"));
+        assertStorageValidationFailure(
+                () -> service.createPresignedPutUrl("   ", "image/jpeg"),
+                StorageErrorCode.INVALID_OBJECT_KEY);
     }
 
     @Test
     void rejectsNullContentType() {
-        assertThrows(StorageValidationException.class,
-                () -> service.createPresignedPutUrl("media/test.jpg", null));
+        assertStorageValidationFailure(
+                () -> service.createPresignedPutUrl("media/test.jpg", null),
+                StorageErrorCode.INVALID_CONTENT_TYPE);
     }
 
     @Test
     void rejectsBlankContentType() {
-        assertThrows(StorageValidationException.class,
-                () -> service.createPresignedPutUrl("media/test.jpg", "   "));
+        assertStorageValidationFailure(
+                () -> service.createPresignedPutUrl("media/test.jpg", "   "),
+                StorageErrorCode.INVALID_CONTENT_TYPE);
+    }
+
+    private void assertStorageValidationFailure(Executable executable, StorageErrorCode expectedCode) {
+        StorageValidationException exception = assertThrows(
+                StorageValidationException.class,
+                executable
+        );
+
+        assertEquals(expectedCode, exception.getCode());
     }
 }

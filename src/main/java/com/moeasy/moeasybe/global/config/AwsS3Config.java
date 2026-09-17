@@ -10,19 +10,19 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
-/** Configures the S3 client and presigner used by the application. */
+/** 애플리케이션에서 사용하는 S3 클라이언트와 Presigner를 구성합니다. */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(AwsS3Properties.class)
 public class AwsS3Config {
 
-    /** Creates the S3 infrastructure configuration. */
+    /** S3 인프라 설정을 생성합니다. */
     public AwsS3Config() {
     }
 
     /**
-     * Provides credentials through the AWS SDK default provider chain.
+     * AWS SDK 기본 자격 증명 제공자 체인을 통해 AWS 자격 증명을 제공합니다.
      *
-     * @return AWS credential provider
+     * @return AWS 자격 증명 제공자
      */
     @Bean
     public AwsCredentialsProvider awsCredentialsProvider() {
@@ -30,10 +30,10 @@ public class AwsS3Config {
     }
 
     /**
-     * Creates the AWS region from the validated application properties.
+     * 검증된 애플리케이션 설정으로 AWS Region을 생성합니다.
      *
-     * @param properties validated AWS S3 properties
-     * @return configured AWS region
+     * @param properties 검증된 AWS S3 설정
+     * @return 구성된 AWS Region
      */
     @Bean
     public Region awsRegion(AwsS3Properties properties) {
@@ -41,11 +41,11 @@ public class AwsS3Config {
     }
 
     /**
-     * Creates the S3 client used for direct object operations.
+     * 객체 작업에 사용하는 S3 클라이언트를 생성합니다.
      *
-     * @param region configured AWS region
-     * @param credentialsProvider AWS credential provider
-     * @return S3 client for object operations
+     * @param region 구성된 AWS Region
+     * @param credentialsProvider AWS 자격 증명 제공자
+     * @return 객체 작업에 사용하는 S3 클라이언트
      */
     @Bean(destroyMethod = "close")
     public S3Client s3Client(Region region, AwsCredentialsProvider credentialsProvider) {
@@ -56,11 +56,11 @@ public class AwsS3Config {
     }
 
     /**
-     * Creates the S3 presigner used for temporary PUT and GET URLs.
+     * 임시 PUT 및 GET URL 생성에 사용하는 S3 Presigner를 생성합니다.
      *
-     * @param region configured AWS region
-     * @param credentialsProvider AWS credential provider
-     * @return S3 presigner for temporary PUT and GET URLs
+     * @param region 구성된 AWS Region
+     * @param credentialsProvider AWS 자격 증명 제공자
+     * @return 임시 PUT 및 GET URL 생성에 사용하는 S3 Presigner
      */
     @Bean(destroyMethod = "close")
     public S3Presigner s3Presigner(Region region, AwsCredentialsProvider credentialsProvider) {
