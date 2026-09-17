@@ -1,4 +1,4 @@
-package com.moeasy.moeasybe.config.aws;
+package com.moeasy.moeasybe.global.config;
 
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;

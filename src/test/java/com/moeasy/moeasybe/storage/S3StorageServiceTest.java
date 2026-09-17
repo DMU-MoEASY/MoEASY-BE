@@ -1,6 +1,7 @@
 package com.moeasy.moeasybe.storage;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -17,7 +18,8 @@ import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.moeasy.moeasybe.config.aws.AwsS3Properties;
+import com.moeasy.moeasybe.global.config.AwsS3Properties;
+import com.moeasy.moeasybe.storage.exception.StorageValidationException;
 
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
@@ -107,5 +109,29 @@ class S3StorageServiceTest {
         verify(s3Client).deleteObject(deleteRequestCaptor.capture());
         assertEquals("test-bucket", deleteRequestCaptor.getValue().bucket());
         assertEquals("media/test.jpg", deleteRequestCaptor.getValue().key());
+    }
+
+    @Test
+    void rejectsNullObjectKey() {
+        assertThrows(StorageValidationException.class,
+                () -> service.createPresignedPutUrl(null, "image/jpeg"));
+    }
+
+    @Test
+    void rejectsBlankObjectKey() {
+        assertThrows(StorageValidationException.class,
+                () -> service.createPresignedPutUrl("   ", "image/jpeg"));
+    }
+
+    @Test
+    void rejectsNullContentType() {
+        assertThrows(StorageValidationException.class,
+                () -> service.createPresignedPutUrl("media/test.jpg", null));
+    }
+
+    @Test
+    void rejectsBlankContentType() {
+        assertThrows(StorageValidationException.class,
+                () -> service.createPresignedPutUrl("media/test.jpg", "   "));
     }
 }

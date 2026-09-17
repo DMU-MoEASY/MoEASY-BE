@@ -1,4 +1,4 @@
-package com.moeasy.moeasybe.config.aws;
+package com.moeasy.moeasybe.global.config;
 
 import java.time.Duration;
 

@@ -4,7 +4,8 @@ import java.net.URI;
 
 import org.springframework.stereotype.Service;
 
-import com.moeasy.moeasybe.config.aws.AwsS3Properties;
+import com.moeasy.moeasybe.global.config.AwsS3Properties;
+import com.moeasy.moeasybe.storage.exception.StorageValidationException;
 
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
@@ -76,10 +77,10 @@ public class S3StorageService {
 
     private String requireText(String value, String fieldName) {
         if (value == null) {
-            throw new NullPointerException(fieldName + " must not be null");
+            throw new StorageValidationException(fieldName + " must not be null");
         }
         if (value.isBlank()) {
-            throw new IllegalArgumentException(fieldName + " must not be blank");
+            throw new StorageValidationException(fieldName + " must not be blank");
         }
         return value;
     }
