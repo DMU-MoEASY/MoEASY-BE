@@ -15,6 +15,7 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
+/** Provides presigned S3 URLs and object deletion for application storage. */
 @Service
 public class S3StorageService {
 
@@ -22,6 +23,13 @@ public class S3StorageService {
     private final S3Presigner s3Presigner;
     private final AwsS3Properties properties;
 
+    /**
+     * Creates a storage service backed by S3.
+     *
+     * @param s3Client client used for object deletion
+     * @param s3Presigner presigner used for temporary PUT and GET URLs
+     * @param properties validated S3 configuration
+     */
     public S3StorageService(
             S3Client s3Client,
             S3Presigner s3Presigner,
@@ -32,6 +40,14 @@ public class S3StorageService {
         this.properties = properties;
     }
 
+    /**
+     * Creates a temporary PUT URL whose request includes the given content type.
+     *
+     * @param objectKey key of the object to upload
+     * @param contentType content type to sign into the PUT request
+     * @return temporary S3 PUT URL
+     * @throws StorageValidationException if the object key or content type is null or blank
+     */
     public URI createPresignedPutUrl(String objectKey, String contentType) {
         String key = requireText(objectKey, "objectKey");
         String type = requireText(contentType, "contentType");
@@ -50,6 +66,13 @@ public class S3StorageService {
         return URI.create(s3Presigner.presignPutObject(presignRequest).url().toString());
     }
 
+    /**
+     * Creates a temporary GET URL for an object.
+     *
+     * @param objectKey key of the object to read
+     * @return temporary S3 GET URL
+     * @throws StorageValidationException if the object key is null or blank
+     */
     public URI createPresignedGetUrl(String objectKey) {
         String key = requireText(objectKey, "objectKey");
 
@@ -66,6 +89,12 @@ public class S3StorageService {
         return URI.create(s3Presigner.presignGetObject(presignRequest).url().toString());
     }
 
+    /**
+     * Requests deletion of an object by key.
+     *
+     * @param objectKey key of the object to delete
+     * @throws StorageValidationException if the object key is null or blank
+     */
     public void deleteObject(String objectKey) {
         String key = requireText(objectKey, "objectKey");
 

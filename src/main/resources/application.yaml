@@ -221,7 +221,7 @@ avatar:
 # S3 목록과 DB를 대조하는 방식이라 s3:ListBucket·s3:DeleteObject 권한이 필요하다.
 media:
   cleanup:
-    # 기본 꺼짐. 운영 IAM 역할에 아직 위 두 권한이 없어(deploy/iam-policy.json 최소 권한)
+    # 기본 꺼짐. 운영 IAM 역할에 아직 위 두 권한이 없어(deploy/raspberry-pi-s3-policy.json.template 기준)
     # 켜 두면 매일 AccessDenied 로그만 쌓인다. 권한을 넓힌 뒤 켜는 순서다.
     enabled: ${MEDIA_CLEANUP_ENABLED:false}
     # 실제로 지우지 않고 "지웠을 것"만 로그로 남긴다. 되돌릴 수 없는 작업이라 한 단계를 더 뒀다 —

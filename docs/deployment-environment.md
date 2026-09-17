@@ -16,6 +16,20 @@ Set `SPRING_PROFILES_ACTIVE=prod` and provide the application connection values:
 
 The Spring Boot container receives the Raspberry Pi credentials through `deploy/.env` and the AWS SDK default credential provider chain. Do not place them in the image, application YAML, or repository.
 
+## S3 bucket baseline
+
+The repository does not use Terraform, CloudFormation, or CDK. Apply the baseline to an existing private bucket with the AWS CLI script below; it does not create or delete buckets:
+
+```bash
+AWS_REGION=ap-northeast-2 AWS_S3_BUCKET=example-private-bucket ./deploy/configure-s3-bucket.sh
+```
+
+The script enables all four S3 Public Access Block settings, configures SSE-S3 (`AES256`) as the default encryption, and enables Versioning. On a versioned bucket, the service's existing `DeleteObject` request creates a delete marker rather than permanently deleting prior versions; version purge is intentionally out of scope.
+
+The Raspberry Pi runtime policy is provided as `deploy/raspberry-pi-s3-policy.json.template`. Replace only `<bucket-name>` before attaching it to the development credential. It grants `s3:GetObject`, `s3:PutObject`, and `s3:DeleteObject` on that bucket's objects; it does not grant `ListBucket`, Secrets Manager, or bucket administration permissions.
+
+AWS Secrets Manager is intentionally not used. Runtime credentials remain environment variables in the server-local `deploy/.env` and are read by the AWS SDK `DefaultCredentialsProvider`.
+
 ## GitHub Actions settings
 
 The current image workflow uses the built-in `GITHUB_TOKEN` for GHCR. The development deployment runs on the Raspberry Pi and reads its AWS credentials from the server-local `deploy/.env`; GitHub Actions does not receive or transfer them.
@@ -24,4 +38,4 @@ The current image workflow uses the built-in `GITHUB_TOKEN` for GHCR. The develo
 - `DB_PASSWORD`, `REDIS_PASSWORD`, `JWT_SECRET`, `OPENAI_API_KEY`, and payment/OAuth secrets if the workflow transfers the runtime environment file.
 - `DISCORD_WEBHOOK` is optional and is used only for test-failure notifications.
 
-Non-sensitive values such as `AWS_REGION`, `AWS_S3_BUCKET`, `EC2_APP_DIR`, and the image name may be deployment configuration. No AWS resource creation or production deployment is performed by this repository setup.
+Non-sensitive values such as `AWS_REGION`, `AWS_S3_BUCKET`, `EC2_APP_DIR`, and the image name may be deployment configuration. The bucket baseline script configures an existing bucket but does not create or delete AWS resources, and the repository does not automatically apply IAM policies.
