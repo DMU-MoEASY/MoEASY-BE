@@ -1,7 +1,7 @@
 # 라즈베리파이 개발 서버용 Compose 구성.
 # 실행 위치: ~/project/moeasy/compose.yml
 # 실제 값은 같은 디렉터리의 .env에만 둔다.
-# AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY도 이 파일에만 두고 컨테이너 런타임으로 전달한다.
+# AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY는 서버 로컬 deploy/.env에만 저장하고 커밋하지 않으며, env_file로 컨테이너에 전달한다.
 
 services:
   mysql:

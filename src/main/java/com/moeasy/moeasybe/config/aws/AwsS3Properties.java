@@ -2,58 +2,43 @@ package com.moeasy.moeasybe.config.aws;
 
 import java.time.Duration;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
+import org.hibernate.validator.constraints.time.DurationMax;
+import org.hibernate.validator.constraints.time.DurationMin;
 
 @ConfigurationProperties(prefix = "aws")
+@Validated
+@Getter
+@Setter
 public class AwsS3Properties {
 
+    @NotBlank
     private String region;
+
+    @Valid
     private S3 s3 = new S3();
 
-    public String getRegion() {
-        return region;
-    }
-
-    public void setRegion(String region) {
-        this.region = region;
-    }
-
-    public S3 getS3() {
-        return s3;
-    }
-
-    public void setS3(S3 s3) {
-        this.s3 = s3;
-    }
-
+    @Getter
+    @Setter
     public static class S3 {
 
+        @NotBlank
         private String bucket;
+
+        @NotNull
+        @DurationMin(seconds = 1)
+        @DurationMax(days = 7)
         private Duration uploadPresignedUrlExpiration;
+
+        @NotNull
+        @DurationMin(seconds = 1)
+        @DurationMax(days = 7)
         private Duration downloadPresignedUrlExpiration;
-
-        public String getBucket() {
-            return bucket;
-        }
-
-        public void setBucket(String bucket) {
-            this.bucket = bucket;
-        }
-
-        public Duration getUploadPresignedUrlExpiration() {
-            return uploadPresignedUrlExpiration;
-        }
-
-        public void setUploadPresignedUrlExpiration(Duration uploadPresignedUrlExpiration) {
-            this.uploadPresignedUrlExpiration = uploadPresignedUrlExpiration;
-        }
-
-        public Duration getDownloadPresignedUrlExpiration() {
-            return downloadPresignedUrlExpiration;
-        }
-
-        public void setDownloadPresignedUrlExpiration(Duration downloadPresignedUrlExpiration) {
-            this.downloadPresignedUrlExpiration = downloadPresignedUrlExpiration;
-        }
     }
 }
