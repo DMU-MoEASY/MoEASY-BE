@@ -10,8 +10,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @SpringBootTest
 class P0SchemaMigrationIntegrationTest {
 
-    private static final int P0_TABLE_COUNT = 33;
-    private static final int P0_FOREIGN_KEY_COUNT = 53;
+    private static final int P0_TABLE_COUNT = 32;
+    private static final int P0_FOREIGN_KEY_COUNT = 52;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -23,7 +23,7 @@ class P0SchemaMigrationIntegrationTest {
                 FROM information_schema.tables
                 WHERE table_schema = DATABASE()
                   AND table_name IN (
-                      'category', 'member', 'member_identity', 'member_category', 'member_group',
+                      'category', 'member', 'member_category', 'member_group',
                       'group_member', 'group_join_request', 'schedule', 'schedule_rsvp', 'availability_poll',
                       'availability_slot', 'availability_vote', 'attendance_session', 'attendance',
                       'group_poll', 'group_poll_option', 'group_poll_vote', 'group_post',
@@ -34,13 +34,52 @@ class P0SchemaMigrationIntegrationTest {
                   )
                 """, Integer.class);
 
-        Integer publicIdIndexCount = jdbcTemplate.queryForObject("""
+        Integer socialIdentityIndexCount = jdbcTemplate.queryForObject("""
                 SELECT COUNT(DISTINCT index_name)
                 FROM information_schema.statistics
                 WHERE table_schema = DATABASE()
-                  AND table_name = 'member_identity'
-                  AND index_name = 'uq_member_identity_provider_subject'
+                  AND table_name = 'member'
+                  AND index_name = 'uq_member_social_identity'
                   AND non_unique = 0
+                """, Integer.class);
+
+        Integer socialLoginColumns = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'member'
+                  AND column_name IN ('social_type', 'social_id')
+                  AND is_nullable = 'NO'
+                """, Integer.class);
+
+        Integer memberIdentityTableCount = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM information_schema.tables
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'member_identity'
+                """, Integer.class);
+
+        Integer publicIdColumnCount = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND column_name = 'public_id'
+                """, Integer.class);
+
+        Integer erdMemberColumnCount = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'member'
+                  AND column_name IN ('social_id', 'social_type', 'profile_image', 'manner_temp')
+                """, Integer.class);
+
+        Integer legacyMemberColumnCount = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'member'
+                  AND column_name IN ('profile_image_key', 'manner_temperature')
                 """, Integer.class);
 
         Integer memberGroupForeignKeyCount = jdbcTemplate.queryForObject("""
@@ -90,7 +129,12 @@ class P0SchemaMigrationIntegrationTest {
                 """, Integer.class);
 
         assertThat(tableCount).isEqualTo(P0_TABLE_COUNT);
-        assertThat(publicIdIndexCount).isEqualTo(1);
+        assertThat(socialIdentityIndexCount).isEqualTo(1);
+        assertThat(socialLoginColumns).isEqualTo(2);
+        assertThat(memberIdentityTableCount).isZero();
+        assertThat(publicIdColumnCount).isZero();
+        assertThat(erdMemberColumnCount).isEqualTo(4);
+        assertThat(legacyMemberColumnCount).isZero();
         assertThat(memberGroupForeignKeyCount).isEqualTo(9);
         assertThat(foreignKeyCount).isEqualTo(P0_FOREIGN_KEY_COUNT);
         assertThat(nonRestrictForeignKeyCount).isZero();
