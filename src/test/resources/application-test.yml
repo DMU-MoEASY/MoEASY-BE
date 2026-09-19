@@ -37,7 +37,10 @@ jwt:
 
 oauth:
   kakao:
-    app-id: ${KAKAO_APP_ID:1}
+    rest-api-key: ${KAKAO_REST_API_KEY:test-kakao-rest-api-key}
+    client-secret: ${KAKAO_CLIENT_SECRET:}
+    token-uri: ${KAKAO_TOKEN_URI:https://kauth.kakao.com/oauth/token}
+    user-info-uri: ${KAKAO_USER_INFO_URI:https://kapi.kakao.com/v2/user/me}
   google:
     web-client-id: ${GOOGLE_WEB_CLIENT_ID:test-google-client-id}
     allowed-issuers: ${GOOGLE_ALLOWED_ISSUERS:https://accounts.google.com,accounts.google.com}

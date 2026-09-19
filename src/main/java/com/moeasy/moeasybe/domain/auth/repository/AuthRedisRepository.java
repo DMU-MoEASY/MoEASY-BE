@@ -14,4 +14,8 @@ public class AuthRedisRepository {
     public void save(String key, String value, Duration expiration) {
         stringRedisTemplate.opsForValue().set(key, value, expiration);
     }
+
+    public String getAndDelete(String key) {
+        return stringRedisTemplate.opsForValue().getAndDelete(key);
+    }
 }

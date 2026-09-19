@@ -3,15 +3,22 @@ package com.moeasy.moeasybe.domain.auth.service.command;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+import com.moeasy.moeasybe.domain.auth.client.KakaoOAuthClient;
 import com.moeasy.moeasybe.domain.auth.code.AuthErrorCode;
 import com.moeasy.moeasybe.domain.auth.config.AuthProperties;
+import com.moeasy.moeasybe.domain.auth.dto.request.AuthReqDTO;
 import com.moeasy.moeasybe.domain.auth.dto.response.AuthResDTO;
 import com.moeasy.moeasybe.domain.auth.exception.AuthException;
 import com.moeasy.moeasybe.domain.auth.repository.AuthRedisRepository;
+import com.moeasy.moeasybe.domain.member.entity.Member;
 import com.moeasy.moeasybe.domain.member.entity.SocialType;
+import com.moeasy.moeasybe.domain.member.service.command.MemberCommandService;
 import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,13 +35,21 @@ class AuthCommandServiceTest {
     @Mock
     private AuthRedisRepository authRedisRepository;
 
+    @Mock
+    private KakaoOAuthClient kakaoOAuthClient;
+
+    @Mock
+    private MemberCommandService memberCommandService;
+
     private AuthCommandService authCommandService;
 
     @BeforeEach
     void setUp() {
         authCommandService = new AuthCommandService(
                 authRedisRepository,
-                new AuthProperties(STATE_EXPIRATION)
+                new AuthProperties(STATE_EXPIRATION),
+                kakaoOAuthClient,
+                memberCommandService
         );
     }
 
@@ -60,5 +75,48 @@ class AuthCommandServiceTest {
         );
 
         assertEquals(AuthErrorCode.UNSUPPORTED_OAUTH_PROVIDER, exception.getCode());
+    }
+
+    @Test
+    void 카카오_state를_소비하고_기존_회원을_로그인한다() {
+        AuthReqDTO.KakaoLogin request = new AuthReqDTO.KakaoLogin(
+                "authorization-code",
+                "issued-state",
+                "https://dev.moeasy.kr/oauth/kakao/callback"
+        );
+        Member member = mock(Member.class);
+
+        when(authRedisRepository.getAndDelete("oauth:state:issued-state"))
+                .thenReturn(SocialType.KAKAO.name());
+        when(kakaoOAuthClient.getUserId(request.code(), request.redirectUri()))
+                .thenReturn("123456789");
+        when(memberCommandService.findOrCreateSocialMember(SocialType.KAKAO, "123456789"))
+                .thenReturn(member);
+        when(member.getId()).thenReturn(7L);
+        when(member.isOnboardingCompleted()).thenReturn(true);
+
+        AuthResDTO.SocialLogin response = authCommandService.loginWithKakao(request);
+
+        assertEquals(7L, response.memberId());
+        assertTrue(response.onboardingCompleted());
+        verify(authRedisRepository).getAndDelete("oauth:state:issued-state");
+    }
+
+    @Test
+    void 구글용_state로_카카오_로그인을_요청하면_거부한다() {
+        AuthReqDTO.KakaoLogin request = new AuthReqDTO.KakaoLogin(
+                "authorization-code",
+                "google-state",
+                "https://dev.moeasy.kr/oauth/kakao/callback"
+        );
+        when(authRedisRepository.getAndDelete("oauth:state:google-state"))
+                .thenReturn(SocialType.GOOGLE.name());
+
+        AuthException exception = assertThrows(
+                AuthException.class,
+                () -> authCommandService.loginWithKakao(request)
+        );
+
+        assertEquals(AuthErrorCode.INVALID_OAUTH_STATE, exception.getCode());
     }
 }

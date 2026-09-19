@@ -1,11 +1,15 @@
 package com.moeasy.moeasybe.domain.auth.service.command;
 
 import com.moeasy.moeasybe.domain.auth.code.AuthErrorCode;
+import com.moeasy.moeasybe.domain.auth.client.KakaoOAuthClient;
 import com.moeasy.moeasybe.domain.auth.config.AuthProperties;
+import com.moeasy.moeasybe.domain.auth.dto.request.AuthReqDTO;
 import com.moeasy.moeasybe.domain.auth.dto.response.AuthResDTO;
 import com.moeasy.moeasybe.domain.auth.exception.AuthException;
 import com.moeasy.moeasybe.domain.auth.repository.AuthRedisRepository;
+import com.moeasy.moeasybe.domain.member.entity.Member;
 import com.moeasy.moeasybe.domain.member.entity.SocialType;
+import com.moeasy.moeasybe.domain.member.service.command.MemberCommandService;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Locale;
@@ -25,6 +29,8 @@ public class AuthCommandService {
 
     private final AuthRedisRepository authRedisRepository;
     private final AuthProperties authProperties;
+    private final KakaoOAuthClient kakaoOAuthClient;
+    private final MemberCommandService memberCommandService;
 
     public AuthResDTO.IssueState issueState(String providerName) {
         SocialType provider = parseProvider(providerName);
@@ -38,6 +44,32 @@ public class AuthCommandService {
         }
 
         return new AuthResDTO.IssueState(state);
+    }
+
+    public AuthResDTO.SocialLogin loginWithKakao(AuthReqDTO.KakaoLogin request) {
+        validateAndConsumeState(request.state(), SocialType.KAKAO);
+
+        String socialId = kakaoOAuthClient.getUserId(request.code(), request.redirectUri());
+        Member member = memberCommandService.findOrCreateSocialMember(SocialType.KAKAO, socialId);
+
+        return new AuthResDTO.SocialLogin(
+                member.getId(),
+                member.isOnboardingCompleted()
+        );
+    }
+
+    private void validateAndConsumeState(String state, SocialType expectedProvider) {
+        String savedProvider;
+        try {
+            savedProvider = authRedisRepository.getAndDelete(stateKey(state));
+        } catch (DataAccessException ex) {
+            log.error("OAuth state를 Redis에서 확인하지 못했습니다. provider={}", expectedProvider, ex);
+            throw new AuthException(AuthErrorCode.OAUTH_STATE_VERIFICATION_FAILED);
+        }
+
+        if (!expectedProvider.name().equals(savedProvider)) {
+            throw new AuthException(AuthErrorCode.INVALID_OAUTH_STATE);
+        }
     }
 
     private SocialType parseProvider(String providerName) {

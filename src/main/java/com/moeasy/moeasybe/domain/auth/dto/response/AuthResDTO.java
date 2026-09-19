@@ -6,4 +6,10 @@ public class AuthResDTO {
             String state
     ) {
     }
+
+    public record SocialLogin(
+            Long memberId,
+            boolean onboardingCompleted
+    ) {
+    }
 }

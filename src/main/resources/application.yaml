@@ -108,7 +108,10 @@ oauth:
   state:
     expiration: ${OAUTH_STATE_EXPIRATION:PT5M}
   kakao:
-    app-id: ${KAKAO_APP_ID}
+    rest-api-key: ${KAKAO_REST_API_KEY}
+    client-secret: ${KAKAO_CLIENT_SECRET}
+    token-uri: ${KAKAO_TOKEN_URI:https://kauth.kakao.com/oauth/token}
+    user-info-uri: ${KAKAO_USER_INFO_URI:https://kapi.kakao.com/v2/user/me}
   google:
     web-client-id: ${GOOGLE_WEB_CLIENT_ID}
     allowed-issuers: ${GOOGLE_ALLOWED_ISSUERS}

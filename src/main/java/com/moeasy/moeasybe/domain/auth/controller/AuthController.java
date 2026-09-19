@@ -20,8 +20,8 @@ public class AuthController implements AuthControllerDocs {
 
     private final AuthCommandService authCommandService;
 
-    @PostMapping("/oauth/states")
     @Override
+    @PostMapping("/oauth/states")
     public ResponseEntity<ApiResponse<AuthResDTO.IssueState>> issueState(
             @Valid @RequestBody AuthReqDTO.IssueState request
     ) {
@@ -29,5 +29,16 @@ public class AuthController implements AuthControllerDocs {
 
         return ResponseEntity.status(AuthSuccessCode.OAUTH_STATE_ISSUED.getStatus())
                 .body(ApiResponse.onSuccess(AuthSuccessCode.OAUTH_STATE_ISSUED, response));
+    }
+
+    @Override
+    @PostMapping("/oauth/kakao")
+    public ResponseEntity<ApiResponse<AuthResDTO.SocialLogin>> loginWithKakao(
+            @Valid @RequestBody AuthReqDTO.KakaoLogin request
+    ) {
+        AuthResDTO.SocialLogin response = authCommandService.loginWithKakao(request);
+
+        return ResponseEntity.status(AuthSuccessCode.KAKAO_LOGIN_SUCCEEDED.getStatus())
+                .body(ApiResponse.onSuccess(AuthSuccessCode.KAKAO_LOGIN_SUCCEEDED, response));
     }
 }
