@@ -47,8 +47,8 @@ public class Member extends BaseEntity {
     @Column(name = "status_message", length = 255)
     private String statusMessage;
 
-    @Column(name = "profile_image", columnDefinition = "TEXT")
-    private String profileImage;
+    @Column(name = "profile_image_key", length = 500)
+    private String profileImageKey;
 
     @Column(name = "onboarding_completed", nullable = false)
     private boolean onboardingCompleted = false;
@@ -66,12 +66,12 @@ public class Member extends BaseEntity {
             String socialId,
             String nickname,
             String statusMessage,
-            String profileImage
+            String profileImageKey
     ) {
         this.socialType = socialType;
         this.socialId = socialId;
         this.nickname = nickname;
         this.statusMessage = statusMessage;
-        this.profileImage = profileImage;
+        this.profileImageKey = profileImageKey;
     }
 }
