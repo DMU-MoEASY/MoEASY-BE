@@ -41,4 +41,15 @@ public class AuthController implements AuthControllerDocs {
         return ResponseEntity.status(AuthSuccessCode.KAKAO_LOGIN_SUCCEEDED.getStatus())
                 .body(ApiResponse.onSuccess(AuthSuccessCode.KAKAO_LOGIN_SUCCEEDED, response));
     }
+
+    @Override
+    @PostMapping("/oauth/google")
+    public ResponseEntity<ApiResponse<AuthResDTO.SocialLogin>> loginWithGoogle(
+            @Valid @RequestBody AuthReqDTO.GoogleLogin request
+    ) {
+        AuthResDTO.SocialLogin response = authCommandService.loginWithGoogle(request);
+
+        return ResponseEntity.status(AuthSuccessCode.GOOGLE_LOGIN_SUCCEEDED.getStatus())
+                .body(ApiResponse.onSuccess(AuthSuccessCode.GOOGLE_LOGIN_SUCCEEDED, response));
+    }
 }

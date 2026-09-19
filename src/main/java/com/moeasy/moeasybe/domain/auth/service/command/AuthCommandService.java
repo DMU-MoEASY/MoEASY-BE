@@ -1,6 +1,7 @@
 package com.moeasy.moeasybe.domain.auth.service.command;
 
 import com.moeasy.moeasybe.domain.auth.code.AuthErrorCode;
+import com.moeasy.moeasybe.domain.auth.client.GoogleOAuthClient;
 import com.moeasy.moeasybe.domain.auth.client.KakaoOAuthClient;
 import com.moeasy.moeasybe.domain.auth.config.AuthProperties;
 import com.moeasy.moeasybe.domain.auth.dto.request.AuthReqDTO;
@@ -30,6 +31,7 @@ public class AuthCommandService {
     private final AuthRedisRepository authRedisRepository;
     private final AuthProperties authProperties;
     private final KakaoOAuthClient kakaoOAuthClient;
+    private final GoogleOAuthClient googleOAuthClient;
     private final MemberCommandService memberCommandService;
 
     public AuthResDTO.IssueState issueState(String providerName) {
@@ -51,6 +53,18 @@ public class AuthCommandService {
 
         String socialId = kakaoOAuthClient.getUserId(request.code(), request.redirectUri());
         Member member = memberCommandService.findOrCreateSocialMember(SocialType.KAKAO, socialId);
+
+        return new AuthResDTO.SocialLogin(
+                member.getId(),
+                member.isOnboardingCompleted()
+        );
+    }
+
+    public AuthResDTO.SocialLogin loginWithGoogle(AuthReqDTO.GoogleLogin request) {
+        validateAndConsumeState(request.state(), SocialType.GOOGLE);
+
+        String socialId = googleOAuthClient.getUserId(request.code(), request.redirectUri());
+        Member member = memberCommandService.findOrCreateSocialMember(SocialType.GOOGLE, socialId);
 
         return new AuthResDTO.SocialLogin(
                 member.getId(),

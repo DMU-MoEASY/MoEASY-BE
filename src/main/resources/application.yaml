@@ -114,7 +114,9 @@ oauth:
     user-info-uri: ${KAKAO_USER_INFO_URI:https://kapi.kakao.com/v2/user/me}
   google:
     web-client-id: ${GOOGLE_WEB_CLIENT_ID}
-    allowed-issuers: ${GOOGLE_ALLOWED_ISSUERS}
+    client-secret: ${GOOGLE_CLIENT_SECRET}
+    token-uri: ${GOOGLE_TOKEN_URI:https://oauth2.googleapis.com/token}
+    user-info-uri: ${GOOGLE_USER_INFO_URI:https://openidconnect.googleapis.com/v1/userinfo}
 
 # FCM 푸시 알림 설정.
 # 비공개 키 경로는 설정 파일에 저장하지 않고 GOOGLE_APPLICATION_CREDENTIALS로 주입한다.
