@@ -12,7 +12,7 @@ Set `SPRING_PROFILES_ACTIVE=prod` and provide the application connection values:
 - `AWS_REGION` and `AWS_S3_BUCKET` for the private S3 bucket.
 - `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` for the Raspberry Pi development IAM user. Keep these values only in `deploy/.env` on the server.
 - `OPENAI_API_KEY` for AI review and `PORTONE_API_SECRET`, `PORTONE_STORE_ID`, and `PORTONE_CHANNEL_KEY` for payments when those features are enabled.
-- OAuth and optional feature values such as `KAKAO_APP_ID`, `GOOGLE_WEB_CLIENT_ID`, `GOOGLE_ALLOWED_ISSUERS`, and `FCM_ENABLED` as required by the deployment.
+- OAuth and optional feature values such as `KAKAO_REST_API_KEY`, `KAKAO_CLIENT_SECRET`, `GOOGLE_WEB_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `FCM_ENABLED` as required by the deployment.
 
 The Spring Boot container receives the Raspberry Pi credentials through `deploy/.env` and the AWS SDK default credential provider chain. Do not place them in the image, application YAML, or repository.
 
