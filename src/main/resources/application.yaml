@@ -105,6 +105,8 @@ jwt:
   issuer: moeasy
 
 oauth:
+  state:
+    expiration: ${OAUTH_STATE_EXPIRATION:PT5M}
   kakao:
     app-id: ${KAKAO_APP_ID}
   google:
