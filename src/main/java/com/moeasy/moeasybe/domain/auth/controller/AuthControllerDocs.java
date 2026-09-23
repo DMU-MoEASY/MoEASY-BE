@@ -4,6 +4,7 @@ import com.moeasy.moeasybe.domain.auth.dto.request.AuthReqDTO;
 import com.moeasy.moeasybe.domain.auth.dto.response.AuthResDTO;
 import com.moeasy.moeasybe.global.apiPayload.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -19,7 +20,8 @@ public interface AuthControllerDocs {
     @Operation(
             summary = "소셜 로그인 state 발급",
             description = "소셜 로그인 요청에 사용할 일회성 state를 발급합니다. "
-                    + "provider에는 KAKAO 또는 GOOGLE을 전달해야 하며, 발급된 state는 5분 동안 Redis에 저장됩니다."
+                    + "provider에는 KAKAO 또는 GOOGLE을 전달해야 하며, 발급된 state는 5분 동안 Redis에 저장됩니다. "
+                    + "응답의 HttpOnly 쿠키는 로그인 요청을 시작한 브라우저를 식별하며, 로그인 요청 때 자동으로 전송되어야 합니다."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -110,7 +112,8 @@ public interface AuthControllerDocs {
                                     """)
                     )
             )
-            @Valid @org.springframework.web.bind.annotation.RequestBody AuthReqDTO.IssueState request
+            @Valid @org.springframework.web.bind.annotation.RequestBody AuthReqDTO.IssueState request,
+            @Parameter(hidden = true) String existingBrowserId
     );
 
     @Operation(
@@ -118,6 +121,7 @@ public interface AuthControllerDocs {
             description = "프론트엔드가 카카오에서 받은 인가 코드를 백엔드가 액세스 토큰으로 교환하고, "
                     + "카카오 사용자 ID를 기준으로 회원을 조회하거나 생성합니다. "
                     + "state는 발급 시 KAKAO로 저장된 값이어야 하며 검증과 동시에 삭제되어 한 번만 사용할 수 있습니다. "
+                    + "state 발급 응답의 HttpOnly 쿠키가 같은 브라우저에서 함께 전송되어야 합니다. "
                     + "redirectUri는 카카오 인가 코드 요청에 사용한 값과 완전히 같아야 합니다. "
                     + "이번 API는 서비스 JWT를 발급하지 않습니다."
     )
@@ -246,7 +250,8 @@ public interface AuthControllerDocs {
                                     """)
                     )
             )
-            @Valid @org.springframework.web.bind.annotation.RequestBody AuthReqDTO.KakaoLogin request
+            @Valid @org.springframework.web.bind.annotation.RequestBody AuthReqDTO.KakaoLogin request,
+            @Parameter(hidden = true) String browserId
     );
 
     @Operation(
@@ -254,6 +259,7 @@ public interface AuthControllerDocs {
             description = "프론트엔드가 구글에서 받은 인가 코드를 백엔드가 액세스 토큰으로 교환하고, "
                     + "구글 사용자 ID(sub)를 기준으로 회원을 조회하거나 생성합니다. "
                     + "state는 발급 시 GOOGLE로 저장된 값이어야 하며 검증과 동시에 삭제되어 한 번만 사용할 수 있습니다. "
+                    + "state 발급 응답의 HttpOnly 쿠키가 같은 브라우저에서 함께 전송되어야 합니다. "
                     + "redirectUri는 구글 인가 코드 요청에 사용한 값과 완전히 같아야 합니다. "
                     + "이번 API는 서비스 JWT를 발급하지 않습니다."
     )
@@ -382,6 +388,7 @@ public interface AuthControllerDocs {
                                     """)
                     )
             )
-            @Valid @org.springframework.web.bind.annotation.RequestBody AuthReqDTO.GoogleLogin request
+            @Valid @org.springframework.web.bind.annotation.RequestBody AuthReqDTO.GoogleLogin request,
+            @Parameter(hidden = true) String browserId
     );
 }
