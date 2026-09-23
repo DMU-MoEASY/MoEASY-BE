@@ -2,7 +2,7 @@ package com.moeasy.moeasybe.domain.auth.client;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.moeasy.moeasybe.domain.auth.code.AuthErrorCode;
+import com.moeasy.moeasybe.domain.auth.exception.code.AuthErrorCode;
 import com.moeasy.moeasybe.domain.auth.config.GoogleProperties;
 import com.moeasy.moeasybe.domain.auth.exception.AuthException;
 import java.nio.charset.StandardCharsets;

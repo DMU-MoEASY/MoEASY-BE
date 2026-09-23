@@ -1,4 +1,4 @@
-package com.moeasy.moeasybe.domain.member.entity;
+package com.moeasy.moeasybe.domain.member.enums;
 
 public enum SocialType {
     KAKAO,

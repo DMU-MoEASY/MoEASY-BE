@@ -12,14 +12,14 @@ import static org.mockito.Mockito.when;
 
 import com.moeasy.moeasybe.domain.auth.client.KakaoOAuthClient;
 import com.moeasy.moeasybe.domain.auth.client.GoogleOAuthClient;
-import com.moeasy.moeasybe.domain.auth.code.AuthErrorCode;
+import com.moeasy.moeasybe.domain.auth.exception.code.AuthErrorCode;
 import com.moeasy.moeasybe.domain.auth.config.AuthProperties;
 import com.moeasy.moeasybe.domain.auth.dto.request.AuthReqDTO;
 import com.moeasy.moeasybe.domain.auth.dto.response.AuthResDTO;
 import com.moeasy.moeasybe.domain.auth.exception.AuthException;
 import com.moeasy.moeasybe.domain.auth.repository.AuthRedisRepository;
 import com.moeasy.moeasybe.domain.member.entity.Member;
-import com.moeasy.moeasybe.domain.member.entity.SocialType;
+import com.moeasy.moeasybe.domain.member.enums.SocialType;
 import com.moeasy.moeasybe.domain.member.service.command.MemberCommandService;
 import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;

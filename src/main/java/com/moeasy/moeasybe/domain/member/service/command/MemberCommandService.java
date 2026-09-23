@@ -1,7 +1,7 @@
 package com.moeasy.moeasybe.domain.member.service.command;
 
 import com.moeasy.moeasybe.domain.member.entity.Member;
-import com.moeasy.moeasybe.domain.member.entity.SocialType;
+import com.moeasy.moeasybe.domain.member.enums.SocialType;
 import com.moeasy.moeasybe.domain.member.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;

@@ -1,4 +1,4 @@
-package com.moeasy.moeasybe.domain.auth.code;
+package com.moeasy.moeasybe.domain.auth.exception.code;
 
 import com.moeasy.moeasybe.global.apiPayload.code.BaseSuccessCode;
 import lombok.AllArgsConstructor;

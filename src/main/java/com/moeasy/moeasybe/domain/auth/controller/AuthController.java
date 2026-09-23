@@ -2,7 +2,7 @@ package com.moeasy.moeasybe.domain.auth.controller;
 
 import com.moeasy.moeasybe.domain.auth.dto.request.AuthReqDTO;
 import com.moeasy.moeasybe.domain.auth.dto.response.AuthResDTO;
-import com.moeasy.moeasybe.domain.auth.code.AuthSuccessCode;
+import com.moeasy.moeasybe.domain.auth.exception.code.AuthSuccessCode;
 import com.moeasy.moeasybe.domain.auth.config.AuthProperties;
 import com.moeasy.moeasybe.domain.auth.service.command.AuthCommandService;
 import com.moeasy.moeasybe.global.apiPayload.ApiResponse;

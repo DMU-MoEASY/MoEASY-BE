@@ -9,7 +9,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-import com.moeasy.moeasybe.domain.auth.code.AuthErrorCode;
+import com.moeasy.moeasybe.domain.auth.exception.code.AuthErrorCode;
 import com.moeasy.moeasybe.domain.auth.config.KakaoProperties;
 import com.moeasy.moeasybe.domain.auth.exception.AuthException;
 import org.junit.jupiter.api.BeforeEach;

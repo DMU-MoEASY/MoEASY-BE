@@ -1,5 +1,7 @@
 package com.moeasy.moeasybe.domain.member.entity;
 
+import com.moeasy.moeasybe.domain.member.enums.MemberStatus;
+import com.moeasy.moeasybe.domain.member.enums.SocialType;
 import com.moeasy.moeasybe.global.entity.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

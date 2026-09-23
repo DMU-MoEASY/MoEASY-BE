@@ -2,7 +2,7 @@ package com.moeasy.moeasybe.domain.auth.client;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.moeasy.moeasybe.domain.auth.code.AuthErrorCode;
+import com.moeasy.moeasybe.domain.auth.exception.code.AuthErrorCode;
 import com.moeasy.moeasybe.domain.auth.config.KakaoProperties;
 import com.moeasy.moeasybe.domain.auth.exception.AuthException;
 import lombok.extern.slf4j.Slf4j;
