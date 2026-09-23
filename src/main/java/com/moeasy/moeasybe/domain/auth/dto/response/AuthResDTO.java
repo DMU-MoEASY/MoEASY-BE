@@ -4,6 +4,8 @@ import lombok.Builder;
 
 public final class AuthResDTO {
 
+    private AuthResDTO() {}
+
     @Builder
     public record IssueState(
             String state

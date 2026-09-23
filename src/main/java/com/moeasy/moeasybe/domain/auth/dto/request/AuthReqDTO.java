@@ -6,6 +6,8 @@ import lombok.Builder;
 
 public final class AuthReqDTO {
 
+    private AuthReqDTO() {}
+
     @Builder
     public record IssueState(
             @Schema(
