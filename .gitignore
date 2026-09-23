@@ -40,3 +40,9 @@ out/
 
 ### VS Code ###
 .vscode/
+
+
+### Docs ###
+docs/erd/
+docs/notion_specification.zip
+.DS_Store
