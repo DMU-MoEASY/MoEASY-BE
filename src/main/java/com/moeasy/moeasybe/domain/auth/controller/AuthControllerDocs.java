@@ -122,7 +122,8 @@ public interface AuthControllerDocs {
                     + "카카오 사용자 ID를 기준으로 회원을 조회하거나 생성합니다. "
                     + "state는 발급 시 KAKAO로 저장된 값이어야 하며 검증과 동시에 삭제되어 한 번만 사용할 수 있습니다. "
                     + "state 발급 응답의 HttpOnly 쿠키가 같은 브라우저에서 함께 전송되어야 합니다. "
-                    + "redirectUri는 카카오 인가 코드 요청에 사용한 값과 완전히 같아야 합니다. "
+                    + "토큰 교환에 사용하는 redirect_uri는 백엔드의 KAKAO_REDIRECT_URI 환경변수 값이며, "
+                    + "카카오 인가 코드 요청에 사용한 redirect_uri와 완전히 같아야 합니다. "
                     + "이번 API는 서비스 JWT를 발급하지 않습니다."
     )
     @ApiResponses({
@@ -244,8 +245,7 @@ public interface AuthControllerDocs {
                             examples = @ExampleObject(value = """
                                     {
                                       "code": "SplxlOBeZQQYbYS6WxSbIA",
-                                      "state": "N9a1JxD_Cnqezcvx0W86-RQj8Fsvf1mJqYp0r2LhK0w",
-                                      "redirectUri": "https://dev.moeasy.kr/oauth/kakao/callback"
+                                      "state": "N9a1JxD_Cnqezcvx0W86-RQj8Fsvf1mJqYp0r2LhK0w"
                                     }
                                     """)
                     )
@@ -260,7 +260,8 @@ public interface AuthControllerDocs {
                     + "구글 사용자 ID(sub)를 기준으로 회원을 조회하거나 생성합니다. "
                     + "state는 발급 시 GOOGLE로 저장된 값이어야 하며 검증과 동시에 삭제되어 한 번만 사용할 수 있습니다. "
                     + "state 발급 응답의 HttpOnly 쿠키가 같은 브라우저에서 함께 전송되어야 합니다. "
-                    + "redirectUri는 구글 인가 코드 요청에 사용한 값과 완전히 같아야 합니다. "
+                    + "토큰 교환에 사용하는 redirect_uri는 백엔드의 GOOGLE_REDIRECT_URI 환경변수 값이며, "
+                    + "구글 인가 코드 요청에 사용한 redirect_uri와 완전히 같아야 합니다. "
                     + "이번 API는 서비스 JWT를 발급하지 않습니다."
     )
     @ApiResponses({
@@ -382,8 +383,7 @@ public interface AuthControllerDocs {
                             examples = @ExampleObject(value = """
                                     {
                                       "code": "4/0AcvDMr...",
-                                      "state": "N9a1JxD_Cnqezcvx0W86-RQj8Fsvf1mJqYp0r2LhK0w",
-                                      "redirectUri": "https://dev.moeasy.kr/oauth/google/callback"
+                                      "state": "N9a1JxD_Cnqezcvx0W86-RQj8Fsvf1mJqYp0r2LhK0w"
                                     }
                                     """)
                     )

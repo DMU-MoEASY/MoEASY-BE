@@ -37,6 +37,7 @@ class GoogleOAuthClientTest {
         GoogleProperties properties = new GoogleProperties(
                 "web-client-id",
                 "client-secret",
+                REDIRECT_URI,
                 TOKEN_URI,
                 USER_INFO_URI
         );
@@ -61,7 +62,7 @@ class GoogleOAuthClientTest {
                 .andExpect(header("Authorization", "Bearer google-access-token"))
                 .andRespond(withSuccess("{\"sub\":\"google-user-123\"}", MediaType.APPLICATION_JSON));
 
-        String userId = googleOAuthClient.getUserId("authorization-code", REDIRECT_URI);
+        String userId = googleOAuthClient.getUserId("authorization-code");
 
         assertEquals("google-user-123", userId);
         server.verify();
@@ -85,7 +86,7 @@ class GoogleOAuthClientTest {
                 .andExpect(header("Authorization", "Bearer google-access-token"))
                 .andRespond(withSuccess("{\"sub\":\"google-user-123\"}", MediaType.APPLICATION_JSON));
 
-        String userId = googleOAuthClient.getUserId("4%2F0AbCdEf", REDIRECT_URI);
+        String userId = googleOAuthClient.getUserId("4%2F0AbCdEf");
 
         assertEquals("google-user-123", userId);
         server.verify();
@@ -98,7 +99,7 @@ class GoogleOAuthClientTest {
 
         AuthException exception = assertThrows(
                 AuthException.class,
-                () -> googleOAuthClient.getUserId("invalid-code", REDIRECT_URI)
+                () -> googleOAuthClient.getUserId("invalid-code")
         );
 
         assertEquals(AuthErrorCode.GOOGLE_AUTHENTICATION_FAILED, exception.getCode());

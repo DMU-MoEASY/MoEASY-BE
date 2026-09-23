@@ -53,7 +53,7 @@ public class AuthCommandService {
     public AuthResDTO.SocialLogin loginWithKakao(AuthReqDTO.KakaoLogin request, String browserId) {
         validateAndConsumeState(request.state(), SocialType.KAKAO, browserId);
 
-        String socialId = kakaoOAuthClient.getUserId(request.code(), request.redirectUri());
+        String socialId = kakaoOAuthClient.getUserId(request.code());
         Member member = memberCommandService.findOrCreateSocialMember(SocialType.KAKAO, socialId);
 
         return authConverter.toSocialLogin(member);
@@ -62,7 +62,7 @@ public class AuthCommandService {
     public AuthResDTO.SocialLogin loginWithGoogle(AuthReqDTO.GoogleLogin request, String browserId) {
         validateAndConsumeState(request.state(), SocialType.GOOGLE, browserId);
 
-        String socialId = googleOAuthClient.getUserId(request.code(), request.redirectUri());
+        String socialId = googleOAuthClient.getUserId(request.code());
         Member member = memberCommandService.findOrCreateSocialMember(SocialType.GOOGLE, socialId);
 
         return authConverter.toSocialLogin(member);

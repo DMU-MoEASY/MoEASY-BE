@@ -37,6 +37,7 @@ class KakaoOAuthClientTest {
         KakaoProperties properties = new KakaoProperties(
                 "rest-api-key",
                 "client-secret",
+                REDIRECT_URI,
                 TOKEN_URI,
                 USER_INFO_URI
         );
@@ -61,7 +62,7 @@ class KakaoOAuthClientTest {
                 .andExpect(header("Authorization", "Bearer kakao-access-token"))
                 .andRespond(withSuccess("{\"id\":123456789}", MediaType.APPLICATION_JSON));
 
-        String userId = kakaoOAuthClient.getUserId("authorization-code", REDIRECT_URI);
+        String userId = kakaoOAuthClient.getUserId("authorization-code");
 
         assertEquals("123456789", userId);
         server.verify();
@@ -74,7 +75,7 @@ class KakaoOAuthClientTest {
 
         AuthException exception = assertThrows(
                 AuthException.class,
-                () -> kakaoOAuthClient.getUserId("invalid-code", REDIRECT_URI)
+                () -> kakaoOAuthClient.getUserId("invalid-code")
         );
 
         assertEquals(AuthErrorCode.KAKAO_AUTHENTICATION_FAILED, exception.getCode());

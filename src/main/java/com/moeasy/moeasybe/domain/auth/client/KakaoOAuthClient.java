@@ -29,16 +29,16 @@ public class KakaoOAuthClient {
         this.kakaoProperties = kakaoProperties;
     }
 
-    public String getUserId(String authorizationCode, String redirectUri) {
-        String accessToken = requestAccessToken(authorizationCode, redirectUri);
+    public String getUserId(String authorizationCode) {
+        String accessToken = requestAccessToken(authorizationCode);
         return requestUserId(accessToken);
     }
 
-    private String requestAccessToken(String authorizationCode, String redirectUri) {
+    private String requestAccessToken(String authorizationCode) {
         MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
         formData.add("grant_type", AUTHORIZATION_CODE_GRANT_TYPE);
         formData.add("client_id", kakaoProperties.restApiKey());
-        formData.add("redirect_uri", redirectUri);
+        formData.add("redirect_uri", kakaoProperties.redirectUri());
         formData.add("code", authorizationCode);
 
         if (StringUtils.hasText(kakaoProperties.clientSecret())) {

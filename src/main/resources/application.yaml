@@ -110,11 +110,13 @@ oauth:
   kakao:
     rest-api-key: ${KAKAO_REST_API_KEY}
     client-secret: ${KAKAO_CLIENT_SECRET}
+    redirect-uri: ${KAKAO_REDIRECT_URI}
     token-uri: ${KAKAO_TOKEN_URI:https://kauth.kakao.com/oauth/token}
     user-info-uri: ${KAKAO_USER_INFO_URI:https://kapi.kakao.com/v2/user/me}
   google:
     web-client-id: ${GOOGLE_WEB_CLIENT_ID}
     client-secret: ${GOOGLE_CLIENT_SECRET}
+    redirect-uri: ${GOOGLE_REDIRECT_URI}
     token-uri: ${GOOGLE_TOKEN_URI:https://oauth2.googleapis.com/token}
     user-info-uri: ${GOOGLE_USER_INFO_URI:https://openidconnect.googleapis.com/v1/userinfo}
 

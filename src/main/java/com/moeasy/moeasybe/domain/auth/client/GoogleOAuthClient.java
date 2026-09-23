@@ -31,17 +31,17 @@ public class GoogleOAuthClient {
         this.googleProperties = googleProperties;
     }
 
-    public String getUserId(String authorizationCode, String redirectUri) {
-        String accessToken = requestAccessToken(authorizationCode, redirectUri);
+    public String getUserId(String authorizationCode) {
+        String accessToken = requestAccessToken(authorizationCode);
         return requestUserId(accessToken);
     }
 
-    private String requestAccessToken(String authorizationCode, String redirectUri) {
+    private String requestAccessToken(String authorizationCode) {
         MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
         formData.add("grant_type", AUTHORIZATION_CODE_GRANT_TYPE);
         formData.add("client_id", googleProperties.webClientId());
         formData.add("client_secret", googleProperties.clientSecret());
-        formData.add("redirect_uri", redirectUri);
+        formData.add("redirect_uri", googleProperties.redirectUri());
         formData.add("code", decodeAuthorizationCode(authorizationCode));
 
         try {

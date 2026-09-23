@@ -9,6 +9,7 @@ import org.springframework.validation.annotation.Validated;
 public record GoogleProperties(
         @NotBlank String webClientId,
         @NotBlank String clientSecret,
+        @NotBlank String redirectUri,
         @NotBlank String tokenUri,
         @NotBlank String userInfoUri
 ) {

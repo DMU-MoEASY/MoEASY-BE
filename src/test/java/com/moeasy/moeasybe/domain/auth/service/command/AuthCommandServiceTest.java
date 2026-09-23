@@ -91,13 +91,12 @@ class AuthCommandServiceTest {
         AuthReqDTO.KakaoLogin request = AuthReqDTO.KakaoLogin.builder()
                 .code("authorization-code")
                 .state("issued-state")
-                .redirectUri("https://dev.moeasy.kr/oauth/kakao/callback")
                 .build();
         Member member = mock(Member.class);
 
         when(authRedisRepository.getAndDelete("oauth:state:issued-state"))
                 .thenReturn(SocialType.KAKAO.name() + ":" + BROWSER_ID);
-        when(kakaoOAuthClient.getUserId(request.code(), request.redirectUri()))
+        when(kakaoOAuthClient.getUserId(request.code()))
                 .thenReturn("123456789");
         when(memberCommandService.findOrCreateSocialMember(SocialType.KAKAO, "123456789"))
                 .thenReturn(member);
@@ -116,7 +115,6 @@ class AuthCommandServiceTest {
         AuthReqDTO.KakaoLogin request = AuthReqDTO.KakaoLogin.builder()
                 .code("authorization-code")
                 .state("google-state")
-                .redirectUri("https://dev.moeasy.kr/oauth/kakao/callback")
                 .build();
         when(authRedisRepository.getAndDelete("oauth:state:google-state"))
                 .thenReturn(SocialType.GOOGLE.name() + ":" + BROWSER_ID);
@@ -134,13 +132,12 @@ class AuthCommandServiceTest {
         AuthReqDTO.GoogleLogin request = AuthReqDTO.GoogleLogin.builder()
                 .code("authorization-code")
                 .state("issued-state")
-                .redirectUri("https://dev.moeasy.kr/oauth/google/callback")
                 .build();
         Member member = mock(Member.class);
 
         when(authRedisRepository.getAndDelete("oauth:state:issued-state"))
                 .thenReturn(SocialType.GOOGLE.name() + ":" + BROWSER_ID);
-        when(googleOAuthClient.getUserId(request.code(), request.redirectUri()))
+        when(googleOAuthClient.getUserId(request.code()))
                 .thenReturn("google-user-123");
         when(memberCommandService.findOrCreateSocialMember(SocialType.GOOGLE, "google-user-123"))
                 .thenReturn(member);
@@ -159,7 +156,6 @@ class AuthCommandServiceTest {
         AuthReqDTO.GoogleLogin request = AuthReqDTO.GoogleLogin.builder()
                 .code("authorization-code")
                 .state("kakao-state")
-                .redirectUri("https://dev.moeasy.kr/oauth/google/callback")
                 .build();
         when(authRedisRepository.getAndDelete("oauth:state:kakao-state"))
                 .thenReturn(SocialType.KAKAO.name() + ":" + BROWSER_ID);
@@ -177,7 +173,6 @@ class AuthCommandServiceTest {
         AuthReqDTO.KakaoLogin request = AuthReqDTO.KakaoLogin.builder()
                 .code("authorization-code")
                 .state("issued-state")
-                .redirectUri("https://dev.moeasy.kr/oauth/kakao/callback")
                 .build();
         when(authRedisRepository.getAndDelete("oauth:state:issued-state"))
                 .thenReturn(SocialType.KAKAO.name() + ":" + BROWSER_ID);
@@ -188,7 +183,7 @@ class AuthCommandServiceTest {
         );
 
         assertEquals(AuthErrorCode.INVALID_OAUTH_STATE, exception.getCode());
-        verify(kakaoOAuthClient, never()).getUserId(request.code(), request.redirectUri());
+        verify(kakaoOAuthClient, never()).getUserId(request.code());
     }
 
     @Test
@@ -196,7 +191,6 @@ class AuthCommandServiceTest {
         AuthReqDTO.KakaoLogin request = AuthReqDTO.KakaoLogin.builder()
                 .code("authorization-code")
                 .state("issued-state")
-                .redirectUri("https://dev.moeasy.kr/oauth/kakao/callback")
                 .build();
 
         AuthException exception = assertThrows(

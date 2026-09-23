@@ -99,8 +99,7 @@ class AuthControllerTest {
                         .content("""
                                 {
                                   "code": "authorization-code",
-                                  "state": "issued-state",
-                                  "redirectUri": "https://dev.moeasy.kr/oauth/kakao/callback"
+                                  "state": "issued-state"
                                 }
                                 """))
                 .andExpect(status().isOk());
