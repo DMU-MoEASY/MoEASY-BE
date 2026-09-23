@@ -3,7 +3,7 @@ package com.moeasy.moeasybe.domain.auth.dto.request;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 
-public class AuthReqDTO {
+public final class AuthReqDTO {
 
     public record IssueState(
             @Schema(

@@ -1,6 +1,6 @@
 package com.moeasy.moeasybe.domain.auth.dto.response;
 
-public class AuthResDTO {
+public final class AuthResDTO {
 
     public record IssueState(
             String state
