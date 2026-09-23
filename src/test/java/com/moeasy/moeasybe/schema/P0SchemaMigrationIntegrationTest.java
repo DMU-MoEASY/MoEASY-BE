@@ -66,20 +66,29 @@ class P0SchemaMigrationIntegrationTest {
                   AND column_name = 'public_id'
                 """, Integer.class);
 
-        Integer erdMemberColumnCount = jdbcTemplate.queryForObject("""
+        Integer memberColumnCount = jdbcTemplate.queryForObject("""
                 SELECT COUNT(*)
                 FROM information_schema.columns
                 WHERE table_schema = DATABASE()
                   AND table_name = 'member'
-                  AND column_name IN ('social_id', 'social_type', 'profile_image', 'manner_temp')
+                  AND column_name IN ('social_id', 'social_type', 'profile_image_key', 'manner_temp', 'onboarding_completed')
                 """, Integer.class);
 
-        Integer legacyMemberColumnCount = jdbcTemplate.queryForObject("""
+        Integer deprecatedMemberColumnCount = jdbcTemplate.queryForObject("""
                 SELECT COUNT(*)
                 FROM information_schema.columns
                 WHERE table_schema = DATABASE()
                   AND table_name = 'member'
-                  AND column_name IN ('profile_image_key', 'manner_temperature')
+                  AND column_name IN ('profile_image', 'manner_temperature')
+                """, Integer.class);
+
+        Integer nullableNicknameCount = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'member'
+                  AND column_name = 'nickname'
+                  AND is_nullable = 'YES'
                 """, Integer.class);
 
         Integer memberGroupForeignKeyCount = jdbcTemplate.queryForObject("""
@@ -133,8 +142,9 @@ class P0SchemaMigrationIntegrationTest {
         assertThat(socialLoginColumns).isEqualTo(2);
         assertThat(memberIdentityTableCount).isZero();
         assertThat(publicIdColumnCount).isZero();
-        assertThat(erdMemberColumnCount).isEqualTo(4);
-        assertThat(legacyMemberColumnCount).isZero();
+        assertThat(memberColumnCount).isEqualTo(5);
+        assertThat(deprecatedMemberColumnCount).isZero();
+        assertThat(nullableNicknameCount).isEqualTo(1);
         assertThat(memberGroupForeignKeyCount).isEqualTo(9);
         assertThat(foreignKeyCount).isEqualTo(P0_FOREIGN_KEY_COUNT);
         assertThat(nonRestrictForeignKeyCount).isZero();
