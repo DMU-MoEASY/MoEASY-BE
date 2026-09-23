@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.moeasy.moeasybe.domain.member.converter.MemberConverter;
 import com.moeasy.moeasybe.domain.member.entity.Member;
 import com.moeasy.moeasybe.domain.member.enums.SocialType;
 import com.moeasy.moeasybe.domain.member.repository.MemberRepository;
@@ -28,7 +29,7 @@ class MemberCommandServiceTest {
 
     @BeforeEach
     void setUp() {
-        memberCommandService = new MemberCommandService(memberRepository);
+        memberCommandService = new MemberCommandService(memberRepository, new MemberConverter());
     }
 
     @Test

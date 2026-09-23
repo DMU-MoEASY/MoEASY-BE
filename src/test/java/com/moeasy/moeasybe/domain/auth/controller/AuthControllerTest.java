@@ -50,9 +50,12 @@ class AuthControllerTest {
     @Test
     void state_발급시_브라우저_식별_쿠키를_설정한다() {
         when(authCommandService.issueState(eq("KAKAO"), anyString()))
-                .thenReturn(new AuthResDTO.IssueState("issued-state"));
+                .thenReturn(AuthResDTO.IssueState.builder().state("issued-state").build());
 
-        var response = authController.issueState(new AuthReqDTO.IssueState("KAKAO"), null);
+        var response = authController.issueState(
+                AuthReqDTO.IssueState.builder().provider("KAKAO").build(),
+                null
+        );
 
         ArgumentCaptor<String> browserId = ArgumentCaptor.forClass(String.class);
         verify(authCommandService).issueState(eq("KAKAO"), browserId.capture());
@@ -68,9 +71,12 @@ class AuthControllerTest {
     @Test
     void 기존_브라우저_쿠키가_있으면_같은_식별값을_사용한다() {
         when(authCommandService.issueState("GOOGLE", "existing-browser"))
-                .thenReturn(new AuthResDTO.IssueState("issued-state"));
+                .thenReturn(AuthResDTO.IssueState.builder().state("issued-state").build());
 
-        var response = authController.issueState(new AuthReqDTO.IssueState("GOOGLE"), "existing-browser");
+        var response = authController.issueState(
+                AuthReqDTO.IssueState.builder().provider("GOOGLE").build(),
+                "existing-browser"
+        );
 
         verify(authCommandService).issueState("GOOGLE", "existing-browser");
         assertTrue(response.getHeaders().getFirst(HttpHeaders.SET_COOKIE)
@@ -81,7 +87,10 @@ class AuthControllerTest {
     @Test
     void 로그인_HTTP_요청의_쿠키를_서비스에_전달한다() throws Exception {
         when(authCommandService.loginWithKakao(any(AuthReqDTO.KakaoLogin.class), eq("browser-123")))
-                .thenReturn(new AuthResDTO.SocialLogin(7L, true));
+                .thenReturn(AuthResDTO.SocialLogin.builder()
+                        .memberId(7L)
+                        .onboardingCompleted(true)
+                        .build());
         MockMvc mockMvc = MockMvcBuilders.standaloneSetup(authController).build();
 
         mockMvc.perform(post("/api/v1/auth/oauth/kakao")

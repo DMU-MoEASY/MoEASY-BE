@@ -1,12 +1,13 @@
 package com.moeasy.moeasybe.domain.auth.service.command;
 
-import com.moeasy.moeasybe.domain.auth.exception.code.AuthErrorCode;
 import com.moeasy.moeasybe.domain.auth.client.GoogleOAuthClient;
 import com.moeasy.moeasybe.domain.auth.client.KakaoOAuthClient;
 import com.moeasy.moeasybe.domain.auth.config.AuthProperties;
+import com.moeasy.moeasybe.domain.auth.converter.AuthConverter;
 import com.moeasy.moeasybe.domain.auth.dto.request.AuthReqDTO;
 import com.moeasy.moeasybe.domain.auth.dto.response.AuthResDTO;
 import com.moeasy.moeasybe.domain.auth.exception.AuthException;
+import com.moeasy.moeasybe.domain.auth.exception.code.AuthErrorCode;
 import com.moeasy.moeasybe.domain.auth.repository.AuthRedisRepository;
 import com.moeasy.moeasybe.domain.member.entity.Member;
 import com.moeasy.moeasybe.domain.member.enums.SocialType;
@@ -30,6 +31,7 @@ public class AuthCommandService {
 
     private final AuthRedisRepository authRedisRepository;
     private final AuthProperties authProperties;
+    private final AuthConverter authConverter;
     private final KakaoOAuthClient kakaoOAuthClient;
     private final GoogleOAuthClient googleOAuthClient;
     private final MemberCommandService memberCommandService;
@@ -45,7 +47,7 @@ public class AuthCommandService {
             throw new AuthException(AuthErrorCode.OAUTH_STATE_ISSUANCE_FAILED);
         }
 
-        return new AuthResDTO.IssueState(state);
+        return authConverter.toIssueState(state);
     }
 
     public AuthResDTO.SocialLogin loginWithKakao(AuthReqDTO.KakaoLogin request, String browserId) {
@@ -54,10 +56,7 @@ public class AuthCommandService {
         String socialId = kakaoOAuthClient.getUserId(request.code(), request.redirectUri());
         Member member = memberCommandService.findOrCreateSocialMember(SocialType.KAKAO, socialId);
 
-        return new AuthResDTO.SocialLogin(
-                member.getId(),
-                member.isOnboardingCompleted()
-        );
+        return authConverter.toSocialLogin(member);
     }
 
     public AuthResDTO.SocialLogin loginWithGoogle(AuthReqDTO.GoogleLogin request, String browserId) {
@@ -66,10 +65,7 @@ public class AuthCommandService {
         String socialId = googleOAuthClient.getUserId(request.code(), request.redirectUri());
         Member member = memberCommandService.findOrCreateSocialMember(SocialType.GOOGLE, socialId);
 
-        return new AuthResDTO.SocialLogin(
-                member.getId(),
-                member.isOnboardingCompleted()
-        );
+        return authConverter.toSocialLogin(member);
     }
 
     private void validateAndConsumeState(String state, SocialType expectedProvider, String browserId) {
