@@ -15,13 +15,8 @@ public class MemberCommandService {
 
     @Transactional
     public Member findOrCreateSocialMember(SocialType socialType, String socialId) {
+        memberRepository.insertSocialMemberIfAbsent(socialType.name(), socialId);
         return memberRepository.findBySocialTypeAndSocialId(socialType, socialId)
-                .orElseGet(() -> {
-                    Member member = Member.builder()
-                            .socialType(socialType)
-                            .socialId(socialId)
-                            .build();
-                    return memberRepository.save(member);
-                });
+                .orElseThrow(() -> new IllegalStateException("소셜 회원을 조회할 수 없습니다."));
     }
 }

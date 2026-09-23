@@ -32,6 +32,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class AuthCommandServiceTest {
 
     private static final Duration STATE_EXPIRATION = Duration.ofMinutes(5);
+    private static final String CORRELATION_ID = "browser-correlation-id-0123456789abcdef";
 
     @Mock
     private AuthRedisRepository authRedisRepository;
@@ -60,12 +61,12 @@ class AuthCommandServiceTest {
 
     @Test
     void 카카오_state를_발급하고_Redis에_저장한다() {
-        AuthResDTO.IssueState response = authCommandService.issueState("KAKAO");
+        AuthResDTO.IssueState response = authCommandService.issueState("KAKAO", CORRELATION_ID);
 
         ArgumentCaptor<String> stateCaptor = ArgumentCaptor.forClass(String.class);
         verify(authRedisRepository).save(
                 stateCaptor.capture(),
-                eq(SocialType.KAKAO.name()),
+                eq(SocialType.KAKAO.name() + "\n" + CORRELATION_ID),
                 eq(STATE_EXPIRATION)
         );
         assertEquals("oauth:state:" + response.state(), stateCaptor.getValue());
@@ -76,7 +77,7 @@ class AuthCommandServiceTest {
     void 지원하지_않는_제공자는_인증_예외를_던진다() {
         AuthException exception = assertThrows(
                 AuthException.class,
-                () -> authCommandService.issueState("NAVER")
+                () -> authCommandService.issueState("NAVER", CORRELATION_ID)
         );
 
         assertEquals(AuthErrorCode.UNSUPPORTED_OAUTH_PROVIDER, exception.getCode());
@@ -87,12 +88,13 @@ class AuthCommandServiceTest {
         AuthReqDTO.KakaoLogin request = new AuthReqDTO.KakaoLogin(
                 "authorization-code",
                 "issued-state",
-                "https://dev.moeasy.kr/oauth/kakao/callback"
+                "https://dev.moeasy.kr/oauth/kakao/callback",
+                CORRELATION_ID
         );
         Member member = mock(Member.class);
 
         when(authRedisRepository.getAndDelete("oauth:state:issued-state"))
-                .thenReturn(SocialType.KAKAO.name());
+                .thenReturn(SocialType.KAKAO.name() + "\n" + CORRELATION_ID);
         when(kakaoOAuthClient.getUserId(request.code(), request.redirectUri()))
                 .thenReturn("123456789");
         when(memberCommandService.findOrCreateSocialMember(SocialType.KAKAO, "123456789"))
@@ -112,10 +114,11 @@ class AuthCommandServiceTest {
         AuthReqDTO.KakaoLogin request = new AuthReqDTO.KakaoLogin(
                 "authorization-code",
                 "google-state",
-                "https://dev.moeasy.kr/oauth/kakao/callback"
+                "https://dev.moeasy.kr/oauth/kakao/callback",
+                CORRELATION_ID
         );
         when(authRedisRepository.getAndDelete("oauth:state:google-state"))
-                .thenReturn(SocialType.GOOGLE.name());
+                .thenReturn(SocialType.GOOGLE.name() + "\n" + CORRELATION_ID);
 
         AuthException exception = assertThrows(
                 AuthException.class,
@@ -130,12 +133,13 @@ class AuthCommandServiceTest {
         AuthReqDTO.GoogleLogin request = new AuthReqDTO.GoogleLogin(
                 "authorization-code",
                 "issued-state",
-                "https://dev.moeasy.kr/oauth/google/callback"
+                "https://dev.moeasy.kr/oauth/google/callback",
+                CORRELATION_ID
         );
         Member member = mock(Member.class);
 
         when(authRedisRepository.getAndDelete("oauth:state:issued-state"))
-                .thenReturn(SocialType.GOOGLE.name());
+                .thenReturn(SocialType.GOOGLE.name() + "\n" + CORRELATION_ID);
         when(googleOAuthClient.getUserId(request.code(), request.redirectUri()))
                 .thenReturn("google-user-123");
         when(memberCommandService.findOrCreateSocialMember(SocialType.GOOGLE, "google-user-123"))
@@ -155,14 +159,34 @@ class AuthCommandServiceTest {
         AuthReqDTO.GoogleLogin request = new AuthReqDTO.GoogleLogin(
                 "authorization-code",
                 "kakao-state",
-                "https://dev.moeasy.kr/oauth/google/callback"
+                "https://dev.moeasy.kr/oauth/google/callback",
+                CORRELATION_ID
         );
         when(authRedisRepository.getAndDelete("oauth:state:kakao-state"))
-                .thenReturn(SocialType.KAKAO.name());
+                .thenReturn(SocialType.KAKAO.name() + "\n" + CORRELATION_ID);
 
         AuthException exception = assertThrows(
                 AuthException.class,
                 () -> authCommandService.loginWithGoogle(request)
+        );
+
+        assertEquals(AuthErrorCode.INVALID_OAUTH_STATE, exception.getCode());
+    }
+
+    @Test
+    void 다른_브라우저의_상관값으로_로그인을_요청하면_거부한다() {
+        AuthReqDTO.KakaoLogin request = new AuthReqDTO.KakaoLogin(
+                "authorization-code",
+                "issued-state",
+                "https://dev.moeasy.kr/oauth/kakao/callback",
+                "different-browser-correlation-0123456789"
+        );
+        when(authRedisRepository.getAndDelete("oauth:state:issued-state"))
+                .thenReturn(SocialType.KAKAO.name() + "\n" + CORRELATION_ID);
+
+        AuthException exception = assertThrows(
+                AuthException.class,
+                () -> authCommandService.loginWithKakao(request)
         );
 
         assertEquals(AuthErrorCode.INVALID_OAUTH_STATE, exception.getCode());

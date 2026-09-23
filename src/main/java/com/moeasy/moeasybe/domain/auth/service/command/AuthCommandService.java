@@ -27,6 +27,7 @@ public class AuthCommandService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int STATE_BYTE_LENGTH = 32;
     private static final String STATE_KEY_PREFIX = "oauth:state:";
+    private static final String STATE_BINDING_SEPARATOR = "\n";
 
     private final AuthRedisRepository authRedisRepository;
     private final AuthProperties authProperties;
@@ -34,12 +35,16 @@ public class AuthCommandService {
     private final GoogleOAuthClient googleOAuthClient;
     private final MemberCommandService memberCommandService;
 
-    public AuthResDTO.IssueState issueState(String providerName) {
+    public AuthResDTO.IssueState issueState(String providerName, String correlationId) {
         SocialType provider = parseProvider(providerName);
         String state = generateState();
 
         try {
-            authRedisRepository.save(stateKey(state), provider.name(), authProperties.expiration());
+            authRedisRepository.save(
+                    stateKey(state),
+                    stateBinding(provider, correlationId),
+                    authProperties.expiration()
+            );
         } catch (DataAccessException ex) {
             log.error("OAuth state를 Redis에 저장하지 못했습니다. provider={}", provider, ex);
             throw new AuthException(AuthErrorCode.OAUTH_STATE_ISSUANCE_FAILED);
@@ -49,7 +54,7 @@ public class AuthCommandService {
     }
 
     public AuthResDTO.SocialLogin loginWithKakao(AuthReqDTO.KakaoLogin request) {
-        validateAndConsumeState(request.state(), SocialType.KAKAO);
+        validateAndConsumeState(request.state(), SocialType.KAKAO, request.correlationId());
 
         String socialId = kakaoOAuthClient.getUserId(request.code(), request.redirectUri());
         Member member = memberCommandService.findOrCreateSocialMember(SocialType.KAKAO, socialId);
@@ -61,7 +66,7 @@ public class AuthCommandService {
     }
 
     public AuthResDTO.SocialLogin loginWithGoogle(AuthReqDTO.GoogleLogin request) {
-        validateAndConsumeState(request.state(), SocialType.GOOGLE);
+        validateAndConsumeState(request.state(), SocialType.GOOGLE, request.correlationId());
 
         String socialId = googleOAuthClient.getUserId(request.code(), request.redirectUri());
         Member member = memberCommandService.findOrCreateSocialMember(SocialType.GOOGLE, socialId);
@@ -72,16 +77,20 @@ public class AuthCommandService {
         );
     }
 
-    private void validateAndConsumeState(String state, SocialType expectedProvider) {
-        String savedProvider;
+    private void validateAndConsumeState(
+            String state,
+            SocialType expectedProvider,
+            String correlationId
+    ) {
+        String savedBinding;
         try {
-            savedProvider = authRedisRepository.getAndDelete(stateKey(state));
+            savedBinding = authRedisRepository.getAndDelete(stateKey(state));
         } catch (DataAccessException ex) {
             log.error("OAuth state를 Redis에서 확인하지 못했습니다. provider={}", expectedProvider, ex);
             throw new AuthException(AuthErrorCode.OAUTH_STATE_VERIFICATION_FAILED);
         }
 
-        if (!expectedProvider.name().equals(savedProvider)) {
+        if (!stateBinding(expectedProvider, correlationId).equals(savedBinding)) {
             throw new AuthException(AuthErrorCode.INVALID_OAUTH_STATE);
         }
     }
@@ -106,5 +115,9 @@ public class AuthCommandService {
 
     private String stateKey(String state) {
         return STATE_KEY_PREFIX + state;
+    }
+
+    private String stateBinding(SocialType provider, String correlationId) {
+        return provider.name() + STATE_BINDING_SEPARATOR + correlationId;
     }
 }

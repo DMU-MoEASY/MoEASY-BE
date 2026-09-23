@@ -2,6 +2,7 @@ package com.moeasy.moeasybe.domain.auth.dto.request;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 public class AuthReqDTO {
 
@@ -12,7 +13,12 @@ public class AuthReqDTO {
                     example = "KAKAO"
             )
             @NotBlank(message = "provider는 필수입니다.")
-            String provider
+            String provider,
+
+            @Schema(description = "로그인을 시작한 브라우저를 식별하는 일회성 상관값")
+            @NotBlank(message = "correlationId는 필수입니다.")
+            @Size(min = 32, max = 128, message = "correlationId는 32자 이상 128자 이하여야 합니다.")
+            String correlationId
     ) {
     }
 
@@ -30,7 +36,12 @@ public class AuthReqDTO {
                     example = "https://dev.moeasy.kr/oauth/kakao/callback"
             )
             @NotBlank(message = "redirectUri는 필수입니다.")
-            String redirectUri
+            String redirectUri,
+
+            @Schema(description = "state 발급 요청에 사용한 브라우저 상관값")
+            @NotBlank(message = "correlationId는 필수입니다.")
+            @Size(min = 32, max = 128, message = "correlationId는 32자 이상 128자 이하여야 합니다.")
+            String correlationId
     ) {
     }
 
@@ -48,7 +59,12 @@ public class AuthReqDTO {
                     example = "https://dev.moeasy.kr/oauth/google/callback"
             )
             @NotBlank(message = "redirectUri는 필수입니다.")
-            String redirectUri
+            String redirectUri,
+
+            @Schema(description = "state 발급 요청에 사용한 브라우저 상관값")
+            @NotBlank(message = "correlationId는 필수입니다.")
+            @Size(min = 32, max = 128, message = "correlationId는 32자 이상 128자 이하여야 합니다.")
+            String correlationId
     ) {
     }
 }

@@ -118,6 +118,9 @@ oauth:
     token-uri: ${GOOGLE_TOKEN_URI:https://oauth2.googleapis.com/token}
     user-info-uri: ${GOOGLE_USER_INFO_URI:https://openidconnect.googleapis.com/v1/userinfo}
 
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174}
+
 # FCM 푸시 알림 설정.
 # 비공개 키 경로는 설정 파일에 저장하지 않고 GOOGLE_APPLICATION_CREDENTIALS로 주입한다.
 # 키가 없는 로컬·테스트·CI 환경이 부팅할 수 있도록 기본은 비활성화한다.

@@ -25,7 +25,10 @@ public class AuthController implements AuthControllerDocs {
     public ResponseEntity<ApiResponse<AuthResDTO.IssueState>> issueState(
             @Valid @RequestBody AuthReqDTO.IssueState request
     ) {
-        AuthResDTO.IssueState response = authCommandService.issueState(request.provider());
+        AuthResDTO.IssueState response = authCommandService.issueState(
+                request.provider(),
+                request.correlationId()
+        );
 
         return ResponseEntity.status(AuthSuccessCode.OAUTH_STATE_ISSUED.getStatus())
                 .body(ApiResponse.onSuccess(AuthSuccessCode.OAUTH_STATE_ISSUED, response));

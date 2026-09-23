@@ -105,7 +105,8 @@ public interface AuthControllerDocs {
                             ),
                             examples = @ExampleObject(value = """
                                     {
-                                      "provider": "KAKAO"
+                                      "provider": "KAKAO",
+                                      "correlationId": "browser-correlation-id-0123456789abcdef"
                                     }
                                     """)
                     )
@@ -241,7 +242,8 @@ public interface AuthControllerDocs {
                                     {
                                       "code": "SplxlOBeZQQYbYS6WxSbIA",
                                       "state": "N9a1JxD_Cnqezcvx0W86-RQj8Fsvf1mJqYp0r2LhK0w",
-                                      "redirectUri": "https://dev.moeasy.kr/oauth/kakao/callback"
+                                      "redirectUri": "https://dev.moeasy.kr/oauth/kakao/callback",
+                                      "correlationId": "browser-correlation-id-0123456789abcdef"
                                     }
                                     """)
                     )
@@ -377,7 +379,8 @@ public interface AuthControllerDocs {
                                     {
                                       "code": "4/0AcvDMr...",
                                       "state": "N9a1JxD_Cnqezcvx0W86-RQj8Fsvf1mJqYp0r2LhK0w",
-                                      "redirectUri": "https://dev.moeasy.kr/oauth/google/callback"
+                                      "redirectUri": "https://dev.moeasy.kr/oauth/google/callback",
+                                      "correlationId": "browser-correlation-id-0123456789abcdef"
                                     }
                                     """)
                     )
