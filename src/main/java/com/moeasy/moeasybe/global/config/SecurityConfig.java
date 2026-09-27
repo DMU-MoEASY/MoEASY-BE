@@ -2,6 +2,7 @@ package com.moeasy.moeasybe.global.config;
 
 import com.moeasy.moeasybe.global.apiPayload.code.GeneralErrorCode;
 import com.moeasy.moeasybe.global.security.SecurityErrorResponseWriter;
+import com.moeasy.moeasybe.global.security.SecurityRequestMatchers;
 import com.moeasy.moeasybe.global.security.jwt.JwtAuthenticationFilter;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -50,19 +51,7 @@ public class SecurityConfig {
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .logout(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers(
-                                "/api/v1/auth/csrf",
-                                "/api/v1/auth/oauth/states",
-                                "/api/v1/auth/oauth/kakao",
-                                "/api/v1/auth/oauth/google",
-                                "/api/v1/auth/reissue",
-                                "/api/v1/auth/logout",
-                                "/swagger-ui.html",
-                                "/swagger-ui/**",
-                                "/v3/api-docs/**",
-                                "/actuator/health",
-                                "/actuator/health/**"
-                        ).permitAll()
+                        .requestMatchers(SecurityRequestMatchers.PUBLIC_ENDPOINTS).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptions -> exceptions

@@ -3,6 +3,7 @@ package com.moeasy.moeasybe.global.security.jwt;
 import com.moeasy.moeasybe.domain.auth.config.AuthCookieNames;
 import com.moeasy.moeasybe.global.apiPayload.code.GeneralErrorCode;
 import com.moeasy.moeasybe.global.security.SecurityErrorResponseWriter;
+import com.moeasy.moeasybe.global.security.SecurityRequestMatchers;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
@@ -24,28 +25,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private static final List<String> PUBLIC_PATHS = List.of(
-            "/api/v1/auth/csrf",
-            "/api/v1/auth/oauth/states",
-            "/api/v1/auth/oauth/kakao",
-            "/api/v1/auth/oauth/google",
-            "/api/v1/auth/reissue",
-            "/api/v1/auth/logout",
-            "/swagger-ui.html",
-            "/actuator/health"
-    );
-
     private final JwtTokenProvider jwtTokenProvider;
     private final SecurityErrorResponseWriter responseWriter;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getServletPath();
-        return PUBLIC_PATHS.contains(path)
-                || path.startsWith("/swagger-ui/")
-                || path.startsWith("/v3/api-docs/")
-                || "/v3/api-docs".equals(path)
-                || path.startsWith("/actuator/health/");
+        return SecurityRequestMatchers.PUBLIC_ENDPOINTS.matches(request);
     }
 
     @Override
