@@ -8,13 +8,17 @@ Set `SPRING_PROFILES_ACTIVE=prod` and provide the application connection values:
 
 - `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` for the `moeasy` MySQL database.
 - `REDIS_HOST`, `REDIS_PORT`, and `REDIS_PASSWORD` for the Redis service.
-- `JWT_SECRET` for token signing.
+- `JWT_SECRET` for HS256 token signing. Use a random value of at least 32 UTF-8 bytes.
+- `COOKIE_SECURE=true` and `COOKIE_SAME_SITE=None` for the HTTPS cross-site frontend. Local development defaults to `false` and `Lax`.
+- `CORS_ALLOWED_ORIGINS` with the exact frontend origin(s), comma-separated when there is more than one. Do not use `*` because credentialed cookie requests are enabled.
 - `AWS_REGION` and `AWS_S3_BUCKET` for the private S3 bucket.
 - `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` for the Raspberry Pi development IAM user. Keep these values only in `deploy/.env` on the server.
 - `OPENAI_API_KEY` for AI review and `PORTONE_API_SECRET`, `PORTONE_STORE_ID`, and `PORTONE_CHANNEL_KEY` for payments when those features are enabled.
 - OAuth and optional feature values such as `KAKAO_REST_API_KEY`, `KAKAO_CLIENT_SECRET`, `KAKAO_REDIRECT_URI`, `GOOGLE_WEB_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, and `FCM_ENABLED` as required by the deployment. Each redirect URI must exactly match the URI used by the frontend when requesting the provider authorization code.
 
 The Spring Boot container receives the Raspberry Pi credentials through `deploy/.env` and the AWS SDK default credential provider chain. Do not place them in the image, application YAML, or repository.
+
+The browser obtains a CSRF token from `GET /api/v1/auth/csrf` before sending state-changing requests. It must include the returned token in the `X-XSRF-TOKEN` header; the browser sends the matching CSRF cookie and the HttpOnly authentication cookies when requests use credentials.
 
 ## S3 bucket baseline
 

@@ -1,10 +1,12 @@
 package com.moeasy.moeasybe.domain.auth.controller;
 
+import com.moeasy.moeasybe.domain.auth.config.AuthCookieNames;
 import com.moeasy.moeasybe.domain.auth.dto.request.AuthReqDTO;
 import com.moeasy.moeasybe.domain.auth.dto.response.AuthResDTO;
 import com.moeasy.moeasybe.global.apiPayload.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -13,15 +15,53 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.web.csrf.CsrfToken;
 
 @Tag(name = "Auth", description = "인증/로그인 관련 API")
 public interface AuthControllerDocs {
 
     @Operation(
+            summary = "CSRF 토큰 발급",
+            description = "쿠키 기반 인증 요청에 사용할 CSRF 토큰을 발급합니다. "
+                    + "응답의 token을 이후 상태 변경 요청의 X-XSRF-TOKEN 헤더에 전달해야 합니다."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "CSRF 토큰 발급 성공. XSRF-TOKEN 쿠키도 설정됩니다.",
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": true,
+                                      "code": "AUTH200_5",
+                                      "message": "CSRF 토큰을 발급했습니다.",
+                                      "result": {
+                                        "token": "csrf-token-value",
+                                        "headerName": "X-XSRF-TOKEN"
+                                      }
+                                    }
+                                    """)
+                    )
+            )
+    })
+    ResponseEntity<ApiResponse<AuthResDTO.Csrf>> getCsrfToken(
+            @Parameter(hidden = true) CsrfToken csrfToken
+    );
+
+    @Operation(
             summary = "소셜 로그인 state 발급",
+            parameters = @Parameter(
+                    name = "X-XSRF-TOKEN",
+                    in = ParameterIn.HEADER,
+                    description = "GET /api/v1/auth/csrf 응답의 result.token 값",
+                    required = true
+            ),
             description = "소셜 로그인 요청에 사용할 일회성 state를 발급합니다. "
                     + "provider에는 KAKAO 또는 GOOGLE을 전달해야 하며, 발급된 state는 5분 동안 Redis에 저장됩니다. "
                     + "응답의 HttpOnly 쿠키는 로그인 요청을 시작한 브라우저를 식별하며, 로그인 요청 때 자동으로 전송되어야 합니다."
+                    + " 먼저 GET /api/v1/auth/csrf로 CSRF 토큰을 받은 뒤, 이 POST 요청에 X-XSRF-TOKEN 헤더로 전달해야 합니다."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -118,13 +158,20 @@ public interface AuthControllerDocs {
 
     @Operation(
             summary = "카카오 로그인",
+            parameters = @Parameter(
+                    name = "X-XSRF-TOKEN",
+                    in = ParameterIn.HEADER,
+                    description = "GET /api/v1/auth/csrf 응답의 result.token 값",
+                    required = true
+            ),
             description = "프론트엔드가 카카오에서 받은 인가 코드를 백엔드가 액세스 토큰으로 교환하고, "
                     + "카카오 사용자 ID를 기준으로 회원을 조회하거나 생성합니다. "
                     + "state는 발급 시 KAKAO로 저장된 값이어야 하며 검증과 동시에 삭제되어 한 번만 사용할 수 있습니다. "
                     + "state 발급 응답의 HttpOnly 쿠키가 같은 브라우저에서 함께 전송되어야 합니다. "
+                    + "POST 요청에는 GET /api/v1/auth/csrf 응답의 CSRF 토큰을 X-XSRF-TOKEN 헤더로 전달해야 합니다. "
                     + "토큰 교환에 사용하는 redirect_uri는 백엔드의 KAKAO_REDIRECT_URI 환경변수 값이며, "
                     + "카카오 인가 코드 요청에 사용한 redirect_uri와 완전히 같아야 합니다. "
-                    + "이번 API는 서비스 JWT를 발급하지 않습니다."
+                    + "로그인 성공 시 Access Token과 Refresh Token을 HttpOnly 쿠키로 설정합니다."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -256,13 +303,20 @@ public interface AuthControllerDocs {
 
     @Operation(
             summary = "구글 로그인",
+            parameters = @Parameter(
+                    name = "X-XSRF-TOKEN",
+                    in = ParameterIn.HEADER,
+                    description = "GET /api/v1/auth/csrf 응답의 result.token 값",
+                    required = true
+            ),
             description = "프론트엔드가 구글에서 받은 인가 코드를 백엔드가 액세스 토큰으로 교환하고, "
                     + "구글 사용자 ID(sub)를 기준으로 회원을 조회하거나 생성합니다. "
                     + "state는 발급 시 GOOGLE로 저장된 값이어야 하며 검증과 동시에 삭제되어 한 번만 사용할 수 있습니다. "
                     + "state 발급 응답의 HttpOnly 쿠키가 같은 브라우저에서 함께 전송되어야 합니다. "
+                    + "POST 요청에는 GET /api/v1/auth/csrf 응답의 CSRF 토큰을 X-XSRF-TOKEN 헤더로 전달해야 합니다. "
                     + "토큰 교환에 사용하는 redirect_uri는 백엔드의 GOOGLE_REDIRECT_URI 환경변수 값이며, "
                     + "구글 인가 코드 요청에 사용한 redirect_uri와 완전히 같아야 합니다. "
-                    + "이번 API는 서비스 JWT를 발급하지 않습니다."
+                    + "로그인 성공 시 Access Token과 Refresh Token을 HttpOnly 쿠키로 설정합니다."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -390,5 +444,60 @@ public interface AuthControllerDocs {
             )
             @Valid @org.springframework.web.bind.annotation.RequestBody AuthReqDTO.GoogleLogin request,
             @Parameter(hidden = true) String browserId
+    );
+
+    @Operation(
+            summary = "토큰 재발급",
+            parameters = @Parameter(
+                    name = "X-XSRF-TOKEN",
+                    in = ParameterIn.HEADER,
+                    description = "GET /api/v1/auth/csrf 응답의 result.token 값",
+                    required = true
+            ),
+            description = "Refresh Token 쿠키를 검증하고 Redis에 저장된 토큰 식별 정보를 교체한 뒤, "
+                    + "새 Access Token과 Refresh Token을 HttpOnly 쿠키로 설정합니다. "
+                    + "요청에는 X-XSRF-TOKEN 헤더를 포함해야 합니다."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "Access Token과 Refresh Token 재발급 성공"
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "Refresh Token이 없거나 만료·폐기됨"
+            )
+    })
+    ResponseEntity<ApiResponse<Void>> reissue(
+            @Parameter(hidden = true)
+            @org.springframework.web.bind.annotation.CookieValue(
+                    value = AuthCookieNames.REFRESH_TOKEN,
+                    required = false
+            ) String refreshToken
+    );
+
+    @Operation(
+            summary = "로그아웃",
+            parameters = @Parameter(
+                    name = "X-XSRF-TOKEN",
+                    in = ParameterIn.HEADER,
+                    description = "GET /api/v1/auth/csrf 응답의 result.token 값",
+                    required = true
+            ),
+            description = "Refresh Token을 Redis에서 폐기하고 Access Token 및 Refresh Token 쿠키를 만료 처리합니다. "
+                    + "요청에는 X-XSRF-TOKEN 헤더를 포함해야 합니다."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "로그아웃 성공 및 인증 쿠키 만료"
+            )
+    })
+    ResponseEntity<ApiResponse<Void>> logout(
+            @Parameter(hidden = true)
+            @org.springframework.web.bind.annotation.CookieValue(
+                    value = AuthCookieNames.REFRESH_TOKEN,
+                    required = false
+            ) String refreshToken
     );
 }

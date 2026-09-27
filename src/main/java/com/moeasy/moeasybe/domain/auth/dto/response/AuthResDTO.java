@@ -18,4 +18,11 @@ public final class AuthResDTO {
             boolean onboardingCompleted
     ) {
     }
+
+    @Builder
+    public record Csrf(
+            String token,
+            String headerName
+    ) {
+    }
 }

@@ -16,7 +16,9 @@ public enum AuthErrorCode implements BaseErrorCode {
     GOOGLE_AUTHENTICATION_FAILED(HttpStatus.UNAUTHORIZED, "AUTH401_4", "구글 인증에 실패했습니다."),
     KAKAO_SERVER_ERROR(HttpStatus.BAD_GATEWAY, "AUTH502_1", "카카오 로그인 서버와 통신하지 못했습니다."),
     GOOGLE_SERVER_ERROR(HttpStatus.BAD_GATEWAY, "AUTH502_2", "구글 로그인 서버와 통신하지 못했습니다."),
-    OAUTH_STATE_VERIFICATION_FAILED(HttpStatus.SERVICE_UNAVAILABLE, "AUTH503_2", "소셜 로그인 요청을 확인할 수 없습니다.");
+    OAUTH_STATE_VERIFICATION_FAILED(HttpStatus.SERVICE_UNAVAILABLE, "AUTH503_2", "소셜 로그인 요청을 확인할 수 없습니다."),
+    INVALID_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "AUTH401_5", "유효하지 않거나 만료된 Refresh Token입니다."),
+    REFRESH_TOKEN_STORAGE_FAILED(HttpStatus.SERVICE_UNAVAILABLE, "AUTH503_3", "토큰 인증 정보를 처리할 수 없습니다.");
 
     private final HttpStatus status;
     private final String code;
