@@ -14,9 +14,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.moeasy.moeasybe.domain.auth.config.AuthProperties;
 import com.moeasy.moeasybe.domain.auth.dto.request.AuthReqDTO;
 import com.moeasy.moeasybe.domain.auth.dto.response.AuthResDTO;
+import com.moeasy.moeasybe.domain.auth.service.result.AuthSession;
+import com.moeasy.moeasybe.domain.auth.service.result.AuthTokenPair;
 import com.moeasy.moeasybe.domain.auth.service.command.AuthCommandService;
 import com.moeasy.moeasybe.global.config.CookieProperties;
 import com.moeasy.moeasybe.global.security.util.CookieUtil;
+import com.moeasy.moeasybe.global.security.jwt.IssuedJwt;
 import jakarta.servlet.http.Cookie;
 import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
@@ -87,10 +90,16 @@ class AuthControllerTest {
     @Test
     void 로그인_HTTP_요청의_쿠키를_서비스에_전달한다() throws Exception {
         when(authCommandService.loginWithKakao(any(AuthReqDTO.KakaoLogin.class), eq("browser-123")))
-                .thenReturn(AuthResDTO.SocialLogin.builder()
-                        .memberId(7L)
-                        .onboardingCompleted(true)
-                        .build());
+                .thenReturn(new AuthSession(
+                        AuthResDTO.SocialLogin.builder()
+                                .memberId(7L)
+                                .onboardingCompleted(true)
+                                .build(),
+                        new AuthTokenPair(
+                                new IssuedJwt("access-value", "access-id", Duration.ofMinutes(5)),
+                                new IssuedJwt("refresh-value", "refresh-id", Duration.ofDays(14))
+                        )
+                ));
         MockMvc mockMvc = MockMvcBuilders.standaloneSetup(authController).build();
 
         mockMvc.perform(post("/api/v1/auth/oauth/kakao")
@@ -105,5 +114,59 @@ class AuthControllerTest {
                 .andExpect(status().isOk());
 
         verify(authCommandService).loginWithKakao(any(AuthReqDTO.KakaoLogin.class), eq("browser-123"));
+    }
+
+    @Test
+    void 소셜_로그인_성공시_두_토큰을_HttpOnly_쿠키로_전달한다() {
+        when(authCommandService.loginWithKakao(any(AuthReqDTO.KakaoLogin.class), eq("browser-123")))
+                .thenReturn(new AuthSession(
+                        AuthResDTO.SocialLogin.builder().memberId(7L).onboardingCompleted(true).build(),
+                        new AuthTokenPair(
+                                new IssuedJwt("access-value", "access-id", Duration.ofMinutes(5)),
+                                new IssuedJwt("refresh-value", "refresh-id", Duration.ofDays(14))
+                        )
+                ));
+
+        var response = authController.loginWithKakao(
+                AuthReqDTO.KakaoLogin.builder().code("code").state("state").build(),
+                "browser-123"
+        );
+
+        var cookies = response.getHeaders().get(HttpHeaders.SET_COOKIE);
+        assertNotNull(cookies);
+        assertEquals(2, cookies.size());
+        assertTrue(cookies.stream().anyMatch(cookie -> cookie.startsWith("moeasy_access_token=access-value")));
+        assertTrue(cookies.stream().anyMatch(cookie -> cookie.startsWith("moeasy_refresh_token=refresh-value")));
+        assertTrue(cookies.stream().allMatch(cookie -> cookie.contains("HttpOnly")));
+        assertTrue(cookies.stream().anyMatch(cookie -> cookie.contains("Path=/api/v1;")));
+        assertTrue(cookies.stream().anyMatch(cookie -> cookie.contains("Path=/api/v1/auth;")));
+    }
+
+    @Test
+    void 토큰_재발급시_두_개의_인증_쿠키를_교체한다() {
+        when(authCommandService.reissue("old-refresh"))
+                .thenReturn(new AuthTokenPair(
+                        new IssuedJwt("new-access", "new-access-id", Duration.ofMinutes(5)),
+                        new IssuedJwt("new-refresh", "new-refresh-id", Duration.ofDays(14))
+                ));
+
+        var response = authController.reissue("old-refresh");
+
+        var cookies = response.getHeaders().get(HttpHeaders.SET_COOKIE);
+        assertNotNull(cookies);
+        assertEquals(2, cookies.size());
+        assertTrue(cookies.stream().anyMatch(cookie -> cookie.startsWith("moeasy_access_token=new-access")));
+        assertTrue(cookies.stream().anyMatch(cookie -> cookie.startsWith("moeasy_refresh_token=new-refresh")));
+    }
+
+    @Test
+    void 로그아웃시_Refresh_Token을_폐기하고_인증_쿠키를_만료한다() {
+        var response = authController.logout("refresh-value");
+        verify(authCommandService).logout("refresh-value");
+
+        var cookies = response.getHeaders().get(HttpHeaders.SET_COOKIE);
+        assertNotNull(cookies);
+        assertEquals(2, cookies.size());
+        assertTrue(cookies.stream().allMatch(cookie -> cookie.contains("Max-Age=0")));
     }
 }
