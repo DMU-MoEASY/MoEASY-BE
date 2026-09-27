@@ -461,11 +461,67 @@ public interface AuthControllerDocs {
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "200",
-                    description = "Access Token과 Refresh Token 재발급 성공"
+                    description = "Access Token과 Refresh Token 재발급 성공. 두 토큰은 Set-Cookie 응답 헤더로 전달됩니다.",
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": true,
+                                      "code": "AUTH200_3",
+                                      "message": "토큰을 재발급했습니다.",
+                                      "result": null
+                                    }
+                                    """)
+                    )
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",
-                    description = "Refresh Token이 없거나 만료·폐기됨"
+                    description = "Refresh Token이 없거나 만료·폐기됨",
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": false,
+                                      "code": "AUTH401_5",
+                                      "message": "유효하지 않거나 만료된 Refresh Token입니다.",
+                                      "result": null
+                                    }
+                                    """)
+                    )
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "CSRF 토큰 검증 실패",
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": false,
+                                      "code": "AUTH403_1",
+                                      "message": "요청이 거부되었습니다.",
+                                      "result": null
+                                    }
+                                    """)
+                    )
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "503",
+                    description = "Redis 토큰 정보 처리 실패",
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": false,
+                                      "code": "AUTH503_3",
+                                      "message": "토큰 인증 정보를 처리할 수 없습니다.",
+                                      "result": null
+                                    }
+                                    """)
+                    )
             )
     })
     ResponseEntity<ApiResponse<Void>> reissue(
@@ -490,7 +546,51 @@ public interface AuthControllerDocs {
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "200",
-                    description = "로그아웃 성공 및 인증 쿠키 만료"
+                    description = "로그아웃 성공. Access Token과 Refresh Token 쿠키가 만료되며, 응답 본문은 아래와 같습니다.",
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": true,
+                                      "code": "AUTH200_4",
+                                      "message": "로그아웃에 성공했습니다.",
+                                      "result": null
+                                    }
+                                    """)
+                    )
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "CSRF 토큰 검증 실패",
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": false,
+                                      "code": "AUTH403_1",
+                                      "message": "요청이 거부되었습니다.",
+                                      "result": null
+                                    }
+                                    """)
+                    )
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "503",
+                    description = "Redis에서 Refresh Token 삭제 실패",
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "isSuccess": false,
+                                      "code": "AUTH503_3",
+                                      "message": "토큰 인증 정보를 처리할 수 없습니다.",
+                                      "result": null
+                                    }
+                                    """)
+                    )
             )
     })
     ResponseEntity<ApiResponse<Void>> logout(
