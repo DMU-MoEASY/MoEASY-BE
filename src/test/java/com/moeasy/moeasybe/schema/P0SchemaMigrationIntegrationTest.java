@@ -59,10 +59,11 @@ class P0SchemaMigrationIntegrationTest {
                   AND table_name = 'member_identity'
                 """, Integer.class);
 
-        Integer publicIdColumnCount = jdbcTemplate.queryForObject("""
+        Integer groupPublicIdColumnCount = jdbcTemplate.queryForObject("""
                 SELECT COUNT(*)
                 FROM information_schema.columns
                 WHERE table_schema = DATABASE()
+                  AND table_name = 'member_group'
                   AND column_name = 'public_id'
                 """, Integer.class);
 
@@ -141,7 +142,7 @@ class P0SchemaMigrationIntegrationTest {
         assertThat(socialIdentityIndexCount).isEqualTo(1);
         assertThat(socialLoginColumns).isEqualTo(2);
         assertThat(memberIdentityTableCount).isZero();
-        assertThat(publicIdColumnCount).isZero();
+        assertThat(groupPublicIdColumnCount).isZero();
         assertThat(memberColumnCount).isEqualTo(5);
         assertThat(deprecatedMemberColumnCount).isZero();
         assertThat(nullableNicknameCount).isEqualTo(1);

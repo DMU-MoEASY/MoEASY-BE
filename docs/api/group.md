@@ -4,7 +4,7 @@
 
 Group API의 공통 접두사는 `/api/v1`이다. 아래 표의 `/groups` 경로에는 모두 이 접두사가 적용된다. Issue #14는 아래 네 API만 구현한다. 목록·검색·가입·초대 및 참여/미참여 조회는 [후속 범위](#후속-범위)에 보존한다.
 
-- Group의 외부 식별자 `groupId`는 `member_group.id`에 대응하는 양의 정수다. UUID `public_id`를 사용하지 않는다.
+- Group API의 식별자 `groupId`는 `member_group.id`에 대응하는 양의 정수다.
 - 네 API는 모두 Issue #15의 JWT로 인증된 회원만 호출할 수 있다. 상세 조회에는 Group 멤버십을 요구하지 않는다. 수정과 폐쇄는 해당 Group의 활성 `OWNER` 멤버십을 요구한다.
 - 명세의 기존 `STAFF`는 DB 역할 `MANAGER`를 뜻한다. `MANAGER` 역할 Enum은 정의하지만 이번 범위에서 권한을 부여하거나 사용하는 API는 없다.
 - 정상·오류 응답은 공통 `ApiResponse<T>` 형식을 따른다. 아래 Group 코드는 Issue #14의 구현 계약이며 아직 Java Enum에 추가되지 않았다.
@@ -32,7 +32,7 @@ Group API의 공통 접두사는 `/api/v1`이다. 아래 표의 `/groups` 경로
   "longitude": 126.9780000,
   "maxMembers": 30,
   "joinPolicy": "APPROVAL",
-  "coverImageKey": "group-covers/123/cover.jpg"
+  "coverImageKey": "group-covers/123/e7f3d5a2-6c1b-4a89-9d20-5f1c8b2e4a60"
 }
 ```
 
@@ -93,7 +93,7 @@ Group 전용 오류 코드는 구현 시 `GroupErrorCode`에 추가한다. 인�
 
 ## 커버 이미지
 
-요청 필드 `coverImageKey`는 S3 객체 **키**이며 파일 ID나 URL이 아니다. 비어 있지 않은 최대 500자 문자열이어야 한다. 키는 인증 회원에게 발급된 Group 커버 업로드 키이고, 비공개 버킷에 실제 객체가 존재하며 해당 회원의 키임을 저장 전에 확인한다. Group 내부 서비스는 발급 이력의 회원 ID와 S3 객체 존재·Content-Type을 검증한다. 클라이언트에 키와 업로드 URL을 발급할 별도 HTTP API 계약 및 JWT 연동은 아직 확정되지 않았다. 이 API가 준비되기 전에는 클라이언트가 새 커버 키를 발급받을 수 없다.
+요청 필드 `coverImageKey`는 S3 객체 **키**이며 파일 ID나 URL이 아니다. 비어 있지 않은 최대 500자 문자열이어야 한다. 키는 별도 커버 이미지 업로드 발급 흐름에서 인증 회원에게 발급받아야 하며, Group CRUD 범위에는 이 키와 업로드 URL을 발급하는 HTTP API가 포함되지 않는다. 발급 키는 `group-covers/{memberId}/{UUID}` 형식이다. 비공개 버킷에 객체가 존재하고 해당 회원에게 발급된 키인지 저장 전에 확인한다. Group 내부 서비스는 발급 이력의 회원 ID와 S3 객체 존재·Content-Type을 검증한다.
 
 응답에는 키 대신 `S3StorageService.createPresignedGetUrl`로 만든 `coverImageUrl`을 사용한다. URL은 설정된 유효 시간이 지나면 다시 조회해 발급받아야 한다. 이미지가 없으면 `null`이다. 비공개 S3 접근·서명 요청에는 요청과 데이터 전송 비용이 발생할 수 있다.
 

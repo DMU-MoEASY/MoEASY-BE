@@ -34,7 +34,7 @@ class GroupServiceIntegrationTest {
     @MockitoBean private GroupCoverImageService coverImageService;
 
     @Test
-    @DisplayName("생성자는 같은 트랜잭션에서 활성 OWNER 멤버십을 얻는다")
+    @DisplayName("그룹 생성은 활성 OWNER 멤버십을 함께 저장한다")
     void createGroup_validRequest_persistsGroupAndOwner() {
         // given
         Long memberId = insertMember();
@@ -43,12 +43,18 @@ class GroupServiceIntegrationTest {
         // when
         GroupResDTO.Created created = commandService.createGroup(createRequest(categoryId), memberId);
         entityManager.flush();
+        GroupResDTO.Created secondCreated = commandService.createGroup(createRequest(categoryId), memberId);
+        entityManager.flush();
 
         // then
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM member_group WHERE id = ?", Integer.class,
                 created.groupId())).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM group_member WHERE group_id = ? AND member_id = ? AND role = 'OWNER' AND status = 'ACTIVE'",
                 Integer.class, created.groupId(), memberId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM member_group WHERE id = ?", Integer.class,
+                secondCreated.groupId())).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM group_member WHERE group_id = ? AND member_id = ? AND role = 'OWNER' AND status = 'ACTIVE'",
+                Integer.class, secondCreated.groupId(), memberId)).isEqualTo(1);
         assertThat(queryService.getGroup(created.groupId(), memberId).groupId()).isEqualTo(created.groupId());
     }
 
