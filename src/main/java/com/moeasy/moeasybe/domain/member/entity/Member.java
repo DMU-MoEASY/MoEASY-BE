@@ -2,14 +2,18 @@ package com.moeasy.moeasybe.domain.member.entity;
 
 import com.moeasy.moeasybe.domain.member.enums.MemberStatus;
 import com.moeasy.moeasybe.domain.member.enums.SocialType;
+import com.moeasy.moeasybe.domain.region.entity.Region;
 import com.moeasy.moeasybe.global.entity.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.math.BigDecimal;
@@ -25,7 +29,8 @@ import lombok.NoArgsConstructor;
                 @UniqueConstraint(
                         name = "uk_member_social_type_social_id",
                         columnNames = {"social_type", "social_id"}
-                )
+                ),
+                @UniqueConstraint(name = "uq_member_nickname", columnNames = "nickname")
         }
 )
 @Getter
@@ -48,6 +53,10 @@ public class Member extends BaseEntity {
 
     @Column(name = "status_message", length = 255)
     private String statusMessage;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "primary_region_id")
+    private Region primaryRegion;
 
     @Column(name = "profile_image_key", length = 500)
     private String profileImageKey;
