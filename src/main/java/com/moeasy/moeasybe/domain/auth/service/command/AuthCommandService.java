@@ -9,15 +9,21 @@ import com.moeasy.moeasybe.domain.auth.dto.response.AuthResDTO;
 import com.moeasy.moeasybe.domain.auth.exception.AuthException;
 import com.moeasy.moeasybe.domain.auth.exception.code.AuthErrorCode;
 import com.moeasy.moeasybe.domain.auth.repository.AuthRedisRepository;
+import com.moeasy.moeasybe.domain.auth.service.result.AuthSession;
+import com.moeasy.moeasybe.domain.auth.service.result.AuthTokenPair;
 import com.moeasy.moeasybe.domain.member.entity.Member;
 import com.moeasy.moeasybe.domain.member.enums.SocialType;
 import com.moeasy.moeasybe.domain.member.service.command.MemberCommandService;
+import com.moeasy.moeasybe.global.security.jwt.IssuedJwt;
+import com.moeasy.moeasybe.global.security.jwt.JwtTokenProvider;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -31,10 +37,10 @@ public class AuthCommandService {
 
     private final AuthRedisRepository authRedisRepository;
     private final AuthProperties authProperties;
-    private final AuthConverter authConverter;
     private final KakaoOAuthClient kakaoOAuthClient;
     private final GoogleOAuthClient googleOAuthClient;
     private final MemberCommandService memberCommandService;
+    private final JwtTokenProvider jwtTokenProvider;
 
     public AuthResDTO.IssueState issueState(String providerName, String browserId) {
         SocialType provider = parseProvider(providerName);
@@ -47,25 +53,116 @@ public class AuthCommandService {
             throw new AuthException(AuthErrorCode.OAUTH_STATE_ISSUANCE_FAILED);
         }
 
-        return authConverter.toIssueState(state);
+        return AuthConverter.toIssueState(state);
     }
 
-    public AuthResDTO.SocialLogin loginWithKakao(AuthReqDTO.KakaoLogin request, String browserId) {
+    public AuthSession loginWithKakao(AuthReqDTO.KakaoLogin request, String browserId) {
         validateAndConsumeState(request.state(), SocialType.KAKAO, browserId);
 
         String socialId = kakaoOAuthClient.getUserId(request.code());
         Member member = memberCommandService.findOrCreateSocialMember(SocialType.KAKAO, socialId);
 
-        return authConverter.toSocialLogin(member);
+        AuthResDTO.SocialLogin response = AuthConverter.toSocialLogin(member);
+        return new AuthSession(response, issueTokens(member.getId()));
     }
 
-    public AuthResDTO.SocialLogin loginWithGoogle(AuthReqDTO.GoogleLogin request, String browserId) {
+    public AuthSession loginWithGoogle(AuthReqDTO.GoogleLogin request, String browserId) {
         validateAndConsumeState(request.state(), SocialType.GOOGLE, browserId);
 
         String socialId = googleOAuthClient.getUserId(request.code());
         Member member = memberCommandService.findOrCreateSocialMember(SocialType.GOOGLE, socialId);
 
-        return authConverter.toSocialLogin(member);
+        AuthResDTO.SocialLogin response = AuthConverter.toSocialLogin(member);
+        return new AuthSession(response, issueTokens(member.getId()));
+    }
+
+    public AuthTokenPair reissue(String refreshTokenValue) {
+        RefreshTokenClaims previous = parseRefreshToken(refreshTokenValue);
+        AuthTokenPair next = createTokenPair(previous.memberId());
+
+        try {
+            boolean rotated = authRedisRepository.rotateRefreshToken(
+                    previous.tokenId(),
+                    next.refreshToken().tokenId(),
+                    previous.memberId(),
+                    next.refreshToken().expiration()
+            );
+            if (!rotated) {
+                throw new AuthException(AuthErrorCode.INVALID_REFRESH_TOKEN);
+            }
+        } catch (DataAccessException ex) {
+            log.error("Refresh Token을 Redis에서 갱신하지 못했습니다.", ex);
+            throw new AuthException(AuthErrorCode.REFRESH_TOKEN_STORAGE_FAILED);
+        }
+
+        return next;
+    }
+
+    public void logout(String refreshTokenValue) {
+        if (refreshTokenValue == null || refreshTokenValue.isBlank()) {
+            return;
+        }
+
+        RefreshTokenClaims refreshToken;
+        try {
+            refreshToken = parseRefreshToken(refreshTokenValue);
+        } catch (AuthException ex) {
+            return;
+        }
+
+        try {
+            authRedisRepository.deleteRefreshToken(refreshToken.tokenId());
+        } catch (DataAccessException ex) {
+            log.error("로그아웃 중 Refresh Token을 Redis에서 삭제하지 못했습니다.", ex);
+            throw new AuthException(AuthErrorCode.REFRESH_TOKEN_STORAGE_FAILED);
+        }
+    }
+
+    private AuthTokenPair issueTokens(Long memberId) {
+        IssuedJwt accessToken = jwtTokenProvider.issueAccessToken(memberId);
+        IssuedJwt refreshToken = jwtTokenProvider.issueRefreshToken(memberId);
+        try {
+            authRedisRepository.saveRefreshToken(
+                    refreshToken.tokenId(),
+                    memberId,
+                    refreshToken.expiration()
+            );
+        } catch (DataAccessException ex) {
+            log.error("Refresh Token을 Redis에 저장하지 못했습니다. memberId={}", memberId, ex);
+            throw new AuthException(AuthErrorCode.REFRESH_TOKEN_STORAGE_FAILED);
+        }
+        return new AuthTokenPair(accessToken, refreshToken);
+    }
+
+    private AuthTokenPair createTokenPair(Long memberId) {
+        return new AuthTokenPair(
+                jwtTokenProvider.issueAccessToken(memberId),
+                jwtTokenProvider.issueRefreshToken(memberId)
+        );
+    }
+
+    private RefreshTokenClaims parseRefreshToken(String tokenValue) {
+        if (tokenValue == null || tokenValue.isBlank()) {
+            throw new AuthException(AuthErrorCode.INVALID_REFRESH_TOKEN);
+        }
+
+        try {
+            Jwt jwt = jwtTokenProvider.decode(tokenValue);
+            if (!JwtTokenProvider.REFRESH_TOKEN_TYPE.equals(
+                    jwt.getClaimAsString(JwtTokenProvider.TOKEN_TYPE_CLAIM)
+            )) {
+                throw new AuthException(AuthErrorCode.INVALID_REFRESH_TOKEN);
+            }
+
+            Long memberId = Long.valueOf(jwt.getSubject());
+            String tokenId = jwt.getId();
+            if (tokenId == null || tokenId.isBlank()) {
+                throw new AuthException(AuthErrorCode.INVALID_REFRESH_TOKEN);
+            }
+            return new RefreshTokenClaims(memberId, tokenId);
+        } catch (JwtException | NumberFormatException ex) {
+            throw new AuthException(AuthErrorCode.INVALID_REFRESH_TOKEN);
+        }
     }
 
     private void validateAndConsumeState(String state, SocialType expectedProvider, String browserId) {
@@ -110,5 +207,8 @@ public class AuthCommandService {
 
     private String stateValue(SocialType provider, String browserId) {
         return provider.name() + ":" + browserId;
+    }
+
+    private record RefreshTokenClaims(Long memberId, String tokenId) {
     }
 }

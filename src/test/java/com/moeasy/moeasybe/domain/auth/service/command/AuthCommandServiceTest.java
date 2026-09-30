@@ -13,22 +13,27 @@ import static org.mockito.Mockito.when;
 import com.moeasy.moeasybe.domain.auth.client.GoogleOAuthClient;
 import com.moeasy.moeasybe.domain.auth.client.KakaoOAuthClient;
 import com.moeasy.moeasybe.domain.auth.config.AuthProperties;
-import com.moeasy.moeasybe.domain.auth.converter.AuthConverter;
 import com.moeasy.moeasybe.domain.auth.dto.request.AuthReqDTO;
 import com.moeasy.moeasybe.domain.auth.dto.response.AuthResDTO;
 import com.moeasy.moeasybe.domain.auth.exception.AuthException;
 import com.moeasy.moeasybe.domain.auth.exception.code.AuthErrorCode;
 import com.moeasy.moeasybe.domain.auth.repository.AuthRedisRepository;
+import com.moeasy.moeasybe.domain.auth.service.result.AuthSession;
+import com.moeasy.moeasybe.domain.auth.service.result.AuthTokenPair;
 import com.moeasy.moeasybe.domain.member.entity.Member;
 import com.moeasy.moeasybe.domain.member.enums.SocialType;
 import com.moeasy.moeasybe.domain.member.service.command.MemberCommandService;
+import com.moeasy.moeasybe.global.security.jwt.IssuedJwt;
+import com.moeasy.moeasybe.global.security.jwt.JwtTokenProvider;
 import java.time.Duration;
+import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 @ExtendWith(MockitoExtension.class)
 class AuthCommandServiceTest {
@@ -48,6 +53,9 @@ class AuthCommandServiceTest {
     @Mock
     private MemberCommandService memberCommandService;
 
+    @Mock
+    private JwtTokenProvider jwtTokenProvider;
+
     private AuthCommandService authCommandService;
 
     @BeforeEach
@@ -55,10 +63,10 @@ class AuthCommandServiceTest {
         authCommandService = new AuthCommandService(
                 authRedisRepository,
                 new AuthProperties(STATE_EXPIRATION),
-                new AuthConverter(),
                 kakaoOAuthClient,
                 googleOAuthClient,
-                memberCommandService
+                memberCommandService,
+                jwtTokenProvider
         );
     }
 
@@ -100,14 +108,16 @@ class AuthCommandServiceTest {
                 .thenReturn("123456789");
         when(memberCommandService.findOrCreateSocialMember(SocialType.KAKAO, "123456789"))
                 .thenReturn(member);
+        stubIssuedTokens(7L);
         when(member.getId()).thenReturn(7L);
         when(member.isOnboardingCompleted()).thenReturn(true);
 
-        AuthResDTO.SocialLogin response = authCommandService.loginWithKakao(request, BROWSER_ID);
+        AuthSession response = authCommandService.loginWithKakao(request, BROWSER_ID);
 
-        assertEquals(7L, response.memberId());
-        assertTrue(response.onboardingCompleted());
+        assertEquals(7L, response.member().memberId());
+        assertTrue(response.member().onboardingCompleted());
         verify(authRedisRepository).getAndDelete("oauth:state:issued-state");
+        verify(authRedisRepository).saveRefreshToken("refresh-id", 7L, Duration.ofDays(14));
     }
 
     @Test
@@ -141,13 +151,14 @@ class AuthCommandServiceTest {
                 .thenReturn("google-user-123");
         when(memberCommandService.findOrCreateSocialMember(SocialType.GOOGLE, "google-user-123"))
                 .thenReturn(member);
+        stubIssuedTokens(8L);
         when(member.getId()).thenReturn(8L);
         when(member.isOnboardingCompleted()).thenReturn(false);
 
-        AuthResDTO.SocialLogin response = authCommandService.loginWithGoogle(request, BROWSER_ID);
+        AuthSession response = authCommandService.loginWithGoogle(request, BROWSER_ID);
 
-        assertEquals(8L, response.memberId());
-        assertFalse(response.onboardingCompleted());
+        assertEquals(8L, response.member().memberId());
+        assertFalse(response.member().onboardingCompleted());
         verify(authRedisRepository).getAndDelete("oauth:state:issued-state");
     }
 
@@ -200,5 +211,66 @@ class AuthCommandServiceTest {
 
         assertEquals(AuthErrorCode.INVALID_OAUTH_STATE, exception.getCode());
         verify(authRedisRepository, never()).getAndDelete("oauth:state:issued-state");
+    }
+
+    private void stubIssuedTokens(Long memberId) {
+        when(jwtTokenProvider.issueAccessToken(memberId))
+                .thenReturn(new IssuedJwt("access-token", "access-id", Duration.ofMinutes(5)));
+        when(jwtTokenProvider.issueRefreshToken(memberId))
+                .thenReturn(new IssuedJwt("refresh-token", "refresh-id", Duration.ofDays(14)));
+    }
+
+    @Test
+    void 재발급시_기존_Refresh_Token을_원자적으로_새_식별자로_교체한다() {
+        when(jwtTokenProvider.decode("previous-refresh"))
+                .thenReturn(refreshJwt("previous-refresh", "previous-id"));
+        when(jwtTokenProvider.issueAccessToken(27L))
+                .thenReturn(new IssuedJwt("next-access", "next-access-id", Duration.ofMinutes(5)));
+        when(jwtTokenProvider.issueRefreshToken(27L))
+                .thenReturn(new IssuedJwt("next-refresh", "next-refresh-id", Duration.ofDays(14)));
+        when(authRedisRepository.rotateRefreshToken(
+                "previous-id", "next-refresh-id", 27L, Duration.ofDays(14)
+        )).thenReturn(true);
+
+        AuthTokenPair tokens = authCommandService.reissue("previous-refresh");
+
+        assertEquals("next-access", tokens.accessToken().value());
+        assertEquals("next-refresh", tokens.refreshToken().value());
+        verify(authRedisRepository).rotateRefreshToken(
+                "previous-id", "next-refresh-id", 27L, Duration.ofDays(14)
+        );
+    }
+
+    @Test
+    void 이미_사용되었거나_Redis에_없는_Refresh_Token은_재발급하지_않는다() {
+        when(jwtTokenProvider.decode("previous-refresh"))
+                .thenReturn(refreshJwt("previous-refresh", "previous-id"));
+        when(jwtTokenProvider.issueAccessToken(27L))
+                .thenReturn(new IssuedJwt("next-access", "next-access-id", Duration.ofMinutes(5)));
+        when(jwtTokenProvider.issueRefreshToken(27L))
+                .thenReturn(new IssuedJwt("next-refresh", "next-refresh-id", Duration.ofDays(14)));
+        when(authRedisRepository.rotateRefreshToken(
+                "previous-id", "next-refresh-id", 27L, Duration.ofDays(14)
+        )).thenReturn(false);
+
+        AuthException exception = assertThrows(
+                AuthException.class,
+                () -> authCommandService.reissue("previous-refresh")
+        );
+
+        assertEquals(AuthErrorCode.INVALID_REFRESH_TOKEN, exception.getCode());
+    }
+
+    private Jwt refreshJwt(String token, String tokenId) {
+        Instant now = Instant.parse("2026-09-24T00:00:00Z");
+        return Jwt.withTokenValue(token)
+                .header("alg", "HS256")
+                .issuer("https://moeasy")
+                .subject("27")
+                .issuedAt(now)
+                .expiresAt(now.plus(Duration.ofDays(14)))
+                .jti(tokenId)
+                .claim(JwtTokenProvider.TOKEN_TYPE_CLAIM, JwtTokenProvider.REFRESH_TOKEN_TYPE)
+                .build();
     }
 }
