@@ -11,7 +11,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class P0SchemaMigrationIntegrationTest {
 
     private static final int P0_TABLE_COUNT = 32;
-    private static final int P0_FOREIGN_KEY_COUNT = 52;
+    private static final int FOREIGN_KEY_COUNT_WITH_GROUP_TABLES = 55;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -145,8 +145,8 @@ class P0SchemaMigrationIntegrationTest {
         assertThat(memberColumnCount).isEqualTo(5);
         assertThat(deprecatedMemberColumnCount).isZero();
         assertThat(nullableNicknameCount).isEqualTo(1);
-        assertThat(memberGroupForeignKeyCount).isEqualTo(9);
-        assertThat(foreignKeyCount).isEqualTo(P0_FOREIGN_KEY_COUNT);
+        assertThat(memberGroupForeignKeyCount).isEqualTo(10);
+        assertThat(foreignKeyCount).isEqualTo(FOREIGN_KEY_COUNT_WITH_GROUP_TABLES);
         assertThat(nonRestrictForeignKeyCount).isZero();
         assertThat(softDeleteColumns).isGreaterThanOrEqualTo(10);
         assertThat(plainAccountNumberColumns).isZero();
