@@ -41,7 +41,7 @@ class OnboardingSchemaIntegrationTest {
         List<String> representativeCodes = List.of("11680", "41280", "36110", "50110", "12110");
 
         // when
-        Integer regionCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM region WHERE active = TRUE", Integer.class);
+        Integer regionCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM region WHERE deleted_at IS NULL", Integer.class);
         List<String> codes = jdbcTemplate.queryForList("SELECT code FROM region", String.class);
         String province = jdbcTemplate.queryForObject(
                 "SELECT province_name FROM region WHERE code = '12110'", String.class);

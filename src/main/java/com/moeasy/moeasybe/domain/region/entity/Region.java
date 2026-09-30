@@ -37,9 +37,6 @@ public class Region extends BaseEntity {
     @Column(name = "province_name", nullable = false, length = 100)
     private String provinceName;
 
-    @Column(nullable = false)
-    private boolean active = true;
-
     @Builder
     private Region(String code, String name, String provinceName) {
         this.code = code;
