@@ -15,17 +15,20 @@ public final class MemberReqDTO {
     public record NicknameAvailability(
             @NotBlank(message = "닉네임은 필수입니다.")
             @Size(min = 2, max = 12, message = "닉네임은 2자 이상 12자 이하여야 합니다.")
-            @Schema(description = "확인할 닉네임 (2~12자, 공백만 입력 불가)", example = "모이지",
+            @Schema(description = "확인할 닉네임 (앞뒤 공백 제거 후 2~12자, 공백만 입력 불가)", example = "모이지",
                     requiredMode = Schema.RequiredMode.REQUIRED)
             String nickname
     ) {
+        public NicknameAvailability {
+            nickname = nickname == null ? null : nickname.trim();
+        }
     }
 
     @Schema(name = "MemberOnboardingRequest", description = "온보딩 최종 제출 정보")
     public record Onboarding(
             @NotBlank(message = "닉네임은 필수입니다.")
             @Size(min = 2, max = 12, message = "닉네임은 2자 이상 12자 이하여야 합니다.")
-            @Schema(description = "닉네임", example = "모이지")
+            @Schema(description = "닉네임 (앞뒤 공백 제거 후 2~12자)", example = "모이지")
             String nickname,
 
             @Size(max = 60, message = "한 줄 소개는 60자 이하여야 합니다.")
@@ -44,5 +47,8 @@ public final class MemberReqDTO {
                     @Pattern(regexp = "[A-Z_]+", message = "관심사 코드는 영문 대문자와 밑줄로 작성해야 합니다.")
                     String> categoryCodes
     ) {
+        public Onboarding {
+            nickname = nickname == null ? null : nickname.trim();
+        }
     }
 }

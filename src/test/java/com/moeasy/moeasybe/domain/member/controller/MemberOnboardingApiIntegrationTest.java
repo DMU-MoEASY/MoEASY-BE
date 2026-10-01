@@ -425,6 +425,49 @@ class MemberOnboardingApiIntegrationTest {
         assertEquals(List.of("READING", "RUNNING", "STUDY"), interestCodes(member.getId()));
     }
 
+    @Test
+    @DisplayName("닉네임 중복 확인은 앞뒤 공백을 제거한 값으로 조회한다")
+    void getNicknameAvailability_paddedNickname_checksTrimmedValue() throws Exception {
+        // given
+        Member member = member();
+        String nickname = nickname();
+        jdbcTemplate.update("UPDATE member SET nickname = ? WHERE id = ?", nickname, member.getId());
+        // when
+        ResultActions result = mockMvc.perform(get("/api/v1/members/nicknames/availability")
+                .cookie(accessCookie(member)).param("nickname", "  " + nickname + "  "));
+        // then
+        result.andExpect(status().isOk()).andExpect(jsonPath("$.result.available").value(false));
+    }
+
+    @Test
+    @DisplayName("온보딩은 닉네임 앞뒤 공백만 제거하고 내부 공백은 유지해 저장한다")
+    void completeOnboarding_paddedNickname_persistsTrimmedValue() throws Exception {
+        // given
+        Member member = member();
+        String nickname = "온 " + nickname();
+        // when
+        ResultActions result = mockMvc.perform(request(member).content(validBody("  " + nickname + "  ")));
+        // then
+        result.andExpect(status().isOk());
+        assertEquals(nickname, value(member.getId(), "nickname", String.class));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"  가  ", "   "})
+    @DisplayName("중복 확인과 온보딩 모두 공백 제거 후 닉네임 길이를 검증한다")
+    void nicknameValidation_trimmedInvalidNickname_rejectsBothEndpoints(String nickname) throws Exception {
+        // given
+        Member member = member();
+        // when
+        ResultActions availability = mockMvc.perform(get("/api/v1/members/nicknames/availability")
+                .cookie(accessCookie(member)).param("nickname", nickname));
+        ResultActions onboarding = mockMvc.perform(request(member).content(validBody(nickname)));
+        // then
+        availability.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALID400_1"));
+        onboarding.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALID400_1"));
+        assertUnchanged(member.getId());
+    }
+
     private MockHttpServletRequestBuilder request(Member member) {
         return post(PATH).cookie(accessCookie(member), new Cookie("XSRF-TOKEN", CSRF_TOKEN))
                 .header("X-XSRF-TOKEN", CSRF_TOKEN).contentType(MediaType.APPLICATION_JSON);
