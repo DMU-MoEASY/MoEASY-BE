@@ -163,8 +163,15 @@ class OnboardingSchemaIntegrationTest {
         Long categoryId = category.getId();
 
         // when
-        jdbcTemplate.update("UPDATE region SET deleted_at = ? WHERE id = ?", deletedAt, regionId);
-        jdbcTemplate.update("UPDATE category SET deleted_at = ? WHERE id = ?", deletedAt, categoryId);
+        // 저장과 조회에 동일한 JPA 날짜 매핑을 사용한다.
+        entityManager.createQuery("update Region r set r.deletedAt = :deletedAt where r.id = :id")
+                .setParameter("deletedAt", deletedAt)
+                .setParameter("id", regionId)
+                .executeUpdate();
+        entityManager.createQuery("update Category c set c.deletedAt = :deletedAt where c.id = :id")
+                .setParameter("deletedAt", deletedAt)
+                .setParameter("id", categoryId)
+                .executeUpdate();
         entityManager.clear();
         Region reloadedRegion = entityManager.find(Region.class, regionId);
         Category reloadedCategory = entityManager.find(Category.class, categoryId);
