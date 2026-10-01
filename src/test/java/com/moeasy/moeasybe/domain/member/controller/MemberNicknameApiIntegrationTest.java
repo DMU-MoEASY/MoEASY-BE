@@ -145,6 +145,8 @@ class MemberNicknameApiIntegrationTest {
         // then
         assertAll(
                 () -> assertEquals(200, response.getStatus()),
+                () -> assertEquals(java.util.Set.of("application/json"), document.read(
+                        "$.paths['" + PATH + "'].get.responses['200'].content", java.util.Map.class).keySet()),
                 () -> assertEquals("nickname", document.read(operation + ".parameters[0].name", String.class)),
                 () -> assertEquals("query", document.read(operation + ".parameters[0].in", String.class)),
                 () -> assertEquals("boolean", document.read("$.components.schemas['" + resultSchema

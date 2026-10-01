@@ -6,7 +6,6 @@ import com.moeasy.moeasybe.domain.region.service.query.RegionQueryService;
 import com.moeasy.moeasybe.global.apiPayload.ApiResponse;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;

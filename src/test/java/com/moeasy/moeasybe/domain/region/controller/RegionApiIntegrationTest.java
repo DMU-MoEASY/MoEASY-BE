@@ -135,6 +135,8 @@ class RegionApiIntegrationTest {
         // then
         assertAll(
                 () -> assertEquals(200, response.getStatus()),
+                () -> assertEquals(java.util.Set.of("application/json"), document.read(
+                        "$.paths['/api/v1/regions'].get.responses['200'].content", java.util.Map.class).keySet()),
                 () -> assertEquals("array", document.read(
                         "$.components.schemas['" + responseSchema + "'].properties.result.type", String.class)),
                 () -> assertEquals("array", document.read(

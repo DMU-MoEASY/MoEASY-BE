@@ -71,6 +71,13 @@ public class Member extends BaseEntity {
     @Column(nullable = false, length = 20)
     private MemberStatus status = MemberStatus.ACTIVE;
 
+    public void completeOnboarding(String nickname, String statusMessage, Region primaryRegion) {
+        this.nickname = nickname;
+        this.statusMessage = statusMessage;
+        this.primaryRegion = primaryRegion;
+        this.onboardingCompleted = true;
+    }
+
     @Builder
     private Member(
             SocialType socialType,

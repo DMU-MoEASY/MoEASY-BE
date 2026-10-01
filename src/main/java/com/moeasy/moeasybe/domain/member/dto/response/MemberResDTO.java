@@ -14,4 +14,12 @@ public final class MemberResDTO {
             boolean available
     ) {
     }
+
+    @Builder
+    @Schema(name = "MemberOnboardingResponse", description = "온보딩 완료 결과")
+    public record Onboarding(
+            @Schema(description = "회원 ID", example = "1") Long memberId,
+            @Schema(description = "온보딩 완료 여부", example = "true") boolean onboardingCompleted
+    ) {
+    }
 }

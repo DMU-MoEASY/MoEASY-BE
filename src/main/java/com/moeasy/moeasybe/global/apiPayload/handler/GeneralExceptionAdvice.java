@@ -7,6 +7,7 @@ import com.moeasy.moeasybe.global.apiPayload.exception.GeneralException;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -70,10 +71,10 @@ public class GeneralExceptionAdvice {
                 .body(ApiResponse.onFailure(code, errors));
     }
 
-    // 잘못된 요청 파라미터
-    @ExceptionHandler(IllegalArgumentException.class)
+    // 잘못된 요청 값 또는 JSON 본문
+    @ExceptionHandler({IllegalArgumentException.class, HttpMessageNotReadableException.class})
     public ResponseEntity<ApiResponse<Void>> handleIllegalArgument(
-            IllegalArgumentException ex
+            Exception ex
     ) {
         GeneralErrorCode code = GeneralErrorCode.BAD_REQUEST;
 
