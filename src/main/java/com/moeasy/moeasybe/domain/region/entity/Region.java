@@ -1,4 +1,4 @@
-package com.moeasy.moeasybe.domain.group.entity;
+package com.moeasy.moeasybe.domain.region.entity;
 
 import com.moeasy.moeasybe.global.entity.BaseEntity;
 import jakarta.persistence.Column;
@@ -15,29 +15,32 @@ import lombok.NoArgsConstructor;
 
 @Entity
 @Table(
-        name = "category",
+        name = "region",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uq_category_code", columnNames = "code"),
-                @UniqueConstraint(name = "uq_category_name", columnNames = "name")
+                @UniqueConstraint(name = "uq_region_code", columnNames = "code")
         }
 )
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Category extends BaseEntity {
+public class Region extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, length = 32)
+    @Column(nullable = false, length = 5, columnDefinition = "CHAR(5)")
     private String code;
 
     @Column(nullable = false, length = 100)
     private String name;
 
+    @Column(name = "province_name", nullable = false, length = 100)
+    private String provinceName;
+
     @Builder
-    private Category(String code, String name) {
+    private Region(String code, String name, String provinceName) {
         this.code = code;
         this.name = name;
+        this.provinceName = provinceName;
     }
 }

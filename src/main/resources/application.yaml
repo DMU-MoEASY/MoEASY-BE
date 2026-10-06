@@ -82,6 +82,8 @@ spring:
 
 # OpenAPI/Swagger 문서 설정
 springdoc:
+  # produces가 없는 API도 반환 타입 스키마와 JSON 예시를 같은 항목에 표시한다.
+  default-produces-media-type: application/json
   api-docs:
     path: /v3/api-docs
   swagger-ui:

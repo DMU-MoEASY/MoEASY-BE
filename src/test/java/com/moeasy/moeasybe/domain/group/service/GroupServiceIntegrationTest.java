@@ -59,6 +59,43 @@ class GroupServiceIntegrationTest {
     }
 
     @Test
+    @DisplayName("삭제된 카테고리로 그룹을 생성할 수 없다")
+    void createGroup_deletedCategory_returnsCategoryNotFound() {
+        // given
+        Long memberId = insertMember();
+        Long categoryId = insertCategory();
+        jdbcTemplate.update("UPDATE category SET deleted_at = CURRENT_TIMESTAMP(6) WHERE id = ?", categoryId);
+
+        // when
+        GroupException exception = assertThrows(GroupException.class,
+                () -> commandService.createGroup(createRequest(categoryId), memberId));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("GROUP404_2");
+    }
+
+    @Test
+    @DisplayName("그룹 수정 시 삭제된 카테고리를 선택할 수 없다")
+    void updateGroup_deletedCategory_returnsCategoryNotFound() throws Exception {
+        // given
+        Long memberId = insertMember();
+        Long originalCategoryId = insertCategory();
+        Long groupId = commandService.createGroup(createRequest(originalCategoryId), memberId).groupId();
+        Long deletedCategoryId = insertCategory();
+        jdbcTemplate.update("UPDATE category SET deleted_at = CURRENT_TIMESTAMP(6) WHERE id = ?", deletedCategoryId);
+        GroupReqDTO.Update request = objectMapper.readValue(
+                "{\"categoryId\":" + deletedCategoryId + "}", GroupReqDTO.Update.class);
+
+        // when
+        GroupException exception = assertThrows(GroupException.class,
+                () -> commandService.updateGroup(groupId, request, memberId));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("GROUP404_2");
+        assertThat(queryService.getGroup(groupId, memberId).categoryId()).isEqualTo(originalCategoryId);
+    }
+
+    @Test
     @DisplayName("PATCH는 생략 필드를 보존하고 명시적 null 커버 키를 제거한다")
     void updateGroup_partialRequest_changesOnlyPresentFields() throws Exception {
         // given

@@ -104,7 +104,7 @@ public class GroupCommandService {
     }
 
     private Category findCategory(Long categoryId) {
-        return categoryRepository.findById(categoryId)
+        return categoryRepository.findByIdAndDeletedAtIsNull(categoryId)
                 .orElseThrow(() -> new GroupException(GroupErrorCode.CATEGORY_NOT_FOUND));
     }
 

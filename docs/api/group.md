@@ -36,7 +36,7 @@ Group API의 공통 접두사는 `/api/v1`이다. 아래 표의 `/groups` 경로
 }
 ```
 
-`name`, `description`, 숫자 `categoryId`, `regionCode`, `placeName`, `address`, `maxMembers`, `joinPolicy`는 필수다. 길이·허용값은 `member_group`의 컬럼과 제약을 따른다. `categoryId`는 존재하는 `category.id`여야 한다. `latitude`와 `longitude`는 둘 다 생략하거나 둘 다 제공한다. 값의 범위는 각각 -90~90, -180~180이다. `coverImageKey`는 선택 사항이다.
+`name`, `description`, 숫자 `categoryId`, `regionCode`, `placeName`, `address`, `maxMembers`, `joinPolicy`는 필수다. 길이·허용값은 `member_group`의 컬럼과 제약을 따른다. `categoryId`는 존재하며 삭제되지 않은 `category.id`여야 한다. `latitude`와 `longitude`는 둘 다 생략하거나 둘 다 제공한다. 값의 범위는 각각 -90~90, -180~180이다. `coverImageKey`는 선택 사항이다.
 
 생성자는 같은 DB 트랜잭션에서 `group_member`에 `ACTIVE/OWNER`로 저장한다. 둘 중 한 저장이라도 실패하면 모두 롤백한다. 성공 시 HTTP 201, `GROUP201_1`로 `groupId`를 반환한다.
 
@@ -55,7 +55,7 @@ Group API의 공통 접두사는 `/api/v1`이다. 아래 표의 `/groups` 경로
 `PATCH /groups/{groupId}`는 요청에 **존재하는** 필드만 변경한다. 수정 가능한 필드는 `categoryId`, `name`, `coverImageKey`, `description`, `regionCode`, `placeName`, `address`, `latitude`, `longitude`다. `maxMembers`, `joinPolicy`, 상태, OWNER는 이 PATCH로 변경하지 않는다.
 
 - 생략한 필드는 기존 값을 유지한다. 빈 객체 `{}`는 HTTP 400으로 거부한다.
-- `categoryId`, `name`, `description`, `regionCode`, `placeName`, `address`에 명시적 `null`을 보내면 HTTP 400이다. Category 변경 시 존재 여부를 확인한다.
+- `categoryId`, `name`, `description`, `regionCode`, `placeName`, `address`에 명시적 `null`을 보내면 HTTP 400이다. Category 변경 시 존재하며 삭제되지 않았는지 확인한다.
 - `coverImageKey: null`은 저장된 이미지 키를 제거한다. 값이 있으면 [커버 이미지](#커버-이미지)의 검증을 적용한다.
 - 좌표는 `latitude`와 `longitude`를 함께 제공한다. 두 숫자는 함께 갱신하고, 두 필드 모두 `null`이면 좌표를 제거한다. 한쪽만 제공하거나 한쪽만 `null`이면 HTTP 400이다.
 - DTO 구현은 JSON 필드의 생략과 명시적 `null`을 구분해야 한다.
@@ -85,7 +85,7 @@ Group API의 공통 접두사는 `/api/v1`이다. 아래 표의 `/groups` 경로
 | `confirmationText`가 현재 Group 이름과 다름 | 400 | `GROUP400_1` | 모임 이름 확인 문구가 일치하지 않습니다. |
 | 요청 형식·필수값·PATCH 빈 객체 또는 좌표 쌍 오류 | 400 | `VALID400_1` 또는 `COMMON400_1` | 공통 검증 오류 응답 |
 | Group이 없거나 폐쇄됨 | 404 | `GROUP404_1` | 모임을 찾을 수 없습니다. |
-| Category가 없음 | 404 | `GROUP404_2` | 카테고리를 찾을 수 없습니다. |
+| Category가 없거나 삭제됨 | 404 | `GROUP404_2` | 카테고리를 찾을 수 없습니다. |
 | 수정·폐쇄 요청자가 OWNER가 아님 | 403 | `AUTH403_1` | 요청이 거부되었습니다. |
 | JWT가 없거나 유효하지 않음 | 401 | Issue #15 인증 오류 코드 | Issue #15의 필터 응답 계약을 따른다. |
 

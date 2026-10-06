@@ -8,10 +8,13 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.moeasy.moeasybe.domain.group.repository.CategoryRepository;
 import com.moeasy.moeasybe.domain.member.converter.MemberConverter;
 import com.moeasy.moeasybe.domain.member.entity.Member;
 import com.moeasy.moeasybe.domain.member.enums.SocialType;
+import com.moeasy.moeasybe.domain.member.repository.MemberCategoryRepository;
 import com.moeasy.moeasybe.domain.member.repository.MemberRepository;
+import com.moeasy.moeasybe.domain.region.repository.RegionRepository;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,11 +28,21 @@ class MemberCommandServiceTest {
     @Mock
     private MemberRepository memberRepository;
 
+    @Mock
+    private RegionRepository regionRepository;
+
+    @Mock
+    private CategoryRepository categoryRepository;
+
+    @Mock
+    private MemberCategoryRepository memberCategoryRepository;
+
     private MemberCommandService memberCommandService;
 
     @BeforeEach
     void setUp() {
-        memberCommandService = new MemberCommandService(memberRepository, new MemberConverter());
+        memberCommandService = new MemberCommandService(memberRepository, new MemberConverter(),
+                regionRepository, categoryRepository, memberCategoryRepository);
     }
 
     @Test
