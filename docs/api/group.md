@@ -7,7 +7,7 @@ Group API의 공통 접두사는 `/api/v1`이다. 아래 표의 `/groups` 경로
 - Group API의 식별자 `groupId`는 `member_group.id`에 대응하는 양의 정수다.
 - 네 API는 모두 Issue #15의 JWT로 인증된 회원만 호출할 수 있다. 상세 조회에는 Group 멤버십을 요구하지 않는다. 수정과 폐쇄는 해당 Group의 활성 `OWNER` 멤버십을 요구한다.
 - 명세의 기존 `STAFF`는 DB 역할 `MANAGER`를 뜻한다. `MANAGER` 역할 Enum은 정의하지만 이번 범위에서 권한을 부여하거나 사용하는 API는 없다.
-- 정상·오류 응답은 공통 `ApiResponse<T>` 형식을 따른다. 아래 Group 코드는 Issue #14의 구현 계약이며 아직 Java Enum에 추가되지 않았다.
+- 정상·오류 응답은 공통 `ApiResponse<T>` 형식을 따른다. 아래 Group 코드는 `GroupSuccessCode`와 `GroupErrorCode`에 정의되어 있다.
 
 | Method | Endpoint | 기능 | 권한 |
 | --- | --- | --- | --- |
@@ -91,7 +91,7 @@ Group API의 공통 접두사는 `/api/v1`이다. 아래 표의 `/groups` 경로
 | 수정·폐쇄 요청자가 OWNER가 아님 | 403 | `AUTH403_1` | 요청이 거부되었습니다. |
 | JWT가 없거나 유효하지 않음 | 401 | Issue #15 인증 오류 코드 | Issue #15의 필터 응답 계약을 따른다. |
 
-Group 전용 오류 코드는 구현 시 `GroupErrorCode`에 추가한다. 인증 오류는 Issue #15가 제공하는 필터·코드를 재사용한다.
+Group 전용 오류 코드는 `GroupErrorCode`에 정의되어 있다. 인증 오류는 Issue #15가 제공하는 필터·코드를 재사용한다.
 
 ## 커버 이미지
 

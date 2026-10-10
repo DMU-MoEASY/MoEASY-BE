@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 import com.moeasy.moeasybe.domain.group.entity.GroupCoverUpload;
@@ -71,6 +72,35 @@ class GroupCoverImageServiceTest {
         // then
         assertThat(issue.coverImageKey()).matches("group-covers/12/[0-9a-f-]{36}");
         assertThat(issue.uploadUrl()).isEqualTo("https://example.test/upload");
+    }
+
+    @Test
+    @DisplayName("회원이 없으면 인증 오류를 반환하고 업로드 URL을 서명하거나 이력을 저장하지 않는다")
+    void issueUpload_missingMember_doesNotSignOrSave() {
+        // given
+        when(memberRepository.findById(12L)).thenReturn(Optional.empty());
+
+        // when
+        GeneralException exception = assertThrows(GeneralException.class,
+                () -> service.issueUpload(12L, "image/jpeg"));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("AUTH401_1");
+        verify(storageService, never()).createPresignedPutUrl(any(), any());
+        verify(uploadRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("서비스를 직접 호출할 때 유효하지 않은 회원 ID는 조회와 서명 전에 거부한다")
+    void issueUpload_invalidMemberId_rejectsBeforeLookupOrSign() {
+        // when
+        GeneralException exception = assertThrows(GeneralException.class,
+                () -> service.issueUpload(0L, "image/jpeg"));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("COMMON400_1");
+        verify(memberRepository, never()).findById(any());
+        verify(storageService, never()).createPresignedPutUrl(any(), any());
     }
 
     @Test

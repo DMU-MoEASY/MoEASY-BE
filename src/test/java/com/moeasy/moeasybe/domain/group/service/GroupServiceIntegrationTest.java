@@ -37,6 +37,28 @@ class GroupServiceIntegrationTest {
     @MockitoBean private GroupCoverImageService coverImageService;
 
     @Test
+    @DisplayName("그룹 생성 서비스를 직접 호출해도 회원 ID가 없으면 변경 전에 거부한다")
+    void createGroup_missingMemberId_rejectsBeforeWrite() {
+        // when
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> commandService.createGroup(createRequest(1L), null));
+
+        // then
+        assertThat(exception.getMessage()).isEqualTo("인증된 회원 ID가 필요합니다.");
+    }
+
+    @Test
+    @DisplayName("그룹 조회 서비스를 직접 호출해도 회원 ID가 없으면 조회 전에 거부한다")
+    void getGroup_missingMemberId_rejectsBeforeRead() {
+        // when
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> queryService.getGroup(1L, null));
+
+        // then
+        assertThat(exception.getMessage()).isEqualTo("인증된 회원 ID가 필요합니다.");
+    }
+
+    @Test
     @DisplayName("그룹 생성은 활성 OWNER 멤버십을 함께 저장한다")
     void createGroup_validRequest_persistsGroupAndOwner() {
         // given

@@ -1,6 +1,6 @@
 package com.moeasy.moeasybe.domain.group.service;
 
-import com.moeasy.moeasybe.domain.group.entity.GroupCoverUpload;
+import com.moeasy.moeasybe.domain.group.converter.GroupConverter;
 import com.moeasy.moeasybe.domain.group.repository.GroupCoverUploadRepository;
 import com.moeasy.moeasybe.domain.group.validate.GroupCoverImageValidator;
 import com.moeasy.moeasybe.domain.member.entity.Member;
@@ -28,16 +28,12 @@ public class GroupCoverImageService {
     @Transactional
     public UploadIssue issueUpload(Long memberId, String contentType) {
         coverImageValidator.validateIssueRequest(memberId, contentType);
-        String key = "group-covers/" + memberId + "/" + UUID.randomUUID();
-        URI uploadUrl = storageService.createPresignedPutUrl(key, contentType);
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new GeneralException(GeneralErrorCode.UNAUTHORIZED));
-        uploadRepository.save(GroupCoverUpload.builder()
-                .objectKey(key)
-                .member(member)
-                .contentType(contentType)
-                .issuedAt(LocalDateTime.now(clock))
-                .build());
+        String key = "group-covers/" + memberId + "/" + UUID.randomUUID();
+        URI uploadUrl = storageService.createPresignedPutUrl(key, contentType);
+        LocalDateTime issuedAt = LocalDateTime.now(clock);
+        uploadRepository.save(GroupConverter.toCoverUpload(key, member, contentType, issuedAt));
         return new UploadIssue(key, uploadUrl.toString());
     }
 

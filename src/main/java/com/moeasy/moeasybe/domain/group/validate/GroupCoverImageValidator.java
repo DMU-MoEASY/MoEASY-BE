@@ -32,7 +32,7 @@ public class GroupCoverImageValidator {
     }
 
     public void verifyOwnedAndExists(Long memberId, String key) {
-        if (memberId == null || memberId <= 0 || key == null || key.isBlank()
+        if (key == null || key.isBlank()
                 || key.length() > 500 || !key.matches("group-covers/" + memberId + "/[0-9a-fA-F-]{36}")) {
             throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
         }

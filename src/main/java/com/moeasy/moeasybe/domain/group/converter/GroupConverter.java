@@ -4,6 +4,7 @@ import com.moeasy.moeasybe.domain.group.dto.request.GroupReqDTO;
 import com.moeasy.moeasybe.domain.group.dto.response.GroupResDTO;
 import com.moeasy.moeasybe.domain.group.entity.Category;
 import com.moeasy.moeasybe.domain.group.entity.Group;
+import com.moeasy.moeasybe.domain.group.entity.GroupCoverUpload;
 import com.moeasy.moeasybe.domain.group.entity.GroupDeletionHistory;
 import com.moeasy.moeasybe.domain.group.entity.GroupMember;
 import com.moeasy.moeasybe.domain.group.enums.GroupMemberRole;
@@ -38,6 +39,16 @@ public final class GroupConverter {
                 .role(GroupMemberRole.OWNER)
                 .status(GroupMemberStatus.ACTIVE)
                 .joinedAt(joinedAt)
+                .build();
+    }
+
+    public static GroupCoverUpload toCoverUpload(String key, Member member, String contentType,
+            LocalDateTime issuedAt) {
+        return GroupCoverUpload.builder()
+                .objectKey(key)
+                .member(member)
+                .contentType(contentType)
+                .issuedAt(issuedAt)
                 .build();
     }
 

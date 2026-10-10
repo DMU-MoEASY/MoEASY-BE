@@ -19,14 +19,15 @@ public final class GroupRequestValidator {
     }
 
     public static void requireActor(Object request, Long memberId) {
-        if (request == null || memberId == null || memberId <= 0) {
-            throw new IllegalArgumentException("Request and authenticated member ID are required");
+        if (request == null) {
+            throw new IllegalArgumentException("요청 본문이 필요합니다.");
         }
+        requireMemberId(memberId);
     }
 
     public static void requireMemberId(Long memberId) {
         if (memberId == null || memberId <= 0) {
-            throw new IllegalArgumentException("Authenticated member ID is required");
+            throw new IllegalArgumentException("인증된 회원 ID가 필요합니다.");
         }
     }
 
