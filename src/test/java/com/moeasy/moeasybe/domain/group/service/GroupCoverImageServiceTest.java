@@ -6,14 +6,17 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.moeasy.moeasybe.global.apiPayload.exception.GeneralException;
-import com.moeasy.moeasybe.global.config.AwsS3Properties;
 import com.moeasy.moeasybe.domain.group.entity.GroupCoverUpload;
 import com.moeasy.moeasybe.domain.group.repository.GroupCoverUploadRepository;
 import com.moeasy.moeasybe.domain.group.validate.GroupCoverImageValidator;
 import com.moeasy.moeasybe.domain.member.entity.Member;
 import com.moeasy.moeasybe.domain.member.repository.MemberRepository;
+import com.moeasy.moeasybe.global.apiPayload.ApiResponse;
+import com.moeasy.moeasybe.global.apiPayload.exception.GeneralException;
+import com.moeasy.moeasybe.global.apiPayload.handler.GeneralExceptionAdvice;
+import com.moeasy.moeasybe.global.config.AwsS3Properties;
 import com.moeasy.moeasybe.storage.S3StorageService;
+import com.moeasy.moeasybe.storage.exception.StorageOperationException;
 import java.net.URI;
 import java.time.Clock;
 import java.util.Optional;
@@ -24,10 +27,16 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 class GroupCoverImageServiceTest {
@@ -99,6 +108,24 @@ class GroupCoverImageServiceTest {
     }
 
     @Test
+    @DisplayName("발급 이력과 S3 객체의 Content-Type이 다르면 거부한다")
+    void verifyOwnedAndExists_contentTypeMismatch_rejectsKey() {
+        // given
+        String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
+        when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
+                .thenReturn(Optional.of(issuance(key)));
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenReturn(HeadObjectResponse.builder().contentType("image/jpeg").build());
+
+        // when
+        GeneralException exception = assertThrows(GeneralException.class,
+                () -> validator.verifyOwnedAndExists(12L, key));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("COMMON400_1");
+    }
+
+    @Test
     @DisplayName("존재하지 않는 객체는 거부한다")
     void verifyOwnedAndExists_missingObject_rejectsKey() {
         // given
@@ -114,6 +141,84 @@ class GroupCoverImageServiceTest {
 
         // then
         assertThat(exception.getCode().getCode()).isEqualTo("COMMON400_1");
+    }
+
+    @Test
+    @DisplayName("NoSuchKey 응답은 저장소 장애가 아니라 유효하지 않은 커버 키로 거부한다")
+    void verifyOwnedAndExists_noSuchKey_rejectsKey() {
+        // given
+        String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
+        when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
+                .thenReturn(Optional.of(issuance(key)));
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(NoSuchKeyException.builder().message("missing").build());
+
+        // when
+        GeneralException exception = assertThrows(GeneralException.class,
+                () -> validator.verifyOwnedAndExists(12L, key));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("COMMON400_1");
+    }
+
+    @Test
+    @DisplayName("S3 장애는 저장소 오류로 응답하고 AWS 상세 내용을 숨긴다")
+    void verifyOwnedAndExists_s3Failure_returnsStorageUnavailable() throws Exception {
+        // given
+        String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
+        when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
+                .thenReturn(Optional.of(issuance(key)));
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(S3Exception.builder().statusCode(503).message("AWS internal detail").build());
+
+        // when
+        StorageOperationException exception = assertThrows(StorageOperationException.class,
+                () -> validator.verifyOwnedAndExists(12L, key));
+        ResponseEntity<ApiResponse<Void>> response = new GeneralExceptionAdvice().handleGeneralException(exception);
+
+        // then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getCode()).isEqualTo("STORAGE503_1");
+        assertThat(response.getBody().getMessage()).isEqualTo("저장소를 일시적으로 사용할 수 없습니다.");
+        assertThat(new ObjectMapper().writeValueAsString(response.getBody()))
+                .doesNotContain("AWS internal detail");
+    }
+
+    @Test
+    @DisplayName("S3 연결 실패도 저장소 장애로 응답한다")
+    void verifyOwnedAndExists_clientFailure_returnsStorageUnavailable() {
+        // given
+        String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
+        when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
+                .thenReturn(Optional.of(issuance(key)));
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(SdkClientException.builder().message("connection failed").build());
+
+        // when
+        StorageOperationException exception = assertThrows(StorageOperationException.class,
+                () -> validator.verifyOwnedAndExists(12L, key));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("STORAGE503_1");
+    }
+
+    @Test
+    @DisplayName("버킷이 없으면 객체가 없는 경우와 구분해 저장소 장애로 처리한다")
+    void verifyOwnedAndExists_missingBucket_returnsStorageUnavailable() {
+        // given
+        String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
+        when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
+                .thenReturn(Optional.of(issuance(key)));
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(NoSuchBucketException.builder().statusCode(404).message("missing bucket").build());
+
+        // when
+        StorageOperationException exception = assertThrows(StorageOperationException.class,
+                () -> validator.verifyOwnedAndExists(12L, key));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("STORAGE503_1");
     }
 
     @Test

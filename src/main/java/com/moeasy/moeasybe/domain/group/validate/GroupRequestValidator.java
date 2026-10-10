@@ -32,7 +32,7 @@ public final class GroupRequestValidator {
 
     public static void validateCreate(GroupReqDTO.Create request) {
         if ((request.latitude() == null) != (request.longitude() == null)) {
-            throw badRequest();
+            throw new GroupException(GroupErrorCode.GROUP_COORDINATE_PAIR_INVALID);
         }
     }
 
@@ -43,7 +43,7 @@ public final class GroupRequestValidator {
         boolean latitude = request.has("latitude");
         boolean longitude = request.has("longitude");
         if (latitude != longitude || (latitude && isNull(request.value("latitude")) != isNull(request.value("longitude")))) {
-            throw badRequest();
+            throw new GroupException(GroupErrorCode.GROUP_COORDINATE_PAIR_INVALID);
         }
     }
 

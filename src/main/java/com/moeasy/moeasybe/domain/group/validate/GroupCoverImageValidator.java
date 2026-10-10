@@ -5,15 +5,21 @@ import com.moeasy.moeasybe.domain.group.repository.GroupCoverUploadRepository;
 import com.moeasy.moeasybe.global.apiPayload.code.GeneralErrorCode;
 import com.moeasy.moeasybe.global.apiPayload.exception.GeneralException;
 import com.moeasy.moeasybe.global.config.AwsS3Properties;
+import com.moeasy.moeasybe.storage.code.StorageErrorCode;
+import com.moeasy.moeasybe.storage.exception.StorageOperationException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class GroupCoverImageValidator {
     private final S3Client s3Client;
     private final AwsS3Properties properties;
@@ -42,11 +48,18 @@ public class GroupCoverImageValidator {
             }
         } catch (NoSuchKeyException e) {
             throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
+        } catch (NoSuchBucketException e) {
+            log.error("S3 커버 이미지 객체 조회에 실패했습니다.", e);
+            throw new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE);
         } catch (S3Exception e) {
             if (e.statusCode() == 404) {
                 throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
             }
-            throw e;
+            log.error("S3 커버 이미지 객체 조회에 실패했습니다.", e);
+            throw new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE);
+        } catch (SdkException e) {
+            log.error("S3 커버 이미지 객체 조회에 실패했습니다.", e);
+            throw new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE);
         }
     }
 

@@ -11,7 +11,9 @@ import com.moeasy.moeasybe.domain.group.exception.GroupException;
 import com.moeasy.moeasybe.domain.group.service.command.GroupCommandService;
 import com.moeasy.moeasybe.domain.group.service.query.GroupQueryService;
 import com.moeasy.moeasybe.global.apiPayload.exception.GeneralException;
+import com.moeasy.moeasybe.global.apiPayload.handler.GeneralExceptionAdvice;
 import jakarta.persistence.EntityManager;
+import java.math.BigDecimal;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +22,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -126,18 +129,42 @@ class GroupServiceIntegrationTest {
         GroupReqDTO.Update request = objectMapper.readValue("{\"latitude\":37.1}", GroupReqDTO.Update.class);
 
         // when
-        GeneralException exception = assertThrows(GeneralException.class,
+        GroupException exception = assertThrows(GroupException.class,
                 () -> commandService.updateGroup(groupId, request, memberId));
 
         // then
-        assertThat(exception.getCode().getCode()).isEqualTo("COMMON400_1");
+        assertThat(exception.getCode().getCode()).isEqualTo("GROUP400_2");
+        var response = new GeneralExceptionAdvice().handleGeneralException(exception);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getCode()).isEqualTo("GROUP400_2");
         assertThat(queryService.getGroup(groupId, memberId).name()).isEqualTo("원래 모임");
     }
 
+    @Test
+    @DisplayName("생성 시 위도만 전달하면 Group을 저장하지 않는다")
+    void createGroup_oneCoordinate_rejectsWithoutChange() {
+        // given
+        Long memberId = insertMember();
+        Long categoryId = insertCategory();
+        GroupReqDTO.Create request = new GroupReqDTO.Create("원래 모임", "설명", categoryId,
+                "11680", "한강공원", "서울", new BigDecimal("37.1"), null,
+                30, GroupJoinPolicy.APPROVAL, null);
+
+        // when
+        GroupException exception = assertThrows(GroupException.class,
+                () -> commandService.createGroup(request, memberId));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("GROUP400_2");
+        assertThat(exception.getCode().getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM member_group WHERE name = ?", Integer.class,
+                "원래 모임")).isZero();
+    }
+
     @ParameterizedTest
-    @ValueSource(strings = {"{}", "{\"name\":null}", "{\"latitude\":null,\"longitude\":37.1}",
-            "{\"maxMembers\":50}"})
-    @DisplayName("빈 PATCH, 필수값 null, 좌표 불일치, 수정 불가 필드는 거부한다")
+    @ValueSource(strings = {"{}", "{\"name\":null}", "{\"maxMembers\":50}"})
+    @DisplayName("빈 PATCH, 필수값 null, 수정 불가 필드는 공통 요청 오류로 거부한다")
     void updateGroup_invalidPatch_rejectsWithoutChange(String json) throws Exception {
         // given
         Long memberId = insertMember();
@@ -150,6 +177,24 @@ class GroupServiceIntegrationTest {
 
         // then
         assertThat(exception.getCode().getCode()).isEqualTo("COMMON400_1");
+        assertThat(queryService.getGroup(groupId, memberId).name()).isEqualTo("원래 모임");
+    }
+
+    @Test
+    @DisplayName("한쪽 좌표만 null로 전달하면 Group이 바뀌지 않는다")
+    void updateGroup_oneNullCoordinate_rejectsWithoutChange() throws Exception {
+        // given
+        Long memberId = insertMember();
+        Long groupId = commandService.createGroup(createRequest(insertCategory()), memberId).groupId();
+        GroupReqDTO.Update request = objectMapper.readValue(
+                "{\"latitude\":null,\"longitude\":37.1}", GroupReqDTO.Update.class);
+
+        // when
+        GroupException exception = assertThrows(GroupException.class,
+                () -> commandService.updateGroup(groupId, request, memberId));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("GROUP400_2");
         assertThat(queryService.getGroup(groupId, memberId).name()).isEqualTo("원래 모임");
     }
 
