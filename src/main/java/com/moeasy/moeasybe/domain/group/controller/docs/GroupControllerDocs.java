@@ -28,7 +28,8 @@ public interface GroupControllerDocs {
                     content = @Content(schema = @Schema(implementation = GroupResDTO.Created.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "요청 검증 실패"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 실패")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 실패"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "503", description = "STORAGE503_1: S3 저장소 장애")
     })
     ResponseEntity<ApiResponse<GroupResDTO.Created>> createGroup(
             @RequestBody GroupReqDTO.Create request,
@@ -67,7 +68,8 @@ public interface GroupControllerDocs {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "요청 검증 실패"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 실패"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "활성 OWNER가 아님"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "그룹 또는 카테고리가 없음")
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "그룹 또는 카테고리가 없음"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "503", description = "STORAGE503_1: S3 저장소 장애")
     })
     ResponseEntity<ApiResponse<GroupResDTO.Detail>> updateGroup(
             @Parameter(description = "수정할 그룹 ID", required = true)

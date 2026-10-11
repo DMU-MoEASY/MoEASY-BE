@@ -37,6 +37,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import tools.jackson.databind.ObjectMapper;
 
@@ -121,6 +123,32 @@ class GroupTransactionBoundaryIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM member_group WHERE category_id = ? AND name = '원래 모임'",
                 Integer.class, categoryId))
                 .isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM group_member WHERE member_id = ?", Integer.class,
+                memberId)).isZero();
+    }
+
+    @Test
+    @DisplayName("생성 시 HEAD 403 뒤 목록에서 커버 객체 부재가 확인되면 DB에 저장하지 않는다")
+    void createGroup_missingCoverAfterForbiddenHead_doesNotWrite() {
+        // given
+        Long memberId = insertMember();
+        Long categoryId = insertCategory();
+        String key = issueCover(memberId);
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(S3Exception.builder().statusCode(403).message("access denied").build());
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenAnswer(invocation -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            return ListObjectsV2Response.builder().isTruncated(false).build();
+        });
+
+        // when
+        GeneralException exception = assertThrows(GeneralException.class,
+                () -> commandService.createGroup(createRequest(categoryId, key), memberId));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("COMMON400_1");
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM member_group WHERE category_id = ? AND name = '원래 모임'",
+                Integer.class, categoryId)).isZero();
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM group_member WHERE member_id = ?", Integer.class,
                 memberId)).isZero();
     }

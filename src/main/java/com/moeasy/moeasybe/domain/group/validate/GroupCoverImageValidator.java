@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.S3Exception;
@@ -47,13 +48,13 @@ public class GroupCoverImageValidator {
                 throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
             }
         } catch (NoSuchKeyException e) {
-            throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
+            resolveAmbiguousHeadFailure(key, e);
         } catch (NoSuchBucketException e) {
             log.error("S3 커버 이미지 객체 조회에 실패했습니다.", e);
             throw new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE);
         } catch (S3Exception e) {
-            if (e.statusCode() == 404) {
-                throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
+            if (e.statusCode() == 403 || e.statusCode() == 404) {
+                resolveAmbiguousHeadFailure(key, e);
             }
             log.error("S3 커버 이미지 객체 조회에 실패했습니다.", e);
             throw new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE);
@@ -61,6 +62,25 @@ public class GroupCoverImageValidator {
             log.error("S3 커버 이미지 객체 조회에 실패했습니다.", e);
             throw new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE);
         }
+    }
+
+    private void resolveAmbiguousHeadFailure(String key, S3Exception headFailure) {
+        try {
+            var listing = s3Client.listObjectsV2(ListObjectsV2Request.builder()
+                    .bucket(properties.getS3().getBucket())
+                    .prefix(key)
+                    .maxKeys(1)
+                    .build());
+            boolean exactKeyExists = listing.contents().stream().anyMatch(object -> key.equals(object.key()));
+            if (!exactKeyExists && !Boolean.TRUE.equals(listing.isTruncated())) {
+                throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
+            }
+        } catch (SdkException listFailure) {
+            log.error("S3 커버 이미지 목록 조회에 실패했습니다.", listFailure);
+            throw new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE);
+        }
+        log.error("S3 커버 이미지 객체 조회 결과가 모호합니다.", headFailure);
+        throw new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE);
     }
 
     private boolean isSupportedType(String type) {

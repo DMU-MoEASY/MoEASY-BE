@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
 import com.moeasy.moeasybe.domain.auth.config.AuthCookieNames;
 import com.moeasy.moeasybe.domain.group.dto.request.GroupReqDTO;
 import com.moeasy.moeasybe.domain.group.enums.GroupJoinPolicy;
@@ -15,6 +16,7 @@ import com.moeasy.moeasybe.domain.group.service.command.GroupCommandService;
 import com.moeasy.moeasybe.global.security.jwt.JwtTokenProvider;
 import jakarta.servlet.http.Cookie;
 import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -49,6 +51,22 @@ class GroupControllerSecurityIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Test
+    @DisplayName("Swagger 그룹 생성·수정 응답에 저장소 장애 코드가 포함된다")
+    void apiDocs_groupWrites_describeStorageFailure() throws Exception {
+        // when
+        var response = mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse();
+        var document = JsonPath.parse(response.getContentAsString());
+
+        // then
+        assertThat(document.read("$.paths['/api/v1/groups'].post.responses['503'].description", String.class))
+                .contains("STORAGE503_1");
+        assertThat(document.read("$.paths['/api/v1/groups/{groupId}'].patch.responses['503'].description", String.class))
+                .contains("STORAGE503_1");
+    }
 
     @Test
     void access_token_쿠키가_없는_그룹_조회는_401을_반환한다() throws Exception {

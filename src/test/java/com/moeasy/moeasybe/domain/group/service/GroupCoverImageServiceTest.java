@@ -34,9 +34,12 @@ import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.S3Object;
 import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
@@ -156,7 +159,7 @@ class GroupCoverImageServiceTest {
     }
 
     @Test
-    @DisplayName("존재하지 않는 객체는 거부한다")
+    @DisplayName("일반 404 뒤 정확한 키가 없음을 목록으로 확인하면 거부한다")
     void verifyOwnedAndExists_missingObject_rejectsKey() {
         // given
         String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
@@ -164,6 +167,33 @@ class GroupCoverImageServiceTest {
                 .thenReturn(Optional.of(issuance(key)));
         when(s3Client.headObject(any(HeadObjectRequest.class)))
                 .thenThrow(S3Exception.builder().statusCode(404).message("missing").build());
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenReturn(ListObjectsV2Response.builder().isTruncated(false).build());
+        ArgumentCaptor<ListObjectsV2Request> listRequest = ArgumentCaptor.forClass(ListObjectsV2Request.class);
+
+        // when
+        GeneralException exception = assertThrows(GeneralException.class,
+                () -> validator.verifyOwnedAndExists(12L, key));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("COMMON400_1");
+        verify(s3Client).listObjectsV2(listRequest.capture());
+        assertThat(listRequest.getValue().bucket()).isEqualTo("test-bucket");
+        assertThat(listRequest.getValue().prefix()).isEqualTo(key);
+        assertThat(listRequest.getValue().maxKeys()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("NoSuchKey 응답도 목록에서 키 부재를 확인한 뒤 거부한다")
+    void verifyOwnedAndExists_noSuchKey_rejectsKey() {
+        // given
+        String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
+        when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
+                .thenReturn(Optional.of(issuance(key)));
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(NoSuchKeyException.builder().message("missing").build());
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenReturn(ListObjectsV2Response.builder().isTruncated(false).build());
 
         // when
         GeneralException exception = assertThrows(GeneralException.class,
@@ -174,14 +204,16 @@ class GroupCoverImageServiceTest {
     }
 
     @Test
-    @DisplayName("NoSuchKey 응답은 저장소 장애가 아니라 유효하지 않은 커버 키로 거부한다")
-    void verifyOwnedAndExists_noSuchKey_rejectsKey() {
+    @DisplayName("403 뒤 정확한 키가 없음을 목록으로 확인하면 잘못된 커버 키로 거부한다")
+    void verifyOwnedAndExists_forbiddenMissingObject_rejectsKey() {
         // given
         String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
         when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
                 .thenReturn(Optional.of(issuance(key)));
         when(s3Client.headObject(any(HeadObjectRequest.class)))
-                .thenThrow(NoSuchKeyException.builder().message("missing").build());
+                .thenThrow(S3Exception.builder().statusCode(403).message("access denied").build());
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenReturn(ListObjectsV2Response.builder().isTruncated(false).build());
 
         // when
         GeneralException exception = assertThrows(GeneralException.class,
@@ -189,6 +221,89 @@ class GroupCoverImageServiceTest {
 
         // then
         assertThat(exception.getCode().getCode()).isEqualTo("COMMON400_1");
+    }
+
+    @Test
+    @DisplayName("403 뒤 키가 목록에 있으면 접근 실패를 저장소 오류로 처리한다")
+    void verifyOwnedAndExists_forbiddenExistingObject_returnsStorageUnavailable() {
+        // given
+        String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
+        when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
+                .thenReturn(Optional.of(issuance(key)));
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(S3Exception.builder().statusCode(403).message("access denied").build());
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenReturn(ListObjectsV2Response.builder()
+                        .contents(S3Object.builder().key(key).build()).isTruncated(false).build());
+
+        // when
+        StorageOperationException exception = assertThrows(StorageOperationException.class,
+                () -> validator.verifyOwnedAndExists(12L, key));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("STORAGE503_1");
+    }
+
+    @Test
+    @DisplayName("403 뒤 목록 조회가 거부되면 객체 부재를 추정하지 않는다")
+    void verifyOwnedAndExists_forbiddenListing_returnsStorageUnavailable() {
+        // given
+        String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
+        when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
+                .thenReturn(Optional.of(issuance(key)));
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(S3Exception.builder().statusCode(403).message("access denied").build());
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenThrow(S3Exception.builder().statusCode(403).message("list denied").build());
+
+        // when
+        StorageOperationException exception = assertThrows(StorageOperationException.class,
+                () -> validator.verifyOwnedAndExists(12L, key));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("STORAGE503_1");
+    }
+
+    @Test
+    @DisplayName("일반 404 뒤 목록 조회도 실패하면 버킷 오류를 객체 부재로 오인하지 않는다")
+    void verifyOwnedAndExists_notFoundListingFailure_returnsStorageUnavailable() {
+        // given
+        String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
+        when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
+                .thenReturn(Optional.of(issuance(key)));
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(S3Exception.builder().statusCode(404).message("not found").build());
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenThrow(NoSuchBucketException.builder().statusCode(404).message("missing bucket").build());
+
+        // when
+        StorageOperationException exception = assertThrows(StorageOperationException.class,
+                () -> validator.verifyOwnedAndExists(12L, key));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("STORAGE503_1");
+    }
+
+    @Test
+    @DisplayName("목록이 한 건에서 잘리면 정확한 키가 없다고 확정하지 않는다")
+    void verifyOwnedAndExists_truncatedListing_returnsStorageUnavailable() {
+        // given
+        String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
+        when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
+                .thenReturn(Optional.of(issuance(key)));
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(S3Exception.builder().statusCode(404).message("not found").build());
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenReturn(ListObjectsV2Response.builder()
+                        .contents(S3Object.builder().key(key + "-suffix").build())
+                        .isTruncated(true).build());
+
+        // when
+        StorageOperationException exception = assertThrows(StorageOperationException.class,
+                () -> validator.verifyOwnedAndExists(12L, key));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("STORAGE503_1");
     }
 
     @Test
