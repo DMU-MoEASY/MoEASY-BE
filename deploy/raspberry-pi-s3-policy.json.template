@@ -10,6 +10,20 @@
         "s3:DeleteObject"
       ],
       "Resource": "arn:aws:s3:::<bucket-name>/*"
+    },
+    {
+      "Sid": "GroupCoverExistenceCheck",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::<bucket-name>",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": "group-covers/*"
+        },
+        "NumericLessThanEquals": {
+          "s3:max-keys": "1"
+        }
+      }
     }
   ]
 }
