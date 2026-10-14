@@ -39,7 +39,7 @@ public final class GroupRequestValidator {
 
     public static void validatePatch(GroupReqDTO.Update request) {
         if (request.fields().isEmpty() || !PATCH_FIELDS.containsAll(request.fields().keySet())) {
-            throw badRequest();
+            throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
         }
         boolean latitude = request.has("latitude");
         boolean longitude = request.has("longitude");
@@ -67,31 +67,27 @@ public final class GroupRequestValidator {
     public static String text(JsonNode node, int maxLength) {
         if (isNull(node) || !node.isTextual() || node.textValue().isBlank()
                 || (maxLength > 0 && node.textValue().length() > maxLength)) {
-            throw badRequest();
+            throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
         }
         return node.textValue();
     }
 
     public static Long longValue(JsonNode node) {
         if (isNull(node) || !node.isIntegralNumber() || !node.canConvertToLong() || node.longValue() <= 0) {
-            throw badRequest();
+            throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
         }
         return node.longValue();
     }
 
     public static BigDecimal decimal(JsonNode node, String min, String max) {
         if (isNull(node) || !node.isNumber()) {
-            throw badRequest();
+            throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
         }
         BigDecimal value = node.decimalValue();
         if (value.compareTo(new BigDecimal(min)) < 0 || value.compareTo(new BigDecimal(max)) > 0
                 || value.scale() > 7) {
-            throw badRequest();
+            throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
         }
         return value;
-    }
-
-    private static GeneralException badRequest() {
-        return new GeneralException(GeneralErrorCode.BAD_REQUEST);
     }
 }
