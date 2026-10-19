@@ -77,6 +77,161 @@ class SettlementApiIntegrationTest {
 
     @ParameterizedTest
     @EnumSource(GroupMemberRole.class)
+    @DisplayName("활성 회원은 JWT 쿠키만으로 상세 생성자·전체 청구 내역을 ID 순서로 조회한다")
+    void getSettlement_activeMember_returnsStoredDetail(GroupMemberRole role) throws Exception {
+        // given
+        GroupMember requester = persistGroupMember(role);
+        Settlement settlement = persistListSettlement("상세 정산", List.of(target, owner));
+        Cookie cookie = accessTokenCookie(requester);
+        String creatorNickname = owner.getMember().getNickname();
+        String targetNickname = target.getMember().getNickname();
+        entityManager.flush();
+        entityManager.clear();
+        var request = get(path() + "/" + settlement.getId()).cookie(cookie);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isOk()).andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.code").value("SETTLEMENT200_3"))
+                .andExpect(jsonPath("$.result.settlementId").value(settlement.getId()))
+                .andExpect(jsonPath("$.result.groupId").value(group.getId()))
+                .andExpect(jsonPath("$.result.title").value("상세 정산"))
+                .andExpect(jsonPath("$.result.scheduleId").isEmpty())
+                .andExpect(jsonPath("$.result.description").isEmpty())
+                .andExpect(jsonPath("$.result.dueAt").isEmpty())
+                .andExpect(jsonPath("$.result.createdAt").value("2026-10-20T09:00:00"))
+                .andExpect(jsonPath("$.result.status").value("OPEN"))
+                .andExpect(jsonPath("$.result.splitMode").value("EQUAL"))
+                .andExpect(jsonPath("$.result.totalAmount").value(200))
+                .andExpect(jsonPath("$.result.targetCount").value(2))
+                .andExpect(jsonPath("$.result.createdBy.groupMemberId").value(owner.getId()))
+                .andExpect(jsonPath("$.result.createdBy.nickname").value(creatorNickname))
+                .andExpect(jsonPath("$.result.items.length()").value(2))
+                .andExpect(jsonPath("$.result.items[0].groupMemberId").value(owner.getId()))
+                .andExpect(jsonPath("$.result.items[0].nickname").value(creatorNickname))
+                .andExpect(jsonPath("$.result.items[0].settlementItemId").isNumber())
+                .andExpect(jsonPath("$.result.items[0].amount").value(100))
+                .andExpect(jsonPath("$.result.items[0].status").value("PENDING"))
+                .andExpect(jsonPath("$.result.items[1].groupMemberId").value(target.getId()))
+                .andExpect(jsonPath("$.result.items[1].nickname").value(targetNickname))
+                .andExpect(jsonPath("$.result.items[0].remainderAmount").doesNotExist())
+                .andExpect(jsonPath("$.result.mySettlementItemId").doesNotExist());
+        assertEquals(1, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM settlement WHERE group_id = ?", Integer.class, group.getId()));
+    }
+
+    @Test
+    @DisplayName("폐쇄 모임의 상세에서도 삭제된 계정의 닉네임·청구 내역을 그대로 제공한다")
+    void getSettlement_closedGroupAndDeletedAccounts_preservesHistory() throws Exception {
+        // given
+        GroupMember requester = persistGroupMember(GroupMemberRole.MEMBER);
+        Settlement settlement = persistListSettlement("과거 정산", List.of(owner, target));
+        Cookie cookie = accessTokenCookie(requester);
+        String creatorNickname = owner.getMember().getNickname();
+        String targetNickname = target.getMember().getNickname();
+        entityManager.flush();
+        jdbcTemplate.update("UPDATE member_group SET status = 'CLOSED' WHERE id = ?", group.getId());
+        jdbcTemplate.update("UPDATE member SET deleted_at = CURRENT_TIMESTAMP(6) WHERE id in (?, ?)",
+                owner.getMember().getId(), target.getMember().getId());
+        jdbcTemplate.update("UPDATE group_member SET status = 'LEFT', deleted_at = CURRENT_TIMESTAMP(6) WHERE id in (?, ?)",
+                owner.getId(), target.getId());
+        entityManager.clear();
+        var request = get(path() + "/" + settlement.getId()).cookie(cookie);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isOk()).andExpect(jsonPath("$.result.targetCount").value(2))
+                .andExpect(jsonPath("$.result.createdBy.nickname").value(creatorNickname))
+                .andExpect(jsonPath("$.result.items[0].nickname").value(creatorNickname))
+                .andExpect(jsonPath("$.result.items[1].nickname").value(targetNickname));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"MISSING", "DELETED", "OTHER_GROUP"})
+    @DisplayName("상세 조회에서 없는 정산·삭제 정산·다른 모임 정산은 SETTLEMENT404_1을 반환한다")
+    void getSettlement_unavailableSettlement_notFound(String condition) throws Exception {
+        // given
+        Settlement settlement = persistListSettlement("정산", List.of(owner));
+        Long settlementId = condition.equals("MISSING") ? Long.MAX_VALUE : settlement.getId();
+        if (condition.equals("OTHER_GROUP")) {
+            Group another = Group.builder().category(group.getCategory()).name("다른 모임 " + UUID.randomUUID())
+                    .description("설명").regionCode("11680").placeName("장소").address("주소")
+                    .maxMembers(20).joinPolicy(GroupJoinPolicy.APPROVAL).build();
+            entityManager.persist(another);
+            GroupMember creator = persistGroupMember(another, GroupMemberRole.OWNER);
+            Settlement foreign = Settlement.builder().group(another).createdByGroupMember(creator)
+                    .title("다른 정산").totalAmount(100L).splitMode(SettlementSplitMode.EQUAL).build();
+            entityManager.persist(foreign);
+            settlementId = foreign.getId();
+        }
+        Cookie cookie = accessTokenCookie(owner);
+        entityManager.flush();
+        if (condition.equals("DELETED")) {
+            jdbcTemplate.update("UPDATE settlement SET deleted_at = CURRENT_TIMESTAMP(6) WHERE id = ?", settlementId);
+        }
+        entityManager.clear();
+        var request = get(path() + "/" + settlementId).cookie(cookie);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SETTLEMENT404_1"));
+    }
+
+    @Test
+    @DisplayName("Swagger 상세에는 두 경로 ID와 생성자·회원별 청구 스키마 및 오류 응답이 정의된다")
+    void apiDocs_getSettlement_matchesHttpContract() throws Exception {
+        // given
+        String operationPath = "/api/v1/groups/{groupId}/settlements/{settlementId}";
+
+        // when
+        var response = mockMvc.perform(get("/v3/api-docs")).andExpect(status().isOk()).andReturn().getResponse();
+
+        // then
+        JsonNode document = objectMapper.readTree(response.getContentAsString());
+        JsonNode operation = document.path("paths").path(operationPath).path("get");
+        JsonNode content = operation.path("responses").path("200").path("content").path("application/json");
+        JsonNode envelope = resolveSchema(document, content.path("schema"));
+        JsonNode detail = resolveSchema(document, envelope.path("properties").path("result"));
+        JsonNode creator = resolveSchema(document, detail.path("properties").path("createdBy"));
+        JsonNode item = resolveSchema(document, detail.path("properties").path("items").path("items"));
+        Map<String, JsonNode> parameters = new HashMap<>();
+        operation.path("parameters").forEach(parameter -> parameters.put(parameter.path("name").asText(), parameter));
+        assertAll(
+                () -> assertEquals(2, parameters.size()),
+                () -> assertEquals("path", parameters.get("groupId").path("in").asText()),
+                () -> assertEquals("path", parameters.get("settlementId").path("in").asText()),
+                () -> assertTrue(parameters.get("groupId").path("required").asBoolean()),
+                () -> assertTrue(parameters.get("settlementId").path("required").asBoolean()),
+                () -> assertFalse(parameters.containsKey("memberId")),
+                () -> assertFalse(parameters.containsKey("X-XSRF-TOKEN")),
+                () -> assertFalse(operation.has("requestBody")),
+                () -> assertTrue(envelope.path("properties").has("isSuccess")),
+                () -> assertTrue(detail.path("properties").has("settlementId")),
+                () -> assertTrue(detail.path("properties").has("targetCount")),
+                () -> assertTrue(detail.path("properties").has("dueAt")),
+                () -> assertTrue(creator.path("properties").has("groupMemberId")),
+                () -> assertTrue(creator.path("properties").has("nickname")),
+                () -> assertTrue(item.path("properties").has("settlementItemId")),
+                () -> assertTrue(item.path("properties").has("amount")),
+                () -> assertTrue(item.path("properties").has("status")),
+                () -> assertFalse(item.path("properties").has("remainderAmount")),
+                () -> assertFalse(detail.path("properties").has("mySettlementItemId")),
+                () -> assertEquals("SETTLEMENT200_3", content.path("example").path("code").asText()),
+                () -> assertTrue(operation.path("responses").has("400")),
+                () -> assertTrue(operation.path("responses").has("401")),
+                () -> assertTrue(operation.path("responses").has("403")),
+                () -> assertTrue(operation.path("responses").has("404"))
+        );
+    }
+
+    @ParameterizedTest
+    @EnumSource(GroupMemberRole.class)
     @DisplayName("활성 회원은 정산 대상이 아니어도 JWT 쿠키만으로 최신순 목록과 페이지 정보를 조회한다")
     void getSettlements_activeMember_returnsPageWithoutCsrf(GroupMemberRole role) throws Exception {
         // given
@@ -136,11 +291,11 @@ class SettlementApiIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"MISSING", "INVALID", "REFRESH"})
-    @DisplayName("목록 조회도 유효한 Access Token이 없으면 CSRF와 무관하게 401이다")
-    void getSettlements_invalidAuthentication_unauthorized(String condition) throws Exception {
+    @CsvSource({"MISSING,false", "INVALID,false", "REFRESH,false", "MISSING,true", "INVALID,true", "REFRESH,true"})
+    @DisplayName("목록·상세 조회도 유효한 Access Token이 없으면 CSRF와 무관하게 401이다")
+    void getSettlementReads_invalidAuthentication_unauthorized(String condition, boolean detail) throws Exception {
         // given
-        var request = get(path());
+        var request = get(path() + (detail ? "/1" : ""));
         if (!condition.equals("MISSING")) {
             String token = condition.equals("INVALID") ? "invalid-token"
                     : jwtTokenProvider.issueRefreshToken(owner.getMember().getId()).value();
@@ -155,9 +310,10 @@ class SettlementApiIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"LEFT", "KICKED", "DELETED_MEMBERSHIP", "DELETED_MEMBER", "NON_MEMBER"})
-    @DisplayName("유효한 JWT가 있어도 탈퇴·강퇴·삭제 요청자와 비회원은 목록 조회가 거부된다")
-    void getSettlements_unauthorizedMembership_forbidden(String condition) throws Exception {
+    @CsvSource({"LEFT,false", "KICKED,false", "DELETED_MEMBERSHIP,false", "DELETED_MEMBER,false", "NON_MEMBER,false",
+            "LEFT,true", "KICKED,true", "DELETED_MEMBERSHIP,true", "DELETED_MEMBER,true", "NON_MEMBER,true"})
+    @DisplayName("유효한 JWT가 있어도 탈퇴·강퇴·삭제 요청자와 비회원은 목록·상세 조회가 거부된다")
+    void getSettlementReads_unauthorizedMembership_forbidden(String condition, boolean detail) throws Exception {
         // given
         Long memberId = owner.getMember().getId();
         if (condition.equals("NON_MEMBER")) {
@@ -177,7 +333,7 @@ class SettlementApiIntegrationTest {
             default -> { }
         }
         entityManager.clear();
-        var request = get(path()).cookie(cookie);
+        var request = get(path() + (detail ? "/1" : "")).cookie(cookie);
 
         // when
         var result = mockMvc.perform(request);
@@ -187,9 +343,9 @@ class SettlementApiIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"MISSING", "DELETED"})
-    @DisplayName("목록의 모임이 없거나 삭제되면 404이며 폐쇄 상태와 구분한다")
-    void getSettlements_unavailableGroup_notFound(String condition) throws Exception {
+    @CsvSource({"MISSING,false", "DELETED,false", "MISSING,true", "DELETED,true"})
+    @DisplayName("목록·상세의 모임이 없거나 삭제되면 404이며 폐쇄 상태와 구분한다")
+    void getSettlementReads_unavailableGroup_notFound(String condition, boolean detail) throws Exception {
         // given
         Cookie cookie = accessTokenCookie(owner);
         entityManager.flush();
@@ -198,7 +354,7 @@ class SettlementApiIntegrationTest {
         }
         entityManager.clear();
         Long groupId = condition.equals("MISSING") ? Long.MAX_VALUE : group.getId();
-        var request = get("/api/v1/groups/" + groupId + "/settlements").cookie(cookie);
+        var request = get("/api/v1/groups/" + groupId + "/settlements" + (detail ? "/1" : "")).cookie(cookie);
 
         // when
         var result = mockMvc.perform(request);
@@ -675,10 +831,14 @@ class SettlementApiIntegrationTest {
     }
 
     private GroupMember persistGroupMember(GroupMemberRole role) {
+        return persistGroupMember(group, role);
+    }
+
+    private GroupMember persistGroupMember(Group memberGroup, GroupMemberRole role) {
         String key = UUID.randomUUID().toString();
         Member member = Member.builder().socialType(SocialType.KAKAO).socialId(key).nickname("회원" + key).build();
         entityManager.persist(member);
-        GroupMember membership = GroupMember.builder().group(group).member(member).role(role)
+        GroupMember membership = GroupMember.builder().group(memberGroup).member(member).role(role)
                 .status(GroupMemberStatus.ACTIVE).joinedAt(LocalDateTime.of(2026, 1, 1, 0, 0)).build();
         entityManager.persist(membership);
         return membership;

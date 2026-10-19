@@ -19,6 +19,71 @@ import org.springdoc.core.annotations.ParameterObject;
 @Tag(name = "Settlement", description = "회비·정산 API")
 public interface SettlementControllerDocs {
 
+    @Operation(summary = "정산 상세 조회",
+            description = "모임의 활성 OWNER·MANAGER·MEMBER가 정산 정보와 전체 회원별 청구 내역을 조회합니다. "
+                    + "정산 대상이 아니어도 조회할 수 있으며 폐쇄된 모임도 허용합니다. 삭제된 모임·정산은 조회할 수 없습니다. "
+                    + "정산은 경로의 모임에 속해야 하며 다른 모임의 정산은 정산 없음으로 처리합니다. "
+                    + "청구 항목은 groupMemberId 오름차순이며 탈퇴·강퇴·삭제된 대상도 포함합니다. "
+                    + "생성자·대상자의 계정이 삭제되어도 저장된 닉네임을 그대로 표시합니다. "
+                    + "amount는 저장된 최종 청구액이며 조회 시 재분할하지 않습니다. "
+                    + "moeasy_access_token 쿠키가 필요하며 GET 요청이므로 CSRF 헤더는 필요하지 않습니다.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200", useReturnTypeSchema = true, description = "정산 상세 조회 성공",
+                    content = @Content(mediaType = "application/json", examples = @ExampleObject(value = """
+                            {"isSuccess":true,"code":"SETTLEMENT200_3","message":"정산 상세 조회에 성공했습니다.",
+                             "result":{"settlementId":31,"groupId":1,"scheduleId":7,"title":"러닝 후 식사비",
+                             "description":"식사비 정산입니다.","status":"OPEN","splitMode":"EQUAL","totalAmount":10000,
+                             "targetCount":3,"dueAt":"2026-11-01T23:59:59","createdAt":"2026-10-20T14:00:00",
+                             "createdBy":{"groupMemberId":11,"nickname":"정규"},
+                             "items":[{"settlementItemId":101,"groupMemberId":11,"nickname":"정규","amount":3334,"status":"PENDING"},
+                                      {"settlementItemId":102,"groupMemberId":12,"nickname":"민지","amount":3333,"status":"PENDING"},
+                                      {"settlementItemId":103,"groupMemberId":13,"nickname":"도윤","amount":3333,"status":"PENDING"}]}}
+                            """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400", description = "경로 ID의 양수 검증 또는 숫자 변환 실패",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = {
+                                    @ExampleObject(name = "양수 검증", value = """
+                                            {"isSuccess":false,"code":"VALID400_1","message":"검증에 실패했습니다.",
+                                             "result":{"settlementId":["정산 ID는 양수여야 합니다."]}}
+                                            """),
+                                    @ExampleObject(name = "숫자 변환", value = """
+                                            {"isSuccess":false,"code":"COMMON400_1","message":"잘못된 요청입니다.","result":null}
+                                            """)
+                            })),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401", description = "인증 쿠키 누락·만료 또는 유효하지 않은 Access Token",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {"isSuccess":false,"code":"AUTH401_1","message":"인증이 필요합니다.","result":null}
+                                    """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403", description = "활성 모임 회원이 아님",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {"isSuccess":false,"code":"AUTH403_1","message":"요청이 거부되었습니다.","result":null}
+                                    """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404", description = "모임 없음·삭제 또는 정산 없음·삭제·다른 모임의 정산",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = {
+                                    @ExampleObject(name = "모임 없음", value = """
+                                            {"isSuccess":false,"code":"GROUP404_1","message":"모임을 찾을 수 없습니다.","result":null}
+                                            """),
+                                    @ExampleObject(name = "정산 없음", value = """
+                                            {"isSuccess":false,"code":"SETTLEMENT404_1","message":"정산을 찾을 수 없습니다.","result":null}
+                                            """)
+                            }))
+    })
+    ResponseEntity<ApiResponse<SettlementResDTO.Detail>> getSettlement(
+            @Positive(message = "모임 ID는 양수여야 합니다.")
+            @Parameter(description = "정산이 속한 모임 ID (member_group.id)", required = true) Long groupId,
+            @Positive(message = "정산 ID는 양수여야 합니다.")
+            @Parameter(description = "조회할 정산 ID", required = true) Long settlementId,
+            @Parameter(hidden = true) Long memberId
+    );
+
     @Operation(summary = "정산 목록 조회",
             description = "해당 모임의 활성 OWNER·MANAGER·MEMBER가 정산 요약과 페이지 정보를 조회합니다. "
                     + "정산 대상이 아닌 회원도 조회할 수 있으며 폐쇄된 모임도 허용합니다. 삭제된 모임·정산은 제외합니다. "

@@ -18,6 +18,7 @@ import com.moeasy.moeasybe.domain.settlement.dto.request.SettlementReqDTO;
 import com.moeasy.moeasybe.domain.settlement.dto.response.SettlementResDTO;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementStatus;
+import com.moeasy.moeasybe.domain.settlement.enums.SettlementItemStatus;
 import com.moeasy.moeasybe.domain.settlement.exception.SettlementException;
 import com.moeasy.moeasybe.domain.settlement.exception.code.SettlementErrorCode;
 import com.moeasy.moeasybe.domain.settlement.service.command.SettlementCommandService;
@@ -83,6 +84,89 @@ class SettlementControllerTest {
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    @DisplayName("상세 조회는 두 경로 ID와 인증 회원을 전달하고 공통 200 상세 응답을 반환한다")
+    void getSettlement_validPath_returnsDetailEnvelope() throws Exception {
+        // given
+        var detail = SettlementResDTO.Detail.builder().settlementId(31L).groupId(GROUP_ID)
+                .title("식사비").status(SettlementStatus.OPEN).splitMode(SettlementSplitMode.EQUAL)
+                .totalAmount(100L).targetCount(1).createdAt(LocalDateTime.of(2026, 10, 20, 14, 0))
+                .createdBy(SettlementResDTO.Creator.builder().groupMemberId(11L).nickname("정규").build())
+                .items(List.of(SettlementResDTO.Item.builder().settlementItemId(101L).groupMemberId(11L)
+                        .nickname("정규").amount(100L)
+                        .status(SettlementItemStatus.PENDING).build()))
+                .build();
+        when(queryService.getSettlement(GROUP_ID, 31L, MEMBER_ID)).thenReturn(detail);
+
+        // when
+        var result = mockMvc.perform(get(PATH + "/31"));
+
+        // then
+        result.andExpect(status().isOk()).andExpect(jsonPath("$.code").value("SETTLEMENT200_3"))
+                .andExpect(jsonPath("$.message").value("정산 상세 조회에 성공했습니다."))
+                .andExpect(jsonPath("$.result.settlementId").value(31))
+                .andExpect(jsonPath("$.result.groupId").value(GROUP_ID))
+                .andExpect(jsonPath("$.result.targetCount").value(1))
+                .andExpect(jsonPath("$.result.createdAt").value("2026-10-20T14:00:00"))
+                .andExpect(jsonPath("$.result.createdBy.nickname").value("정규"))
+                .andExpect(jsonPath("$.result.items[0].settlementItemId").value(101))
+                .andExpect(jsonPath("$.result.items[0].groupMemberId").value(11))
+                .andExpect(jsonPath("$.result.items[0].amount").value(100))
+                .andExpect(jsonPath("$.result.items[0].status").value("PENDING"))
+                .andExpect(jsonPath("$.result.items[0].remainderAmount").doesNotExist())
+                .andExpect(jsonPath("$.result.mySettlementItemId").doesNotExist());
+        verify(queryService).getSettlement(GROUP_ID, 31L, MEMBER_ID);
+        verifyNoInteractions(service);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"0,31,groupId", "-1,31,groupId", "10,0,settlementId", "10,-1,settlementId"})
+    @DisplayName("상세 조회의 모임·정산 ID 양수 검증은 Docs 인터페이스 선언으로 동작한다")
+    void getSettlement_nonPositivePath_returnsValidationFailure(String groupId, String settlementId, String field)
+            throws Exception {
+        // given
+        var request = get("/api/v1/groups/" + groupId + "/settlements/" + settlementId);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALID400_1"))
+                .andExpect(jsonPath("$.result." + field).isArray());
+        verifyNoInteractions(queryService, service);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"abc,31", "10,abc", "9223372036854775808,31", "10,9223372036854775808"})
+    @DisplayName("상세 경로의 숫자 변환 실패는 COMMON400_1로 반환한다")
+    void getSettlement_invalidPathType_returnsBadRequest(String groupId, String settlementId) throws Exception {
+        // given
+        var request = get("/api/v1/groups/" + groupId + "/settlements/" + settlementId);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+        verifyNoInteractions(queryService, service);
+    }
+
+    @Test
+    @DisplayName("상세 정산 없음 오류는 SETTLEMENT404_1의 공통 실패 응답으로 반환한다")
+    void getSettlement_missingSettlement_returnsNotFound() throws Exception {
+        // given
+        when(queryService.getSettlement(GROUP_ID, 31L, MEMBER_ID))
+                .thenThrow(new SettlementException(SettlementErrorCode.SETTLEMENT_NOT_FOUND));
+
+        // when
+        var result = mockMvc.perform(get(PATH + "/31"));
+
+        // then
+        result.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SETTLEMENT404_1"))
+                .andExpect(jsonPath("$.message").value("정산을 찾을 수 없습니다."))
+                .andExpect(jsonPath("$.result").isEmpty());
     }
 
     @Test

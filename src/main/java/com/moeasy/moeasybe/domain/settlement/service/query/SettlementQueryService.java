@@ -12,6 +12,9 @@ import com.moeasy.moeasybe.domain.settlement.converter.SettlementConverter;
 import com.moeasy.moeasybe.domain.settlement.dto.request.SettlementReqDTO;
 import com.moeasy.moeasybe.domain.settlement.dto.response.SettlementResDTO;
 import com.moeasy.moeasybe.domain.settlement.entity.Settlement;
+import com.moeasy.moeasybe.domain.settlement.entity.SettlementItem;
+import com.moeasy.moeasybe.domain.settlement.exception.SettlementException;
+import com.moeasy.moeasybe.domain.settlement.exception.code.SettlementErrorCode;
 import com.moeasy.moeasybe.domain.settlement.repository.SettlementItemRepository;
 import com.moeasy.moeasybe.domain.settlement.repository.SettlementRepository;
 import com.moeasy.moeasybe.domain.settlement.service.support.SettlementTargetFinder;
@@ -39,6 +42,21 @@ public class SettlementQueryService {
     private final SettlementItemRepository settlementItemRepository;
     private final SettlementSplitCalculator splitCalculator;
     private final SettlementTargetFinder targetFinder;
+
+    @Transactional(readOnly = true)
+    public SettlementResDTO.Detail getSettlement(Long groupId, Long settlementId, Long memberId) {
+        if (groupId == null || settlementId == null || memberId == null) {
+            throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
+        }
+        groupRepository.findById(groupId).filter(group -> group.getDeletedAt() == null)
+                .orElseThrow(() -> new GroupException(GroupErrorCode.GROUP_NOT_FOUND));
+        requireMember(groupId, memberId);
+
+        Settlement settlement = settlementRepository.findByIdAndGroupIdAndDeletedAtIsNull(settlementId, groupId)
+                .orElseThrow(() -> new SettlementException(SettlementErrorCode.SETTLEMENT_NOT_FOUND));
+        List<SettlementItem> items = settlementItemRepository.findAllBySettlementIdOrderByGroupMemberIdAsc(settlementId);
+        return SettlementConverter.toDetail(settlement, items);
+    }
 
     @Transactional(readOnly = true)
     public SettlementResDTO.Page getSettlements(

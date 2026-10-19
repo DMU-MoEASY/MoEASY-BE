@@ -17,6 +17,41 @@ public final class SettlementConverter {
     private SettlementConverter() {
     }
 
+    public static SettlementResDTO.Detail toDetail(Settlement settlement, List<SettlementItem> items) {
+        return SettlementResDTO.Detail.builder()
+                .settlementId(settlement.getId())
+                .groupId(settlement.getGroup().getId())
+                .scheduleId(settlement.getScheduleId())
+                .title(settlement.getTitle())
+                .description(settlement.getDescription())
+                .status(settlement.getStatus())
+                .splitMode(settlement.getSplitMode())
+                .totalAmount(settlement.getTotalAmount())
+                .targetCount(items.size())
+                .dueAt(settlement.getDueAt())
+                .createdAt(settlement.getCreatedAt())
+                .createdBy(toCreator(settlement.getCreatedByGroupMember()))
+                .items(items.stream().map(SettlementConverter::toItem).toList())
+                .build();
+    }
+
+    public static SettlementResDTO.Creator toCreator(GroupMember creator) {
+        return SettlementResDTO.Creator.builder()
+                .groupMemberId(creator.getId())
+                .nickname(creator.getMember().getNickname())
+                .build();
+    }
+
+    public static SettlementResDTO.Item toItem(SettlementItem item) {
+        return SettlementResDTO.Item.builder()
+                .settlementItemId(item.getId())
+                .groupMemberId(item.getGroupMember().getId())
+                .nickname(item.getGroupMember().getMember().getNickname())
+                .amount(item.getAmount())
+                .status(item.getStatus())
+                .build();
+    }
+
     public static SettlementResDTO.Page toPage(Page<Settlement> settlements, Map<Long, Integer> targetCounts) {
         List<SettlementResDTO.Summary> items = settlements.getContent().stream()
                 .map(settlement -> toSummary(settlement, targetCounts.getOrDefault(settlement.getId(), 0)))

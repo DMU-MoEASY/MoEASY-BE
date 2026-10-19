@@ -23,6 +23,7 @@ import com.moeasy.moeasybe.domain.settlement.entity.Settlement;
 import com.moeasy.moeasybe.domain.settlement.entity.SettlementItem;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementStatus;
+import com.moeasy.moeasybe.domain.settlement.enums.SettlementItemStatus;
 import com.moeasy.moeasybe.domain.settlement.exception.code.SettlementErrorCode;
 import com.moeasy.moeasybe.domain.settlement.service.command.SettlementCommandService;
 import com.moeasy.moeasybe.global.apiPayload.code.BaseErrorCode;
@@ -86,6 +87,176 @@ class SettlementQueryServiceIntegrationTest {
         for (Long memberId : memberIds) {
             jdbcTemplate.update("DELETE FROM member WHERE id = ?", memberId);
         }
+    }
+
+    @ParameterizedTest
+    @EnumSource(GroupMemberRole.class)
+    @DisplayName("활성 회원은 청구 대상이 아니어도 상세와 전체 청구 항목을 조회한다")
+    void getSettlement_activeRole_returnsStoredDetail(GroupMemberRole role) {
+        // given
+        GroupMember requester = persistGroupMember(group, role);
+        Settlement settlement = persistListSettlement("상세 정산", List.of(target, owner));
+
+        // when
+        SettlementResDTO.Detail result = service.getSettlement(group.getId(), settlement.getId(), requester.getMember().getId());
+
+        // then
+        assertAll(
+                () -> assertEquals(settlement.getId(), result.settlementId()),
+                () -> assertEquals(group.getId(), result.groupId()),
+                () -> assertNull(result.scheduleId()),
+                () -> assertEquals("상세 정산", result.title()),
+                () -> assertEquals("설명", result.description()),
+                () -> assertEquals(SettlementStatus.OPEN, result.status()),
+                () -> assertEquals(SettlementSplitMode.EQUAL, result.splitMode()),
+                () -> assertEquals(200L, result.totalAmount()),
+                () -> assertEquals(2, result.targetCount()),
+                () -> assertEquals(LocalDateTime.of(2026, 11, 1, 23, 59, 59), result.dueAt()),
+                () -> assertEquals(LocalDateTime.of(2026, 10, 20, 9, 0), result.createdAt()),
+                () -> assertEquals(owner.getId(), result.createdBy().groupMemberId()),
+                () -> assertEquals(owner.getMember().getNickname(), result.createdBy().nickname()),
+                () -> assertEquals(List.of(owner.getId(), target.getId()),
+                        result.items().stream().map(SettlementResDTO.Item::groupMemberId).toList()),
+                () -> assertEquals(List.of(100L, 100L), result.items().stream().map(SettlementResDTO.Item::amount).toList()),
+                () -> assertTrue(result.items().stream().allMatch(item -> item.settlementItemId() != null))
+        );
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"LEFT", "KICKED", "DELETED_MEMBERSHIP", "DELETED_MEMBER"})
+    @DisplayName("탈퇴·강퇴·삭제된 생성자와 대상도 기존 닉네임·청구액을 유지한다")
+    void getSettlement_historicalMembers_preservesStoredNicknamesAndCharges(String condition) {
+        // given
+        GroupMember requester = persistGroupMember(group, GroupMemberRole.MEMBER);
+        Settlement settlement = persistListSettlement("기존 정산", List.of(owner, target));
+        invalidateMembership(owner, condition);
+        invalidateMembership(target, condition);
+        jdbcTemplate.update("UPDATE member_group SET status = 'CLOSED' WHERE id = ?", group.getId());
+        jdbcTemplate.update("UPDATE settlement SET status = 'CANCELLED' WHERE id = ?", settlement.getId());
+        jdbcTemplate.update("UPDATE settlement_item SET status = 'CANCELLED' WHERE settlement_id = ?", settlement.getId());
+
+        // when
+        SettlementResDTO.Detail result = service.getSettlement(group.getId(), settlement.getId(), requester.getMember().getId());
+
+        // then
+        assertAll(
+                () -> assertEquals(SettlementStatus.CANCELLED, result.status()),
+                () -> assertEquals(owner.getMember().getNickname(), result.createdBy().nickname()),
+                () -> assertEquals(List.of(owner.getMember().getNickname(), target.getMember().getNickname()),
+                        result.items().stream().map(SettlementResDTO.Item::nickname).toList()),
+                () -> assertEquals(2, result.targetCount()),
+                () -> assertEquals(List.of(100L, 100L), result.items().stream().map(SettlementResDTO.Item::amount).toList()),
+                () -> assertTrue(result.items().stream().allMatch(item -> item.status() == SettlementItemStatus.CANCELLED))
+        );
+    }
+
+    @Test
+    @DisplayName("일정 연결·개별 금액·선택 정보 null·현재 닉네임은 저장된 값 그대로 반환한다")
+    void getSettlement_customAndLinked_preservesSavedValues() {
+        // given
+        Settlement settlement = persistListSettlement("개별 정산", List.of(owner, target));
+        Long scheduleId = insertListSchedule(group.getId());
+        String nickname = "현재" + UUID.randomUUID();
+        jdbcTemplate.update("""
+                UPDATE settlement SET schedule_id = ?, split_mode = 'CUSTOM', total_amount = 500,
+                description = NULL, due_at = NULL WHERE id = ?
+                """, scheduleId, settlement.getId());
+        jdbcTemplate.update("UPDATE settlement_item SET amount = 400 WHERE settlement_id = ? AND group_member_id = ?",
+                settlement.getId(), owner.getId());
+        jdbcTemplate.update("UPDATE member SET nickname = ? WHERE id = ?", nickname, target.getMember().getId());
+
+        // when
+        SettlementResDTO.Detail result = service.getSettlement(group.getId(), settlement.getId(), owner.getMember().getId());
+
+        // then
+        assertAll(
+                () -> assertEquals(scheduleId, result.scheduleId()),
+                () -> assertEquals(SettlementSplitMode.CUSTOM, result.splitMode()),
+                () -> assertEquals(500L, result.totalAmount()),
+                () -> assertEquals(List.of(400L, 100L), result.items().stream().map(SettlementResDTO.Item::amount).toList()),
+                () -> assertEquals(nickname, result.items().getLast().nickname()),
+                () -> assertNull(result.description()),
+                () -> assertNull(result.dueAt())
+        );
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"MISSING", "DELETED", "OTHER_GROUP"})
+    @DisplayName("없거나 삭제됐거나 다른 모임의 정산은 SETTLEMENT404_1로 구분한다")
+    void getSettlement_unavailableSettlement_rejectsRequest(String condition) {
+        // given
+        Settlement settlement = persistListSettlement("정산", List.of(owner));
+        Long settlementId = condition.equals("MISSING") ? Long.MAX_VALUE : settlement.getId();
+        Group requestedGroup = group;
+        Long requesterId = owner.getMember().getId();
+        if (condition.equals("OTHER_GROUP")) {
+            requestedGroup = persistGroup();
+            requesterId = persistGroupMember(requestedGroup, GroupMemberRole.MEMBER).getMember().getId();
+        } else if (condition.equals("DELETED")) {
+            jdbcTemplate.update("UPDATE settlement SET deleted_at = CURRENT_TIMESTAMP(6) WHERE id = ?", settlement.getId());
+        }
+        Long groupId = requestedGroup.getId();
+        Long memberId = requesterId;
+
+        // when
+        GeneralException exception = assertThrows(GeneralException.class,
+                () -> service.getSettlement(groupId, settlementId, memberId));
+
+        // then
+        assertEquals(SettlementErrorCode.SETTLEMENT_NOT_FOUND, exception.getCode());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"MISSING", "DELETED"})
+    @DisplayName("상세 조회도 모임이 없거나 삭제됐으면 GROUP404_1로 거부한다")
+    void getSettlement_unavailableGroup_rejectsRequest(String condition) {
+        // given
+        Long groupId = condition.equals("MISSING") ? Long.MAX_VALUE : group.getId();
+        if (condition.equals("DELETED")) {
+            jdbcTemplate.update("UPDATE member_group SET deleted_at = CURRENT_TIMESTAMP(6) WHERE id = ?", groupId);
+        }
+
+        // when
+        GeneralException exception = assertThrows(GeneralException.class,
+                () -> service.getSettlement(groupId, Long.MAX_VALUE, owner.getMember().getId()));
+
+        // then
+        assertRejected(exception, GroupErrorCode.GROUP_NOT_FOUND);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"MISSING", "LEFT", "KICKED", "DELETED_MEMBERSHIP", "DELETED_MEMBER"})
+    @DisplayName("상세 조회 권한이 없는 요청자는 정산 존재 여부를 확인하기 전에 거부한다")
+    void getSettlement_unauthorizedRequester_rejectsRequest(String condition) {
+        // given
+        if (!condition.equals("MISSING")) {
+            invalidateMembership(owner, condition);
+        }
+        Long memberId = condition.equals("MISSING") ? Long.MAX_VALUE : owner.getMember().getId();
+
+        // when
+        GeneralException exception = assertThrows(GeneralException.class,
+                () -> service.getSettlement(group.getId(), Long.MAX_VALUE, memberId));
+
+        // then
+        assertRejected(exception, GeneralErrorCode.FORBIDDEN);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"GROUP", "SETTLEMENT", "MEMBER"})
+    @DisplayName("상세 서비스 직접 호출의 필수 인자 null은 잘못된 요청으로 거부한다")
+    void getSettlement_nullArgument_rejectsRequest(String missing) {
+        // given
+        Long groupId = missing.equals("GROUP") ? null : group.getId();
+        Long settlementId = missing.equals("SETTLEMENT") ? null : 1L;
+        Long memberId = missing.equals("MEMBER") ? null : owner.getMember().getId();
+
+        // when
+        GeneralException exception = assertThrows(GeneralException.class,
+                () -> service.getSettlement(groupId, settlementId, memberId));
+
+        // then
+        assertRejected(exception, GeneralErrorCode.BAD_REQUEST);
     }
 
     @ParameterizedTest

@@ -29,6 +29,18 @@ public class SettlementController implements SettlementControllerDocs {
     private final SettlementQueryService settlementQueryService;
 
     @Override
+    @GetMapping("/groups/{groupId}/settlements/{settlementId}")
+    public ResponseEntity<ApiResponse<SettlementResDTO.Detail>> getSettlement(
+            @PathVariable Long groupId,
+            @PathVariable Long settlementId,
+            @AuthenticationPrincipal Long memberId
+    ) {
+        SettlementResDTO.Detail result = settlementQueryService.getSettlement(groupId, settlementId, memberId);
+        return ResponseEntity.status(SettlementSuccessCode.SETTLEMENT_DETAIL_FETCHED.getStatus())
+                .body(ApiResponse.onSuccess(SettlementSuccessCode.SETTLEMENT_DETAIL_FETCHED, result));
+    }
+
+    @Override
     @GetMapping("/groups/{groupId}/settlements")
     public ResponseEntity<ApiResponse<SettlementResDTO.Page>> getSettlements(
             @PathVariable Long groupId,

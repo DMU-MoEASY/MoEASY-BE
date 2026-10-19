@@ -4,10 +4,14 @@ import com.moeasy.moeasybe.domain.settlement.entity.SettlementItem;
 import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface SettlementItemRepository extends JpaRepository<SettlementItem, Long> {
+
+    @EntityGraph(attributePaths = "groupMember.member")
+    List<SettlementItem> findAllBySettlementIdOrderByGroupMemberIdAsc(Long settlementId);
 
     @Query("""
             select i.settlement.id as settlementId, count(i) as targetCount
