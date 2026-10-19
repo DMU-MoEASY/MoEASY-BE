@@ -10,10 +10,39 @@ import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
 import com.moeasy.moeasybe.domain.settlement.util.SettlementSplitCalculator.Allocation;
 import java.util.List;
 import java.util.Map;
+import org.springframework.data.domain.Page;
 
 public final class SettlementConverter {
 
     private SettlementConverter() {
+    }
+
+    public static SettlementResDTO.Page toPage(Page<Settlement> settlements, Map<Long, Integer> targetCounts) {
+        List<SettlementResDTO.Summary> items = settlements.getContent().stream()
+                .map(settlement -> toSummary(settlement, targetCounts.getOrDefault(settlement.getId(), 0)))
+                .toList();
+        return SettlementResDTO.Page.builder()
+                .items(items)
+                .page(settlements.getNumber())
+                .size(settlements.getSize())
+                .totalElements(settlements.getTotalElements())
+                .totalPages(settlements.getTotalPages())
+                .hasNext(settlements.hasNext())
+                .build();
+    }
+
+    public static SettlementResDTO.Summary toSummary(Settlement settlement, int targetCount) {
+        return SettlementResDTO.Summary.builder()
+                .settlementId(settlement.getId())
+                .title(settlement.getTitle())
+                .scheduleId(settlement.getScheduleId())
+                .status(settlement.getStatus())
+                .splitMode(settlement.getSplitMode())
+                .totalAmount(settlement.getTotalAmount())
+                .targetCount(targetCount)
+                .dueAt(settlement.getDueAt())
+                .createdAt(settlement.getCreatedAt())
+                .build();
     }
 
     public static Settlement toEntity(SettlementReqDTO.Create request, Group group, GroupMember creator) {

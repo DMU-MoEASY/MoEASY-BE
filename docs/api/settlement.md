@@ -16,6 +16,7 @@
 | 대상 선택용 모임 회원 목록 조회 | 미구현 | 경로·필터·응답 필드 정의됨 |
 | 분할 미리보기 | 구현됨 | JWT·CSRF 검증, 권한·대상·금액 검증, HTTP 200 회원별 분할 결과와 Swagger 예시. 데이터 미저장 |
 | 정산 목록·상세 조회 DTO·성공/오류 코드 | 구현됨 | 목록 조건·페이지 기본값과 범위 검증, 목록·상세 응답 데이터 형태, 조회 성공·정산 없음 코드 |
+| 정산 목록 조회 Service·Repository·Converter | 구현됨 | 활성 회원 권한, 폐쇄 모임 허용, 필터·정렬·페이지 집계와 저장된 청구 인원수 일괄 조회 |
 | 정산 목록·상세 조회 | 미구현 | [정산 목록·상세 조회](#정산-목록상세-조회)의 경로·권한·응답·페이지네이션 정의됨 |
 | 납부·환불·영수증 관리·수정·취소·마감 | 미구현 | [후속 기능](#후속-기능) 참고 |
 
@@ -205,7 +206,7 @@ HTTP 201과 생성한 `settlementId`를 `ApiResponse<SettlementResDTO.Created>` 
 
 ### 계산 구현
 
-- 정산 전용 공통 보조 기능은 `settlement.util`에 둔다. 공유 계산 로직은 `util/SettlementSplitCalculator.java`에 두고, 계산 결과는 그 클래스 내부의 `Allocation` record로 정의한다. 정산 처리 서비스는 `service.command`와 `service.query`로 구분한다. 생성·미리보기 서비스는 같은 계산기를 사용하며 목록·상세 조회는 후속 구현한다.
+- 정산 전용 계산 로직은 `util/SettlementSplitCalculator.java`에 두고, 계산 결과는 그 클래스 내부의 `Allocation` record로 정의한다. 정산 처리 서비스는 `service.command`와 `service.query`로 구분한다. 생성·미리보기 서비스는 같은 계산기를 사용하며 목록 조회는 저장된 총액과 청구 인원수를 반환하고 금액을 재계산하지 않는다.
 - 공통 진입점 `calculate`가 분할 방식과 조건부 배열 조합을 검증한 뒤 `calculateEqual` 또는 `calculateCustom`으로 위임한다. 사용하지 않는 배열에 빈 배열을 전달해도 잘못된 조합으로 거부한다.
 - `SettlementSplitCalculator.calculateEqual`은 대상 ID를 오름차순 정렬한 후 위 규칙으로 배분한다. 총액이 인원수보다 작아 0원 청구가 생기면 거부한다.
 - `calculateCustom`은 회원별 양수 금액을 보존하며 `Math.addExact`로 합산한다. `Long` 범위 초과 또는 요청 총액과의 불일치는 거부하고 자동 보정하지 않는다.
@@ -316,9 +317,9 @@ HTTP 200, `SETTLEMENT200_1`로 `ApiResponse<SettlementResDTO.Preview>`를 반환
 
 ## 정산 목록·상세 조회
 
-목록 조건 DTO, 목록·상세 응답 DTO와 성공·오류 코드는 구현되어 있다. Repository·Service·Converter와 HTTP 엔드포인트는 아직 구현되지 않아 조회 API를 호출할 수 없다.
+목록 조건 DTO, 목록·상세 응답 DTO와 성공·오류 코드, 목록 조회 Repository·Service·Converter는 구현되어 있다. 상세 조회 처리와 목록·상세 HTTP 엔드포인트는 아직 구현되지 않아 조회 API를 호출할 수 없다.
 
-`SettlementReqDTO.Search`는 `page`·`size`가 null이면 각각 0·20을 적용하고 페이지 범위와 양수 일정 ID를 검증한다. `status`는 기존 `SettlementStatus` Enum을 사용한다. 쿼리 파라미터는 MVC 바인딩으로 수신하며 JSON 요청용 deserializer는 사용하지 않는다. 응답은 `SettlementResDTO.Page`·`Summary`·`Detail`·`Creator`·`Item`으로 구분하고 날짜는 초 단위 문자열로 직렬화한다. 실제 조회·권한·정렬·페이지 집계와 엔티티 변환은 후속 구현에서 연결한다.
+`SettlementReqDTO.Search`는 `page`·`size`가 null이면 각각 0·20을 적용하고 페이지 범위와 양수 일정 ID를 검증한다. `status`는 기존 `SettlementStatus` Enum을 사용한다. 쿼리 파라미터는 MVC 바인딩으로 수신하며 JSON 요청용 deserializer는 사용하지 않는다. 응답은 `SettlementResDTO.Page`·`Summary`·`Detail`·`Creator`·`Item`으로 구분하고 날짜는 초 단위 문자열로 직렬화한다.
 
 ### 공통 조회 권한과 데이터 기준
 
@@ -352,6 +353,7 @@ GET /api/v1/groups/1/settlements?page=0&size=20&status=OPEN&scheduleId=7
 ```
 
 - 필터를 함께 전달하면 모든 조건을 만족하는 정산을 조회한다.
+- 일정 필터는 정산에 저장된 `scheduleId`만 비교한다. 일정의 존재·삭제 여부를 추가 검증하지 않는다. 존재하지 않거나 다른 모임에 속한 일정 ID는 빈 목록을 반환하고, 삭제된 일정에 연결된 기존 정산은 조회할 수 있다.
 - 생성 시각 내림차순, 같은 생성 시각에서는 정산 ID 내림차순으로 정렬한다. 별도 정렬 파라미터는 제공하지 않는다.
 - `totalElements`는 해당 모임에서 필터를 적용한 전체 정산 수이며 `totalPages`는 이를 `size`로 나눈 전체 페이지 수다.
 - 결과가 없거나 마지막 페이지 이후를 요청하면 HTTP 200과 빈 `items`를 반환한다. 결과가 전혀 없으면 `totalElements=0`, `totalPages=0`, `hasNext=false`다.
@@ -389,6 +391,18 @@ HTTP 200, `SETTLEMENT200_2`를 사용한다. 목록에는 정산 요약과 페�
 ```
 
 `targetCount`는 저장된 청구 항목 수다. 일정에 연결되지 않은 정산의 `scheduleId`와 납부 기한이 없는 정산의 `dueAt`는 null이다.
+
+#### 내부 목록 조회 흐름
+
+`SettlementQueryService.getSettlements`는 `@Transactional(readOnly = true)` 안에서 다음 순서로 처리한다.
+
+1. 모임이 존재하고 삭제되지 않았는지 확인한다. `CLOSED`를 포함해 모임 상태 자체로 조회를 제한하지 않는다.
+2. 요청자의 모임 회원 상태가 `ACTIVE`이고 모임 회원 정보와 연결된 계정이 삭제되지 않았는지 확인한다. 역할이나 청구 대상 여부는 제한하지 않는다.
+3. `SettlementRepository.findPageByGroup`에서 모임·정산 삭제 여부·상태·일정 필터를 적용하고 생성 시각·ID 내림차순으로 페이지를 조회한다. 전체 건수에도 같은 필터를 사용한다.
+4. 현재 페이지의 정산 ID들로 청구 항목 수를 한 번에 집계한다. 대상자의 현재 활성·삭제 여부로 집계를 제한하지 않으며, 빈 페이지에서는 집계 쿼리를 실행하지 않는다.
+5. `SettlementConverter.toPage`·`toSummary`로 요약과 페이지 정보를 조립한다. 목록을 표시하기 위해 생성자·대상자의 닉네임이나 청구 항목 전체를 로딩하지 않는다.
+
+실제 MySQL 테스트에서 필터·정렬·페이지 집계·기존 청구 인원수 보존과 활성 일반 회원·폐쇄 모임의 조회, 비활성·삭제 요청자의 접근 거부를 검증한다. HTTP 인증·입력 검증과 Swagger 연결은 후속 단계에서 검증한다.
 
 ### 정산 상세 조회
 
@@ -452,7 +466,7 @@ HTTP 200, `SETTLEMENT200_3`을 사용한다.
 | 양수 ID·페이지 번호·페이지 크기 범위 검증 실패 | 400 | `VALID400_1` |
 | 숫자 변환 실패·범위 초과·유효하지 않은 상태 필터 | 400 | `COMMON400_1` |
 
-`SETTLEMENT404_1`의 메시지는 `정산을 찾을 수 없습니다.`로 정의한다. 조회는 CSRF 검증을 요구하지 않으며, 폐쇄 상태 자체를 모임 없음으로 처리하지 않는다. 일정 필터의 존재·소속·삭제 여부에 따른 처리는 [미정 계약](#미정-계약)에서 구체화한다.
+`SETTLEMENT404_1`의 메시지는 `정산을 찾을 수 없습니다.`로 정의한다. 조회는 CSRF 검증을 요구하지 않으며, 폐쇄 상태 자체를 모임 없음으로 처리하지 않는다. 목록의 일정 필터는 연결 ID만 비교하므로 일정 없음·삭제를 오류로 반환하지 않는다.
 
 ## 정산 생성 오류 응답 계약
 
@@ -499,7 +513,6 @@ Flyway 초기 스키마에는 다음 테이블이 존재한다. `Settlement`, `S
 다음 항목은 해당 기능 구현 전에 구체화하고 이 문서에 반영한다.
 
 - 회원 목록 조회의 성공·오류 코드와 일정 필터 오류 계약.
-- 정산 목록의 일정 필터에서 존재하지 않거나 다른 모임에 속한 일정·삭제된 일정을 전달한 경우의 처리.
 - 정산 조회에서 삭제된 회원 계정의 닉네임 표시 방식. 생성자와 청구 대상자 모두에 적용한다.
 
 ## 후속 기능
