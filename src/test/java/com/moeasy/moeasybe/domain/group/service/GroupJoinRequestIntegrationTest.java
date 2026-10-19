@@ -31,13 +31,13 @@ class GroupJoinRequestIntegrationTest extends JoinRequestIntegrationSupport {
         LocalDateTime previousAudit = LocalDateTime.of(2020, 1, 1, 0, 0);
         jdbc.update("UPDATE group_join_request SET updated_at = ? WHERE id = ?", previousAudit, created.requestId());
         commands.cancel(group, applicant);
+        // 커밋 후 별도 트랜잭션에서 저장과 동일한 JPA 날짜 매핑으로 재조회한다.
         var latest = queries.getMine(group, applicant);
 
         // then
         var row = jdbc.queryForMap("SELECT * FROM group_join_request WHERE id = ?", created.requestId());
         assertAll(
-                () -> assertThat(created.createdAt()).isEqualTo(jdbc.queryForObject(
-                        "SELECT created_at FROM group_join_request WHERE id = ?", LocalDateTime.class, created.requestId())),
+                () -> assertThat(created.createdAt()).isEqualTo(latest.createdAt()),
                 () -> assertThat(latest.status().name()).isEqualTo("CANCELLED"),
                 () -> assertThat(row.get("processed_by_group_member_id")).isNull(),
                 () -> assertThat(row.get("processed_at")).isNotNull(),
