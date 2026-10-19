@@ -95,11 +95,44 @@ Group 전용 오류 코드는 `GroupErrorCode`에 정의되어 있다. 인증 �
 
 ## 커버 이미지
 
-요청 필드 `coverImageKey`는 S3 객체 **키**이며 파일 ID나 URL이 아니다. 비어 있지 않은 최대 500자 문자열이어야 한다. 키는 별도 커버 이미지 업로드 발급 흐름에서 인증 회원에게 발급받아야 하며, Group CRUD 범위에는 이 키와 업로드 URL을 발급하는 HTTP API가 포함되지 않는다. 발급 키는 `group-covers/{memberId}/{UUID}` 형식이다. 비공개 버킷에 객체가 존재하고 해당 회원에게 발급된 키인지 저장 전에 확인한다. Group 내부 서비스는 발급 이력의 회원 ID와 S3 객체 존재·Content-Type을 검증한다.
+### 업로드 URL 발급
 
-S3 객체 검증은 Group 쓰기 트랜잭션 전에 수행한다. 수정 시에는 S3 검증 전에 Group 상태와 OWNER 권한을 미리 확인하고, 검증 후 비관적 락을 획득해 두 조건을 다시 확인한 뒤 변경한다. S3 객체가 검증 이후 변경되거나 삭제될 수 있으므로 S3와 DB 간 완전한 원자성은 보장하지 않는다.
+`POST /api/v1/groups/cover-image-uploads`는 인증 회원에게 Group 커버용 S3 PUT URL을 발급한다. 요청 본문은 다음과 같다.
 
-S3 `HeadObject`가 403 또는 일반 404를 반환하면 해당 키만 목록 조회한다. 조회가 완료되고 정확한 키가 없을 때만 `COMMON400_1`로 거부한다. 목록 접근이 거부되거나 조회가 실패하거나 결과가 완결되지 않으면 객체 부재를 확정하지 않고 `STORAGE503_1`로 응답한다. 배포 자격 증명에는 `group-covers/*` 접두사와 최대 한 건으로 제한된 `s3:ListBucket` 권한이 필요하다.
+```json
+{"contentType":"image/jpeg"}
+```
+
+허용 형식은 `image/jpeg`, `image/png`, `image/webp`다. 성공은 HTTP 201 / `GROUP201_2`이며 `result`에 `coverImageKey`, `uploadUrl`, `uploadUrlExpiresAt`, `requiredHeaders`를 포함한다. `uploadUrlExpiresAt`은 S3 presigner가 해당 URL에 반환한 만료 시각이다. `requiredHeaders`에는 실제 서명된 요청 헤더를 담고, URL로부터 HTTP 클라이언트가 정하는 `host`는 포함하지 않는다. 클라이언트는 URL에 PUT할 때 응답의 `requiredHeaders`를 그대로 전송한다. 키는 `group-covers/{memberId}/{UUID}` 형식이고 회원에게 발급 이력을 저장한다.
+
+```json
+{
+  "isSuccess": true,
+  "code": "GROUP201_2",
+  "message": "커버 이미지 업로드 URL을 발급했습니다.",
+  "result": {
+    "coverImageKey": "group-covers/42/123e4567-e89b-12d3-a456-426614174000",
+    "uploadUrl": "<presigned PUT URL>",
+    "uploadUrlExpiresAt": "2026-01-01T00:05:00Z",
+    "requiredHeaders": {"Content-Type":"image/jpeg"}
+  }
+}
+```
+
+### 발급 키 정책
+
+- Group 전용 키와 발급 이력을 사용한다. S3 URL 서명 및 객체 메타데이터 조회는 공유 인프라 `S3StorageService`가 담당한다.
+- URL 만료 기본값은 5분이다. 이 만료는 URL을 통한 PUT 권한에만 적용하며, 발급 키를 Group에 연결할 수 있는 기간에는 별도 기한을 두지 않는다.
+- 같은 회원은 키를 재사용해 여러 Group에 연결할 수 있다.
+- 자동 정리는 수행하지 않는다. 이미지 제거는 Group의 키 참조만 제거하며 S3 객체를 삭제하지 않는다.
+- 객체 존재 확인 시 S3 Content-Type 메타데이터와 발급 이력의 Content-Type을 비교한다. 파일 바이트, 실제 이미지 형식·정상 디코딩, 크기·해상도, 악성 콘텐츠는 확인하지 않는다.
+- 같은 PUT URL은 만료 전 다시 사용할 수 있으며 동일 키 객체를 덮어쓸 수 있다. 따라서 메타데이터 확인과 Group 저장 사이, 저장 이후에도 객체가 바뀔 수 있고 이 일련의 작업은 S3와 DB 사이 원자성을 제공하지 않는다.
+
+S3 객체 검증은 Group 쓰기 트랜잭션 전에 수행한다. 수정 시에는 S3 검증 전에 Group 상태와 OWNER 권한을 미리 확인하고, 검증 후 비관적 락을 획득해 두 조건을 다시 확인한 뒤 변경한다.
+
+S3 `HeadObject`가 403 또는 일반 404를 반환하면 해당 키만 목록 조회한다. 조회가 완료되고 정확한 키가 없을 때만 HTTP 400 / `GROUP400_4`로 거부한다. 목록 접근이 거부되거나 조회가 실패하거나 결과가 완결되지 않으면 객체 부재를 확정하지 않고 `STORAGE503_1`로 응답한다. 배포 자격 증명에는 `group-covers/*` 접두사와 최대 한 건으로 제한된 `s3:ListBucket` 권한이 필요하다.
+
+미발급 키와 타인 소유 키는 HTTP 400 / `GROUP400_3`으로 동일하게 반환해 타인 발급 이력의 존재를 노출하지 않는다. 발급 회원의 키에 객체가 없으면 HTTP 400 / `GROUP400_4`, Content-Type이 발급 정보와 다르면 HTTP 400 / `GROUP400_5`다. 지원하지 않는 형식은 HTTP 400 / `GROUP400_6`, 저장소 장애 또는 객체 부재를 확정할 수 없는 경우는 HTTP 503 / `STORAGE503_1`이다.
 
 응답에는 키 대신 `S3StorageService.createPresignedGetUrl`로 만든 `coverImageUrl`을 사용한다. URL은 설정된 유효 시간이 지나면 다시 조회해 발급받아야 한다. 이미지가 없으면 `null`이다. 비공개 S3 접근·서명 요청에는 요청과 데이터 전송 비용이 발생할 수 있다.
 
