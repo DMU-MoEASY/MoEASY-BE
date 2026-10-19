@@ -12,7 +12,7 @@
 | 정산 생성 DTO·성공/오류 코드 | 구현됨 | 필드 검증·JSON 정수/날짜 변환·생성 결과 |
 | 금액 분할 계산 | 구현됨 | 균등 분할·회원별 지정 금액 검증·중복 대상 거부·오버플로 감지. DB 조회·저장 없음 |
 | 정산 생성 Service·Repository·Converter | 구현됨 | 권한·일정·대상·조건부 필드·납부 기한 검증 및 정산·청구의 트랜잭션 저장 |
-| 정산 생성 엔드포인트·Swagger | 미구현 | 요청·응답·검증 계약 정의됨. 서비스 연결 필요 |
+| 정산 생성 엔드포인트·Swagger | 구현됨 | JWT·CSRF 검증, 요청 validation, HTTP 201 공통 응답과 요청·응답 예시 |
 | 대상 선택용 모임 회원 목록 조회 | 미구현 | 경로·필터·응답 필드 정의됨 |
 | 분할 미리보기 | 미구현 | 계산 규칙·연동 흐름 정의됨. 상세 요청·응답 명세는 후속 정의 |
 | 정산 목록·상세 조회 | 미구현 | 후속 정의 |
@@ -55,7 +55,7 @@
 
 필수 배열은 비어 있을 수 없다. 사용하지 않는 조건부 필드는 생략하거나 null로 전달한다. 해당 필드에 값이 들어오면 잘못된 조합으로 거부한다.
 
-요청 DTO는 필수값·길이·양수·빈 배열·중첩 항목을 검증하고 제목의 앞뒤 공백을 제거한다. 중복 대상·금액·합계 검증과 배분 계산은 `SettlementSplitCalculator`에서 담당한다. 선택한 분할 방식에 필요한 배열의 누락·불필요한 필드 전달, 생성 권한, 일정과 대상의 실제 존재·소속·상태, 납부 기한은 `SettlementCommandService`에서 검증한다. 서비스는 구현되어 있으나 엔드포인트가 연결되지 않아 생성 API는 아직 호출할 수 없다.
+요청 DTO는 필수값·길이·양수·빈 배열·중첩 항목을 검증하고 제목의 앞뒤 공백을 제거한다. 중복 대상·금액·합계 검증과 배분 계산은 `SettlementSplitCalculator`에서 담당한다. 선택한 분할 방식에 필요한 배열의 누락·불필요한 필드 전달, 생성 권한, 일정과 대상의 실제 존재·소속·상태, 납부 기한은 `SettlementCommandService`에서 검증한다. `SettlementController`에서 요청 DTO를 검증하고 JWT principal의 회원 ID와 함께 서비스로 전달한다.
 
 | 분할 방식 | 대상·금액 처리 |
 | --- | --- |
@@ -141,7 +141,7 @@
 
 ### 성공 응답
 
-HTTP 201과 생성한 `settlementId`를 반환한다. `SettlementResDTO.Created`와 정산 성공 코드 Enum은 정의되어 있으며, 아래 응답은 후속 생성 API에서 반환할 계약이다.
+HTTP 201과 생성한 `settlementId`를 `ApiResponse<SettlementResDTO.Created>` 형식으로 반환한다.
 
 ```json
 {
@@ -153,6 +153,16 @@ HTTP 201과 생성한 `settlementId`를 반환한다. `SettlementResDTO.Created`
   }
 }
 ```
+
+### Swagger에서 생성 테스트
+
+1. API를 호출하는 호스트에 유효한 `moeasy_access_token` 쿠키가 있어야 한다.
+2. `GET /api/v1/auth/csrf`를 호출해 CSRF 쿠키를 발급받고 응답의 `result.token` 값을 복사한다.
+3. 정산 생성 API의 `groupId`와 요청 본문을 입력한다. 대상 ID는 `group_member.id`를 사용한다.
+4. `X-XSRF-TOKEN` 헤더 입력란에 복사한 값을 넣어 실행한다. CSRF 쿠키도 같은 요청에 전달되어야 한다.
+5. 성공하면 HTTP 201, `SETTLEMENT201_1`, `result.settlementId`를 확인한다.
+
+`SettlementControllerDocs`는 공통 성공 응답 스키마, 균등·개별 금액 요청 예시와 400·401·403·404 실패 응답을 정의한다. 브라우저 프론트에서 호출할 때도 쿠키와 CSRF 헤더가 필요하며, 교차 출처 요청은 `credentials: 'include'` 또는 `withCredentials: true`를 설정한다.
 
 ## 대상 선택용 회원 목록 조회
 
@@ -194,12 +204,12 @@ HTTP 201과 생성한 `settlementId`를 반환한다. `SettlementResDTO.Created`
 
 ### 계산 구현
 
-- 정산 전용 공통 보조 기능은 `settlement.util`에 둔다. 공유 계산 로직은 `util/SettlementSplitCalculator.java`에 두고, 계산 결과는 그 클래스 내부의 `Allocation` record로 정의한다. 정산 처리 서비스는 `service.command`와 `service.query`로 구분하여 계산기를 재사용한다. 현재 조회·저장 서비스는 아직 구현되지 않았다.
+- 정산 전용 공통 보조 기능은 `settlement.util`에 둔다. 공유 계산 로직은 `util/SettlementSplitCalculator.java`에 두고, 계산 결과는 그 클래스 내부의 `Allocation` record로 정의한다. 정산 처리 서비스는 `service.command`와 `service.query`로 구분하여 계산기를 재사용한다. 생성 서비스는 구현되어 있으며 조회·미리보기 서비스는 후속 구현한다.
 - `SettlementSplitCalculator.calculateEqual`은 대상 ID를 오름차순 정렬한 후 위 규칙으로 배분한다. 총액이 인원수보다 작아 0원 청구가 생기면 거부한다.
 - `calculateCustom`은 회원별 양수 금액을 보존하며 `Math.addExact`로 합산한다. `Long` 범위 초과 또는 요청 총액과의 불일치는 거부하고 자동 보정하지 않는다.
 - 두 메서드는 중복 ID를 제거하지 않고 오류로 처리한다. DTO 검증을 거치지 않는 내부 호출에서도 빈 대상·null 항목·양수가 아닌 ID·금액을 거부한다.
 - 반환값은 `groupMemberId`, 청구액 `amount`, 나머지 추가분 `remainderAmount`를 담은 내부 결과 목록이다. 두 방식 모두 ID 오름차순이며 `CUSTOM`의 나머지 추가분은 0원이다. 입력 목록의 순서는 변경하지 않는다.
-- 계산기는 DB를 조회하거나 저장하지 않는다. 향후 생성과 미리보기 서비스가 재사용하며, 요청자 권한과 회원의 실제 존재·소속·상태는 서비스에서 별도로 검증해야 한다. 미리보기 API의 응답 DTO는 아직 정의되지 않았다.
+- 계산기는 DB를 조회하거나 저장하지 않는다. 생성 서비스가 사용하며 미리보기 서비스에서도 재사용한다. 요청자 권한과 회원의 실제 존재·소속·상태는 서비스에서 별도로 검증한다. 미리보기 API의 응답 DTO는 아직 정의되지 않았다.
 
 ### 미리보기 API의 역할
 
@@ -221,7 +231,7 @@ HTTP 201과 생성한 `settlementId`를 반환한다. `SettlementResDTO.Created`
 
 ## 정산 생성 오류 응답 계약
 
-정산 전용 코드와 `SettlementException`은 정의되어 있다. 계산기는 중복·유효하지 않은 대상 ID에 `SETTLEMENT400_2`, 금액·합계·오버플로 오류에 `SETTLEMENT400_4`를 사용한다. 권한·일정·회원 상태·납부 기한 검증과 API 연결은 후속 구현한다. 기존 인증·DTO 검증 오류는 공통 예외 처리 흐름을 재사용한다.
+정산 전용 코드와 `SettlementException`을 사용한다. 계산기는 중복·유효하지 않은 대상 ID에 `SETTLEMENT400_2`, 금액·합계·오버플로 오류에 `SETTLEMENT400_4`를 사용한다. 서비스는 권한·일정·회원 상태·납부 기한을 검증하며, Controller에서 발생한 DTO 검증 오류와 서비스 오류는 기존 공통 예외 처리 흐름으로 반환한다. JWT·CSRF 오류는 기존 시큐리티 필터의 공통 응답을 사용한다.
 
 | 상황 | HTTP | 코드 |
 | --- | --- | --- |
@@ -238,7 +248,7 @@ HTTP 201과 생성한 `settlementId`를 반환한다. `SettlementResDTO.Created`
 
 ## 현재 데이터 구조
 
-Flyway 초기 스키마에는 다음 테이블이 존재한다. `Settlement`, `SettlementItem` 엔티티와 분할 방식·상태 Enum, DTO·오류 코드, 금액 계산기는 구현되어 있다. API와 조회·저장 서비스는 아직 구현되지 않았다. 납부·영수증 엔티티는 후속 기능에서 구현한다.
+Flyway 초기 스키마에는 다음 테이블이 존재한다. `Settlement`, `SettlementItem` 엔티티와 분할 방식·상태 Enum, DTO·오류 코드, 금액 계산기, 정산 생성 서비스와 API는 구현되어 있다. 조회 API와 납부·영수증 엔티티는 후속 기능에서 구현한다.
 
 | 테이블 | 현재 저장 정보 |
 | --- | --- |
@@ -247,7 +257,7 @@ Flyway 초기 스키마에는 다음 테이블이 존재한다. `Settlement`, `S
 | `settlement_payment` | 청구 항목별 납부·환불 기록, 금액·상태·발생 시각·멱등 키, 선택적 계좌 거래 연결 |
 | `receipt` | 정산별 이미지 키·상호명·금액·결제 시각 |
 
-`V20261019003905__add_settlement_total_amount_and_split_mode.sql`은 생성 당시 총액과 분할 방식을 보존할 `total_amount`, `split_mode` 필수 컬럼을 추가한다. 총액과 회원별 청구액은 DB에서도 1~9,223,372,036,854,775,807원으로 제한하며, 분할 방식은 `EQUAL`·`CUSTOM`만 허용한다. 총액과 청구액 합계의 일치 여부는 계산기에서 보장하며, 후속 저장 서비스는 검증된 계산 결과를 사용해야 한다.
+`V20261019003905__add_settlement_total_amount_and_split_mode.sql`은 생성 당시 총액과 분할 방식을 보존할 `total_amount`, `split_mode` 필수 컬럼을 추가한다. 총액과 회원별 청구액은 DB에서도 1~9,223,372,036,854,775,807원으로 제한하며, 분할 방식은 `EQUAL`·`CUSTOM`만 허용한다. 총액과 청구액 합계의 일치 여부는 계산기에서 보장하며 생성 서비스는 검증된 계산 결과를 저장한다.
 
 이 마이그레이션은 정산 기능 도입 전의 빈 정산 테이블을 대상으로 한다. 기존 정산 행이 있으면 총액·분할 방식을 임의로 추정하지 않고 실패한다. 해당 환경은 기존 데이터의 이관 정책을 정한 후 적용해야 한다.
 
@@ -257,7 +267,7 @@ Flyway 초기 스키마에는 다음 테이블이 존재한다. `Settlement`, `S
 
 같은 마이그레이션에서 상태 제약을 위 목록으로 변경하고 기존 `PARTIALLY_PAID`를 `PENDING`으로 전환한다.
 
-일정과 RSVP는 테이블만 존재하며 Java 도메인은 아직 없다. 정산·회원 조회에 필요한 일정 소속·삭제 여부와 참석 예정 회원 조회를 구현하되, 일정 CRUD 전체를 정산 기능에 포함하지 않는다.
+일정과 RSVP의 JPA 엔티티는 아직 없다. 정산 생성에서는 `ScheduleRepository`의 SQL 조회로 일정 소속·삭제 여부를 확인한다. `Schedule` 엔티티 구현 시 이 조회를 JPA 기반으로 전환하도록 TODO를 남겨두었다. 참석 예정 회원 조회는 회원 목록 API에서 후속 구현하며, 일정 CRUD 전체를 정산 기능에 포함하지 않는다.
 
 ## 미정 계약
 
