@@ -20,7 +20,7 @@ spring:
   # - 기본값은 "로컬 docker 개발용 임시값" 이며, 운영 환경에서는 반드시 환경변수로 override 합니다.
   # - 운영 DB 비밀번호·JWT 시크릿 등 실제 비밀값은 절대 커밋하지 말고 환경변수(또는 시크릿 매니저)로만 주입하세요.
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/moeasy?serverTimezone=Asia/Seoul&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false}
+    url: ${DB_URL:jdbc:mysql://localhost:3307/moeasy?serverTimezone=Asia/Seoul&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false}
     username: ${DB_USERNAME:moeasy}
     password: ${DB_PASSWORD:moeasy1234}
     driver-class-name: com.mysql.cj.jdbc.Driver

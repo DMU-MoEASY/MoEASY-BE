@@ -5,10 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.URI;
 import java.net.URL;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,9 +26,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.moeasy.moeasybe.global.config.AwsS3Properties;
 import com.moeasy.moeasybe.storage.code.StorageErrorCode;
 import com.moeasy.moeasybe.storage.exception.StorageValidationException;
+import com.moeasy.moeasybe.storage.exception.StorageOperationException;
 
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
@@ -73,14 +83,23 @@ class S3StorageServiceTest {
 
     @Test
     void createsPresignedPutUrlWithContentTypeAndExpiration() throws Exception {
+        Instant expiration = Instant.parse("2026-01-01T00:05:00Z");
         URL expectedUrl = URI.create("https://example.com/upload").toURL();
         when(presignedPutObjectRequest.url()).thenReturn(expectedUrl);
+        when(presignedPutObjectRequest.expiration()).thenReturn(expiration);
+        when(presignedPutObjectRequest.signedHeaders()).thenReturn(Map.of(
+                "host", List.of("example.com"),
+                "content-type", List.of("image/jpeg")
+        ));
         when(s3Presigner.presignPutObject(any(PutObjectPresignRequest.class)))
                 .thenReturn(presignedPutObjectRequest);
 
-        URI actualUrl = service.createPresignedPutUrl("media/test.jpg", "image/jpeg");
+        S3StorageService.PresignedUpload upload = service.createPresignedPutUrl("media/test.jpg", "image/jpeg");
 
-        assertEquals(expectedUrl.toURI(), actualUrl);
+        assertEquals(expectedUrl.toURI(), upload.url());
+        assertEquals(expiration, upload.expiresAt());
+        assertEquals(Map.of("Content-Type", "image/jpeg"), upload.requiredHeaders());
+        assertThat(upload.requiredHeaders()).doesNotContainKey("Host");
         verify(s3Presigner).presignPutObject(putRequestCaptor.capture());
         assertEquals(Duration.ofMinutes(5), putRequestCaptor.getValue().signatureDuration());
         assertEquals("test-bucket", putRequestCaptor.getValue().putObjectRequest().bucket());
@@ -111,6 +130,39 @@ class S3StorageServiceTest {
         verify(s3Client).deleteObject(deleteRequestCaptor.capture());
         assertEquals("test-bucket", deleteRequestCaptor.getValue().bucket());
         assertEquals("media/test.jpg", deleteRequestCaptor.getValue().key());
+    }
+
+    @Test
+    void returnsObjectMetadataWhenHeadSucceeds() {
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenReturn(HeadObjectResponse.builder().contentType("image/jpeg").build());
+
+        var metadata = service.getObjectMetadata("group-covers/1/key");
+
+        assertThat(metadata).contains(new S3StorageService.ObjectMetadata("image/jpeg"));
+    }
+
+    @Test
+    void confirmsMissingObjectAfterHeadFailureAndCompleteListing() {
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(S3Exception.builder().statusCode(404).message("missing").build());
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenReturn(ListObjectsV2Response.builder().isTruncated(false).build());
+
+        assertThat(service.getObjectMetadata("group-covers/1/key")).isEmpty();
+    }
+
+    @Test
+    void mapsAmbiguousHeadFailureToStorageUnavailable() {
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(S3Exception.builder().statusCode(403).message("denied").build());
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenThrow(S3Exception.builder().statusCode(403).message("list denied").build());
+
+        var exception = assertThrows(StorageOperationException.class,
+                () -> service.getObjectMetadata("group-covers/1/key"));
+
+        assertThat(exception.getCode().getCode()).isEqualTo("STORAGE503_1");
     }
 
     @Test

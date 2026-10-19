@@ -11,7 +11,8 @@ public enum GroupSuccessCode implements BaseSuccessCode {
     GROUP_CREATED(HttpStatus.CREATED, "GROUP201_1", "모임을 생성했습니다."),
     GROUP_FETCHED(HttpStatus.OK, "GROUP200_1", "모임을 조회했습니다."),
     GROUP_UPDATED(HttpStatus.OK, "GROUP200_2", "모임을 수정했습니다."),
-    GROUP_CLOSED(HttpStatus.OK, "GROUP200_3", "모임을 폐쇄했습니다.");
+    GROUP_CLOSED(HttpStatus.OK, "GROUP200_3", "모임을 폐쇄했습니다."),
+    GROUP_COVER_UPLOAD_ISSUED(HttpStatus.CREATED, "GROUP201_2", "커버 이미지 업로드 URL을 발급했습니다.");
 
     private final HttpStatus status;
     private final String code;
