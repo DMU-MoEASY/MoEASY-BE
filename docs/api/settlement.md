@@ -14,7 +14,7 @@
 | 정산 생성 Service·Repository·Converter | 구현됨 | 권한·일정·대상·조건부 필드·납부 기한 검증 및 정산·청구의 트랜잭션 저장 |
 | 정산 생성 엔드포인트·Swagger | 구현됨 | JWT·CSRF 검증, 요청 validation, HTTP 201 공통 응답과 요청·응답 예시 |
 | 대상 선택용 모임 회원 목록 조회 | 미구현 | 경로·필터·응답 필드 정의됨 |
-| 분할 미리보기 | 미구현 | 계산 규칙·연동 흐름 정의됨. 상세 요청·응답 명세는 후속 정의 |
+| 분할 미리보기 | 계약·DTO·성공 코드 구현됨. Service·Controller·Swagger 미구현 | [분할 미리보기 API](#분할-미리보기-api) 참고. 아직 호출할 수 없음 |
 | 정산 목록·상세 조회 | 미구현 | 후속 정의 |
 | 납부·환불·영수증 관리·수정·취소·마감 | 미구현 | [후속 기능](#후속-기능) 참고 |
 
@@ -24,7 +24,7 @@
 
 - 모든 경로의 공통 접두사는 `/api/v1`이다.
 - 정상·오류 응답은 기존 `ApiResponse<T>` 형식을 사용한다.
-- 인증에는 JWT HttpOnly 쿠키를 사용한다. 상태 변경 요청에는 기존 CSRF 쿠키와 `X-XSRF-TOKEN` 헤더가 필요하다.
+- 인증에는 JWT HttpOnly 쿠키를 사용한다. POST·PATCH·PUT·DELETE 요청에는 기존 CSRF 쿠키와 `X-XSRF-TOKEN` 헤더가 필요하다. 저장하지 않는 POST 미리보기도 같은 검증을 적용한다.
 - 생성자·요청자의 회원 ID는 JWT에서 주입받으며 요청 본문으로 받지 않는다.
 - `groupId`는 `member_group.id`다. 정산 대상의 `groupMemberId`는 `group_member.id`이며 로그인 회원의 `memberId`와 다르다. 모든 ID는 양의 정수다.
 - 활성 모임 회원은 같은 모임에 속하며 `group_member.status=ACTIVE`, `group_member.deleted_at IS NULL`이고 연결된 `member`도 삭제되지 않은 회원이다.
@@ -209,15 +209,79 @@ HTTP 201과 생성한 `settlementId`를 `ApiResponse<SettlementResDTO.Created>` 
 - `calculateCustom`은 회원별 양수 금액을 보존하며 `Math.addExact`로 합산한다. `Long` 범위 초과 또는 요청 총액과의 불일치는 거부하고 자동 보정하지 않는다.
 - 두 메서드는 중복 ID를 제거하지 않고 오류로 처리한다. DTO 검증을 거치지 않는 내부 호출에서도 빈 대상·null 항목·양수가 아닌 ID·금액을 거부한다.
 - 반환값은 `groupMemberId`, 청구액 `amount`, 나머지 추가분 `remainderAmount`를 담은 내부 결과 목록이다. 두 방식 모두 ID 오름차순이며 `CUSTOM`의 나머지 추가분은 0원이다. 입력 목록의 순서는 변경하지 않는다.
-- 계산기는 DB를 조회하거나 저장하지 않는다. 생성 서비스가 사용하며 미리보기 서비스에서도 재사용한다. 요청자 권한과 회원의 실제 존재·소속·상태는 서비스에서 별도로 검증한다. 미리보기 API의 응답 DTO는 아직 정의되지 않았다.
+- 계산기는 DB를 조회하거나 저장하지 않는다. 생성 서비스가 사용하며 미리보기 서비스에서도 재사용한다. 요청자 권한과 회원의 실제 존재·소속·상태는 서비스에서 별도로 검증한다. 미리보기 요청·응답 DTO는 정의되어 있으며 서비스와 API 연결은 아직 구현되지 않았다.
 
-### 미리보기 API의 역할
+### 분할 미리보기 API
 
-- 생성 권한이 있는 요청자에게 회원별 최종 청구액과 나머지 추가분을 반환한다.
-- 대상 ID·분할 방식·총액을 입력받으며 `CUSTOM`이면 회원별 금액도 입력받는다.
-- 권한·대상·금액을 검증하지만 정산이나 청구 데이터를 저장하지 않는다.
-- 응답에는 `groupMemberId`, 표시용 닉네임, 최종 청구액을 포함한다. 균등 분할에서는 나머지로 추가된 금액도 포함한다.
-- 생성 API와 동일한 계산 규칙을 사용한다. 엔드포인트·DTO·응답 코드는 [미정 계약](#미정-계약)에 명시한다.
+`POST /api/v1/groups/{groupId}/settlements/preview`
+
+현재 요청·응답 DTO와 성공 코드는 구현되어 있다. Service·Controller·Swagger 연결은 아직 구현되지 않아 호출할 수 없다. 미리보기는 조회 성격의 유스케이스로 `SettlementQueryService`에서 처리하고 생성과 같은 `SettlementSplitCalculator`를 재사용한다.
+
+#### 권한과 검증
+
+- 폐쇄·삭제되지 않은 모임의 활성 `OWNER`·`MANAGER`만 요청할 수 있다. 생성과 같은 인증·권한·대상 기준을 사용한다.
+- JWT 인증 쿠키와 CSRF 쿠키·`X-XSRF-TOKEN` 헤더가 필요하다. POST이므로 저장 여부와 관계없이 기존 CSRF 검증을 적용한다.
+- 분할 방식·조건부 필드·대상 중복·회원 소속 및 활성 상태·금액 범위·CUSTOM 합계를 생성과 동일하게 검증한다.
+- 정산·청구 데이터를 저장하거나 예약하지 않는다. 미리보기 식별자나 토큰을 발급하지 않는다.
+- 제목·설명·일정·납부 기한은 요청 필드에 포함하지 않는다. 선택한 대상 ID만으로 계산하며, 일정의 유효성 등 생성에 필요한 나머지 정보는 생성 요청에서 검증한다.
+
+#### 요청
+
+`SettlementReqDTO.Preview`는 생성 요청 중 `splitMode`, `totalAmount`, `groupMemberIds`, `memberAmounts`만 받는다. JSON 정수 형식·양수 범위·배열·중첩 항목 검증도 생성과 동일하다. EQUAL은 `groupMemberIds`만, CUSTOM은 `memberAmounts`만 사용하고, 사용하지 않는 배열은 생략 또는 null로 전달한다.
+
+균등 분할 요청:
+
+```json
+{
+  "splitMode": "EQUAL",
+  "totalAmount": 500,
+  "groupMemberIds": [13, 11, 12]
+}
+```
+
+회원별 금액 지정 요청:
+
+```json
+{
+  "splitMode": "CUSTOM",
+  "totalAmount": 20000,
+  "memberAmounts": [
+    { "groupMemberId": 11, "amount": 12000 },
+    { "groupMemberId": 12, "amount": 8000 }
+  ]
+}
+```
+
+#### 성공 응답
+
+HTTP 200, `SETTLEMENT200_1`로 `ApiResponse<SettlementResDTO.Preview>`를 반환한다.
+
+```json
+{
+  "isSuccess": true,
+  "code": "SETTLEMENT200_1",
+  "message": "정산 분할 미리보기에 성공했습니다.",
+  "result": {
+    "splitMode": "EQUAL",
+    "totalAmount": 500,
+    "targetCount": 3,
+    "items": [
+      { "groupMemberId": 11, "nickname": "모이지", "amount": 167, "remainderAmount": 1 },
+      { "groupMemberId": 12, "nickname": "민지", "amount": 167, "remainderAmount": 1 },
+      { "groupMemberId": 13, "nickname": "도윤", "amount": 166, "remainderAmount": 0 }
+    ]
+  }
+}
+```
+
+- `targetCount`는 검증된 대상 수이며 `items` 길이와 같다. `items`는 `groupMemberId` 오름차순이다.
+- `nickname`은 조회 시점의 회원 닉네임이다. 이름을 요청 본문으로 받지 않는다.
+- `amount`는 나머지 추가분이 이미 포함된 최종 청구액이다. 프론트에서 `remainderAmount`를 다시 더하지 않는다.
+- `remainderAmount`는 EQUAL에서 0 또는 1원이고 CUSTOM에서는 항상 0원이다. 모든 `amount`의 합계는 `totalAmount`와 같다.
+
+#### 오류 응답
+
+[정산 생성 오류 응답 계약](#정산-생성-오류-응답-계약)의 공통 인증·권한·모임·DTO·JSON 오류와 `SETTLEMENT400_2`(대상), `SETTLEMENT400_3`(조건부 필드), `SETTLEMENT400_4`(금액)를 재사용한다. 일정·기한을 받지 않으므로 `SETTLEMENT400_1`과 `SETTLEMENT400_5`는 미리보기에서 사용하지 않는다.
 
 ### 프론트 연동 흐름
 
@@ -274,7 +338,6 @@ Flyway 초기 스키마에는 다음 테이블이 존재한다. `Settlement`, `S
 다음 항목은 해당 기능 구현 전에 구체화하고 이 문서에 반영한다.
 
 - 회원 목록 조회의 성공·오류 코드와 일정 필터 오류 계약.
-- 분할 미리보기의 엔드포인트, 요청·응답 필드명, 성공·오류 코드.
 - 정산 목록·상세 조회의 경로·조회 권한·응답 필드·페이지네이션.
 
 ## 후속 기능
