@@ -15,7 +15,7 @@
 | 정산 생성 엔드포인트·Swagger | 구현됨 | JWT·CSRF 검증, 요청 validation, HTTP 201 공통 응답과 요청·응답 예시 |
 | 대상 선택용 모임 회원 목록 조회 | 미구현 | 경로·필터·응답 필드 정의됨 |
 | 분할 미리보기 | 구현됨 | JWT·CSRF 검증, 권한·대상·금액 검증, HTTP 200 회원별 분할 결과와 Swagger 예시. 데이터 미저장 |
-| 정산 목록·상세 조회 | 미구현 | 후속 정의 |
+| 정산 목록·상세 조회 | 미구현 | [정산 목록·상세 조회](#정산-목록상세-조회)의 경로·권한·응답·페이지네이션 정의됨 |
 | 납부·환불·영수증 관리·수정·취소·마감 | 미구현 | [후속 기능](#후속-기능) 참고 |
 
 정산 생성·분할 미리보기·조회는 [Issue #20](https://github.com/DMU-MoEASY/MoEASY-BE/issues/20)의 범위다. 모임 회원 목록 조회는 프론트의 대상 선택 연동에 필요한 별도 API이며 `group` 도메인에서 제공한다. 정산 생성 API는 대상 ID로 직접 소속·상태를 검증하므로 회원 목록 조회 API의 구현에 의존하지 않는다. 미구현 API는 현재 호출할 수 없다.
@@ -313,6 +313,144 @@ HTTP 200, `SETTLEMENT200_1`로 `ApiResponse<SettlementResDTO.Preview>`를 반환
 
 미리보기는 예약이 아니다. 생성 전에 대상이 유효하지 않게 바뀌면 생성 요청을 거부한다. 입력 중에는 `1인당 167원`만 표시해 총액이 501원으로 오해되지 않도록 금액 범위나 나머지를 안내한다.
 
+## 정산 목록·상세 조회
+
+목록·상세 조회는 계약만 정의되어 있으며 아직 구현되지 않았다. 성공·오류 코드도 조회 API 구현 시 추가한다.
+
+### 공통 조회 권한과 데이터 기준
+
+- JWT HttpOnly 쿠키로 인증한다. GET 요청이므로 CSRF 쿠키·헤더는 필요하지 않다.
+- 해당 모임의 활성 회원이면 `OWNER`·`MANAGER`·`MEMBER` 모두 조회할 수 있다. 정산 대상이 아닌 회원도 같은 범위로 조회한다.
+- 일반 회원에게도 전체 대상자의 청구 금액과 청구 상태를 공개한다. 본인 청구만으로 결과를 제한하지 않는다.
+- 탈퇴·강퇴·삭제된 모임 회원, 삭제된 회원 계정과 비회원은 조회할 수 없다.
+- 폐쇄된 모임도 기존 정산을 조회할 수 있다. 삭제된 모임은 조회할 수 없다. 폐쇄 모임에서 생성·미리보기를 허용한다는 의미는 아니다.
+- 삭제된 정산은 목록·상세에서 제외한다. `OPEN`·`CLOSED`·`CANCELLED` 상태는 조회 대상이며 목록의 상태 필터로 제한할 수 있다.
+- 정산 생성 이후 대상자가 탈퇴·강퇴되거나 삭제되어도 저장된 청구 항목과 금액은 유지한다. 조회 시 대상자의 현재 활성 여부로 기존 청구 항목을 제외하지 않는다.
+- 닉네임은 조회 시점의 값이며 생성 당시 닉네임을 보존한 값이 아니다. 삭제된 계정의 닉네임 표시 방식은 [미정 계약](#미정-계약)에서 별도로 정의한다.
+- 금액·ID는 기존 계약과 동일하게 JSON 숫자로 반환한다. 날짜는 한국 시간(`Asia/Seoul`)의 `yyyy-MM-dd'T'HH:mm:ss` 형식으로 반환한다.
+
+### 정산 목록 조회
+
+`GET /api/v1/groups/{groupId}/settlements`
+
+#### 요청
+
+요청 본문 없이 경로의 `groupId`와 선택 쿼리 파라미터를 사용한다.
+
+| 파라미터 | 타입 | 규칙 |
+| --- | --- | --- |
+| `page` | integer | 기본값 0. 0부터 시작하는 페이지 번호, 0 이상 |
+| `size` | integer | 기본값 20. 1~100 |
+| `status` | string | 선택. `OPEN`·`CLOSED`·`CANCELLED`. 생략하면 전체 상태 |
+| `scheduleId` | integer | 선택. 양의 정수. 해당 일정에 연결된 정산만 조회하며 생략하면 일정 연결 여부와 무관하게 조회 |
+
+```http
+GET /api/v1/groups/1/settlements?page=0&size=20&status=OPEN&scheduleId=7
+```
+
+- 필터를 함께 전달하면 모든 조건을 만족하는 정산을 조회한다.
+- 생성 시각 내림차순, 같은 생성 시각에서는 정산 ID 내림차순으로 정렬한다. 별도 정렬 파라미터는 제공하지 않는다.
+- `totalElements`는 해당 모임에서 필터를 적용한 전체 정산 수이며 `totalPages`는 이를 `size`로 나눈 전체 페이지 수다.
+- 결과가 없거나 마지막 페이지 이후를 요청하면 HTTP 200과 빈 `items`를 반환한다. 결과가 전혀 없으면 `totalElements=0`, `totalPages=0`, `hasNext=false`다.
+
+#### 성공 응답
+
+HTTP 200, `SETTLEMENT200_2`를 사용한다. 목록에는 정산 요약과 페이지 정보만 포함하며 본인 청구 정보를 별도로 제공하지 않는다.
+
+```json
+{
+  "isSuccess": true,
+  "code": "SETTLEMENT200_2",
+  "message": "정산 목록 조회에 성공했습니다.",
+  "result": {
+    "items": [
+      {
+        "settlementId": 31,
+        "title": "러닝 후 식사비",
+        "scheduleId": 7,
+        "status": "OPEN",
+        "splitMode": "EQUAL",
+        "totalAmount": 10000,
+        "targetCount": 3,
+        "dueAt": "2026-11-01T23:59:59",
+        "createdAt": "2026-10-20T14:00:00"
+      }
+    ],
+    "page": 0,
+    "size": 20,
+    "totalElements": 1,
+    "totalPages": 1,
+    "hasNext": false
+  }
+}
+```
+
+`targetCount`는 저장된 청구 항목 수다. 일정에 연결되지 않은 정산의 `scheduleId`와 납부 기한이 없는 정산의 `dueAt`는 null이다.
+
+### 정산 상세 조회
+
+`GET /api/v1/groups/{groupId}/settlements/{settlementId}`
+
+#### 요청과 조회 기준
+
+- 요청 본문과 별도 쿼리 파라미터 없이 경로의 `groupId`·`settlementId`를 사용한다.
+- 정산이 해당 모임에 속하는지 확인한다. 다른 모임의 정산 ID를 전달하면 정산 없음과 동일하게 처리한다.
+- 저장된 정산 정보와 전체 청구 항목을 반환하며, 청구 항목은 `groupMemberId` 오름차순으로 정렬한다.
+- 각 청구 항목의 `settlementItemId`를 반환한다. 본인 청구 식별자를 별도 최상위 필드로 제공하지 않는다.
+
+#### 성공 응답
+
+HTTP 200, `SETTLEMENT200_3`을 사용한다.
+
+```json
+{
+  "isSuccess": true,
+  "code": "SETTLEMENT200_3",
+  "message": "정산 상세 조회에 성공했습니다.",
+  "result": {
+    "settlementId": 31,
+    "groupId": 1,
+    "scheduleId": 7,
+    "title": "러닝 후 식사비",
+    "description": "식사비 정산입니다.",
+    "status": "OPEN",
+    "splitMode": "EQUAL",
+    "totalAmount": 10000,
+    "targetCount": 3,
+    "dueAt": "2026-11-01T23:59:59",
+    "createdAt": "2026-10-20T14:00:00",
+    "createdBy": {
+      "groupMemberId": 11,
+      "nickname": "정규"
+    },
+    "items": [
+      { "settlementItemId": 101, "groupMemberId": 11, "nickname": "정규", "amount": 3334, "status": "PENDING" },
+      { "settlementItemId": 102, "groupMemberId": 12, "nickname": "민지", "amount": 3333, "status": "PENDING" },
+      { "settlementItemId": 103, "groupMemberId": 13, "nickname": "도윤", "amount": 3333, "status": "PENDING" }
+    ]
+  }
+}
+```
+
+- `targetCount`는 `items` 길이와 같다. 항목의 `status`는 `PENDING`·`PAID`·`REFUNDED`·`CANCELLED` 중 저장된 청구 상태다.
+- `scheduleId`·`description`·`dueAt`에 저장된 값이 없으면 해당 필드는 null이다.
+- `amount`는 저장된 최종 청구액이다. 미리보기와 달리 `remainderAmount`는 반환하지 않으며 조회 시 금액을 재분할하지 않는다.
+- 납부액·미납 잔액·납부 기록·영수증·송금 링크는 해당 기능 구현 시 계약에 추가한다. 미구현 데이터를 임의의 0원이나 빈 값으로 제공하지 않는다.
+- 본인 청구 여부 표시가 필요한 경우의 식별 계약은 후속 납부 기능에서 정의한다.
+
+### 조회 오류 응답 계약
+
+| 상황 | HTTP | 코드 |
+| --- | --- | --- |
+| JWT 누락·만료·유효하지 않음 | 401 | `AUTH401_1` |
+| 활성 모임 회원이 아님 | 403 | `AUTH403_1` |
+| 모임 없음·삭제 | 404 | `GROUP404_1` |
+| 상세의 정산 없음·삭제 또는 다른 모임의 정산 | 404 | `SETTLEMENT404_1` |
+| 양수 ID·페이지 번호·페이지 크기 범위 검증 실패 | 400 | `VALID400_1` |
+| 숫자 변환 실패·범위 초과·유효하지 않은 상태 필터 | 400 | `COMMON400_1` |
+
+`SETTLEMENT404_1`의 메시지는 `정산을 찾을 수 없습니다.`로 정의한다. 조회는 CSRF 검증을 요구하지 않으며, 폐쇄 상태 자체를 모임 없음으로 처리하지 않는다. 일정 필터의 존재·소속·삭제 여부에 따른 처리는 [미정 계약](#미정-계약)에서 구체화한다.
+
 ## 정산 생성 오류 응답 계약
 
 정산 전용 코드와 `SettlementException`을 사용한다. 계산기는 중복·유효하지 않은 대상 ID에 `SETTLEMENT400_2`, 금액·합계·오버플로 오류에 `SETTLEMENT400_4`를 사용한다. 서비스는 권한·일정·회원 상태·납부 기한을 검증하며, Controller에서 발생한 DTO 검증 오류와 서비스 오류는 기존 공통 예외 처리 흐름으로 반환한다. JWT·CSRF 오류는 기존 시큐리티 필터의 공통 응답을 사용한다.
@@ -358,7 +496,8 @@ Flyway 초기 스키마에는 다음 테이블이 존재한다. `Settlement`, `S
 다음 항목은 해당 기능 구현 전에 구체화하고 이 문서에 반영한다.
 
 - 회원 목록 조회의 성공·오류 코드와 일정 필터 오류 계약.
-- 정산 목록·상세 조회의 경로·조회 권한·응답 필드·페이지네이션.
+- 정산 목록의 일정 필터에서 존재하지 않거나 다른 모임에 속한 일정·삭제된 일정을 전달한 경우의 처리.
+- 정산 조회에서 삭제된 회원 계정의 닉네임 표시 방식. 생성자와 청구 대상자 모두에 적용한다.
 
 ## 후속 기능
 
