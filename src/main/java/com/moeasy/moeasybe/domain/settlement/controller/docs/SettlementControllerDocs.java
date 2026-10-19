@@ -94,4 +94,80 @@ public interface SettlementControllerDocs {
                             })) SettlementReqDTO.Create request,
             @Parameter(hidden = true) Long memberId
     );
+
+    @Operation(summary = "정산 분할 미리보기",
+            description = "폐쇄·삭제되지 않은 모임의 활성 OWNER 또는 MANAGER가 회원별 청구액을 미리 확인합니다. "
+                    + "대상 ID는 group_member.id이며 같은 모임의 활성·미삭제 회원만 선택할 수 있습니다. "
+                    + "EQUAL은 totalAmount와 groupMemberIds, CUSTOM은 totalAmount와 memberAmounts를 전달합니다. "
+                    + "사용하지 않는 대상·금액 목록은 생략하거나 null로 전달해야 합니다. "
+                    + "결과는 대상 ID 오름차순이며 amount는 나머지 추가분이 포함된 최종 청구액입니다. "
+                    + "remainderAmount는 EQUAL에서 추가 배분한 0 또는 1원이고 CUSTOM에서는 0원입니다. "
+                    + "정산·청구를 저장하거나 대상을 예약하지 않습니다. 생성 시 권한·대상·금액을 다시 검증합니다. "
+                    + "moeasy_access_token 쿠키와 XSRF-TOKEN 쿠키, X-XSRF-TOKEN 헤더가 필요합니다.",
+            parameters = @Parameter(name = "X-XSRF-TOKEN", in = ParameterIn.HEADER, required = true,
+                    description = "GET /api/v1/auth/csrf 응답의 result.token", schema = @Schema(type = "string")))
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200", useReturnTypeSchema = true, description = "분할 미리보기 성공 (저장하지 않음)",
+                    content = @Content(mediaType = "application/json", examples = @ExampleObject(value = """
+                            {"isSuccess":true,"code":"SETTLEMENT200_1","message":"정산 분할 미리보기에 성공했습니다.",
+                             "result":{"splitMode":"EQUAL","totalAmount":500,"targetCount":3,"items":[
+                               {"groupMemberId":11,"nickname":"모이지","amount":167,"remainderAmount":1},
+                               {"groupMemberId":12,"nickname":"민지","amount":167,"remainderAmount":1},
+                               {"groupMemberId":13,"nickname":"도윤","amount":166,"remainderAmount":0}]}}
+                            """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400", description = "필드·JSON 형식 또는 분할 규칙 검증 실패",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = {
+                                    @ExampleObject(name = "필드 검증", value = """
+                                            {"isSuccess":false,"code":"VALID400_1","message":"검증에 실패했습니다.","result":{"totalAmount":["정산 총액은 양수여야 합니다."]}}
+                                            """),
+                                    @ExampleObject(name = "JSON 형식", value = """
+                                            {"isSuccess":false,"code":"COMMON400_1","message":"잘못된 요청입니다.","result":null}
+                                            """),
+                                    @ExampleObject(name = "대상 회원", value = """
+                                            {"isSuccess":false,"code":"SETTLEMENT400_2","message":"정산 대상은 유효한 모임 회원으로 중복 없이 선택해야 합니다.","result":null}
+                                            """),
+                                    @ExampleObject(name = "조건부 필드", value = """
+                                            {"isSuccess":false,"code":"SETTLEMENT400_3","message":"분할 방식에 맞는 대상·금액 필드를 전달해야 합니다.","result":null}
+                                            """),
+                                    @ExampleObject(name = "금액 검증", value = """
+                                            {"isSuccess":false,"code":"SETTLEMENT400_4","message":"정산 금액 또는 회원별 청구액 합계가 올바르지 않습니다.","result":null}
+                                            """)
+                            })),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401", description = "인증 쿠키 누락·만료 또는 유효하지 않은 Access Token",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {"isSuccess":false,"code":"AUTH401_1","message":"인증이 필요합니다.","result":null}
+                                    """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403", description = "미리보기 권한 없음 또는 CSRF 검증 실패",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {"isSuccess":false,"code":"AUTH403_1","message":"요청이 거부되었습니다.","result":null}
+                                    """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404", description = "모임 없음·폐쇄·삭제",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {"isSuccess":false,"code":"GROUP404_1","message":"모임을 찾을 수 없습니다.","result":null}
+                                    """)))
+    })
+    ResponseEntity<ApiResponse<SettlementResDTO.Preview>> previewSplit(
+            @Parameter(description = "분할을 미리볼 모임 ID (member_group.id)", required = true) Long groupId,
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(required = true,
+                    content = @Content(mediaType = "application/json",
+                            schema = @Schema(implementation = SettlementReqDTO.Preview.class), examples = {
+                                    @ExampleObject(name = "균등 분할", value = """
+                                            {"splitMode":"EQUAL","totalAmount":500,"groupMemberIds":[13,11,12]}
+                                            """),
+                                    @ExampleObject(name = "회원별 금액 지정", value = """
+                                            {"splitMode":"CUSTOM","totalAmount":20000,
+                                             "memberAmounts":[{"groupMemberId":11,"amount":12000},{"groupMemberId":12,"amount":8000}]}
+                                            """)
+                            })) SettlementReqDTO.Preview request,
+            @Parameter(hidden = true) Long memberId
+    );
 }

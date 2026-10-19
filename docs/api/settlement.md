@@ -14,7 +14,7 @@
 | 정산 생성 Service·Repository·Converter | 구현됨 | 권한·일정·대상·조건부 필드·납부 기한 검증 및 정산·청구의 트랜잭션 저장 |
 | 정산 생성 엔드포인트·Swagger | 구현됨 | JWT·CSRF 검증, 요청 validation, HTTP 201 공통 응답과 요청·응답 예시 |
 | 대상 선택용 모임 회원 목록 조회 | 미구현 | 경로·필터·응답 필드 정의됨 |
-| 분할 미리보기 | 계약·DTO·성공 코드·Service·Converter 구현됨. Controller·Swagger 미구현 | [분할 미리보기 API](#분할-미리보기-api) 참고. 아직 호출할 수 없음 |
+| 분할 미리보기 | 구현됨 | JWT·CSRF 검증, 권한·대상·금액 검증, HTTP 200 회원별 분할 결과와 Swagger 예시. 데이터 미저장 |
 | 정산 목록·상세 조회 | 미구현 | 후속 정의 |
 | 납부·환불·영수증 관리·수정·취소·마감 | 미구현 | [후속 기능](#후속-기능) 참고 |
 
@@ -210,14 +210,14 @@ HTTP 201과 생성한 `settlementId`를 `ApiResponse<SettlementResDTO.Created>` 
 - `calculateCustom`은 회원별 양수 금액을 보존하며 `Math.addExact`로 합산한다. `Long` 범위 초과 또는 요청 총액과의 불일치는 거부하고 자동 보정하지 않는다.
 - 두 메서드는 중복 ID를 제거하지 않고 오류로 처리한다. DTO 검증을 거치지 않는 내부 호출에서도 빈 대상·null 항목·양수가 아닌 ID·금액을 거부한다.
 - 반환값은 `groupMemberId`, 청구액 `amount`, 나머지 추가분 `remainderAmount`를 담은 내부 결과 목록이다. 두 방식 모두 ID 오름차순이며 `CUSTOM`의 나머지 추가분은 0원이다. 입력 목록의 순서는 변경하지 않는다.
-- 계산기는 DB를 조회하거나 저장하지 않는다. 생성·미리보기 서비스가 재사용하며 요청자 권한과 회원의 실제 존재·소속·상태는 서비스에서 별도로 검증한다. 미리보기 서비스와 DTO는 구현되어 있으며 Controller 연결은 아직 구현되지 않았다.
+- 계산기는 DB를 조회하거나 저장하지 않는다. 생성·미리보기 서비스가 재사용하며 요청자 권한과 회원의 실제 존재·소속·상태는 서비스에서 별도로 검증한다.
 - 대상 조회·소속·활성·삭제 여부 검증은 `service.support.SettlementTargetFinder.findTargets`를 생성·미리보기 서비스에서 공유한다. 계산기가 검증한 배분 목록을 입력받아 대상 ID별 모임 회원을 반환하며, 트랜잭션 경계는 호출하는 서비스가 관리한다.
 
 ### 분할 미리보기 API
 
 `POST /api/v1/groups/{groupId}/settlements/preview`
 
-현재 요청·응답 DTO, 성공 코드, Service·Converter는 구현되어 있다. Controller·Swagger 연결은 아직 구현되지 않아 호출할 수 없다. 미리보기는 조회 성격의 유스케이스로 `SettlementQueryService.previewSplit`에서 처리하고 생성과 같은 `SettlementSplitCalculator`를 재사용한다.
+미리보기 API와 Swagger는 구현되어 있다. `SettlementController.previewSplit`이 요청 DTO를 검증하고 JWT 회원 ID와 함께 `SettlementQueryService.previewSplit`을 호출한다. POST 요청이지만 데이터를 변경하지 않는 조회 성격의 유스케이스이므로 QueryService에서 처리하고 생성과 같은 `SettlementSplitCalculator`를 재사용한다.
 
 `previewSplit`은 `@Transactional(readOnly = true)` 안에서 다음 순서로 처리한다.
 
@@ -227,6 +227,8 @@ HTTP 201과 생성한 `settlementId`를 `ApiResponse<SettlementResDTO.Created>` 
 4. `SettlementConverter.toPreview`가 계산 결과와 현재 닉네임을 조립한다. 정산·청구 Repository를 통한 저장은 수행하지 않는다.
 
 실제 MySQL 통합 테스트에서 서비스 트랜잭션 종료 후 정산·청구 미저장, 권한·대상 검증과 동일 입력의 생성·미리보기 청구액 일치를 확인한다.
+
+HTTP 통합 테스트에서는 실제 JWT 필터와 CSRF 발급 API를 사용해 인증·CSRF 실패, 모임·권한·분할 규칙 오류, 정상 응답과 정산·청구 미저장, OpenAPI 스키마·예시를 검증한다.
 
 #### 권한과 검증
 
@@ -293,6 +295,13 @@ HTTP 200, `SETTLEMENT200_1`로 `ApiResponse<SettlementResDTO.Preview>`를 반환
 #### 오류 응답
 
 [정산 생성 오류 응답 계약](#정산-생성-오류-응답-계약)의 공통 인증·권한·모임·DTO·JSON 오류와 `SETTLEMENT400_2`(대상), `SETTLEMENT400_3`(조건부 필드), `SETTLEMENT400_4`(금액)를 재사용한다. 일정·기한을 받지 않으므로 `SETTLEMENT400_1`과 `SETTLEMENT400_5`는 미리보기에서 사용하지 않는다.
+
+#### Swagger 테스트
+
+1. API 서버의 Swagger에 인증 쿠키가 있는 상태에서 `GET /api/v1/auth/csrf`를 실행한다.
+2. 응답 `result.token`을 복사하고 미리보기의 `X-XSRF-TOKEN` 입력란에 넣는다. 발급된 `XSRF-TOKEN` 쿠키도 요청에 함께 전송되어야 한다.
+3. `groupId`와 EQUAL 또는 CUSTOM 요청을 입력한다. Swagger 예시의 대상 ID는 실제 모임의 `group_member.id`로 바꾼다.
+4. HTTP 200 / `SETTLEMENT200_1`과 회원별 금액을 확인한다. 미리보기만 실행하면 정산은 생성되지 않는다.
 
 ### 프론트 연동 흐름
 

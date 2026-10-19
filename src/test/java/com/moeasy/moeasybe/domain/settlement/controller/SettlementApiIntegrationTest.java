@@ -250,8 +250,235 @@ class SettlementApiIntegrationTest {
         );
     }
 
+    @Test
+    @DisplayName("JWT·CSRF로 미리보기를 요청하면 정렬된 닉네임·청구액·나머지를 반환하고 저장하지 않는다")
+    void previewSplit_ownerEqual_returnsAllocationsWithoutSaving() throws Exception {
+        // given
+        GroupMember third = persistGroupMember(GroupMemberRole.MEMBER);
+        CsrfCredentials csrf = requestCsrfCredentials();
+        String body = """
+                {"totalAmount":500,"splitMode":"EQUAL","groupMemberIds":[%d,%d,%d]}
+                """.formatted(third.getId(), target.getId(), owner.getId());
+        entityManager.flush();
+        entityManager.clear();
+
+        // when
+        var result = mockMvc.perform(previewRequest(owner, csrf).content(body));
+
+        // then
+        result.andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.code").value("SETTLEMENT200_1"))
+                .andExpect(jsonPath("$.message").value("정산 분할 미리보기에 성공했습니다."))
+                .andExpect(jsonPath("$.result.splitMode").value("EQUAL"))
+                .andExpect(jsonPath("$.result.totalAmount").value(500))
+                .andExpect(jsonPath("$.result.targetCount").value(3))
+                .andExpect(jsonPath("$.result.items.length()").value(3))
+                .andExpect(jsonPath("$.result.items[0].groupMemberId").value(owner.getId()))
+                .andExpect(jsonPath("$.result.items[0].nickname").value(owner.getMember().getNickname()))
+                .andExpect(jsonPath("$.result.items[0].amount").value(167))
+                .andExpect(jsonPath("$.result.items[0].remainderAmount").value(1))
+                .andExpect(jsonPath("$.result.items[1].groupMemberId").value(target.getId()))
+                .andExpect(jsonPath("$.result.items[1].amount").value(167))
+                .andExpect(jsonPath("$.result.items[1].remainderAmount").value(1))
+                .andExpect(jsonPath("$.result.items[2].groupMemberId").value(third.getId()))
+                .andExpect(jsonPath("$.result.items[2].amount").value(166))
+                .andExpect(jsonPath("$.result.items[2].remainderAmount").value(0));
+        assertNoPreviewWrites();
+    }
+
+    @Test
+    @DisplayName("운영진은 본인을 포함한 개별 금액을 HTTP로 미리볼 수 있다")
+    void previewSplit_managerCustom_returnsSpecifiedAmounts() throws Exception {
+        // given
+        GroupMember manager = persistGroupMember(GroupMemberRole.MANAGER);
+        CsrfCredentials csrf = requestCsrfCredentials();
+        String body = """
+                {"totalAmount":500,"splitMode":"CUSTOM",
+                 "memberAmounts":[{"groupMemberId":%d,"amount":300},{"groupMemberId":%d,"amount":200}]}
+                """.formatted(manager.getId(), target.getId());
+
+        // when
+        var result = mockMvc.perform(previewRequest(manager, csrf).content(body));
+
+        // then
+        result.andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.splitMode").value("CUSTOM"))
+                .andExpect(jsonPath("$.result.targetCount").value(2))
+                .andExpect(jsonPath("$.result.items[0].groupMemberId").value(target.getId()))
+                .andExpect(jsonPath("$.result.items[0].amount").value(200))
+                .andExpect(jsonPath("$.result.items[0].remainderAmount").value(0))
+                .andExpect(jsonPath("$.result.items[1].groupMemberId").value(manager.getId()))
+                .andExpect(jsonPath("$.result.items[1].amount").value(300))
+                .andExpect(jsonPath("$.result.items[1].remainderAmount").value(0));
+        assertNoPreviewWrites();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"MISSING", "INVALID", "REFRESH"})
+    @DisplayName("미리보기에도 유효한 Access Token이 필요하다")
+    void previewSplit_invalidAuthentication_unauthorized(String condition) throws Exception {
+        // given
+        CsrfCredentials csrf = requestCsrfCredentials();
+        var request = post(path() + "/preview").cookie(csrf.cookie()).header("X-XSRF-TOKEN", csrf.token())
+                .contentType(MediaType.APPLICATION_JSON).content(validPreviewBody());
+        if (!condition.equals("MISSING")) {
+            String token = condition.equals("INVALID") ? "invalid-token"
+                    : jwtTokenProvider.issueRefreshToken(owner.getMember().getId()).value();
+            request.cookie(new Cookie(AuthCookieNames.ACCESS_TOKEN, token));
+        }
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("AUTH401_1"));
+        assertNoPreviewWrites();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"MISSING_BOTH", "MISSING_COOKIE", "MISSING_HEADER", "MISMATCH"})
+    @DisplayName("미리보기는 저장하지 않아도 POST이므로 CSRF 쿠키·헤더를 검증한다")
+    void previewSplit_invalidCsrf_forbidden(String condition) throws Exception {
+        // given
+        CsrfCredentials csrf = requestCsrfCredentials();
+        var request = post(path() + "/preview").cookie(accessTokenCookie(owner))
+                .contentType(MediaType.APPLICATION_JSON).content(validPreviewBody());
+        if (condition.equals("MISSING_HEADER") || condition.equals("MISMATCH")) {
+            request.cookie(csrf.cookie());
+        }
+        if (condition.equals("MISSING_COOKIE") || condition.equals("MISMATCH")) {
+            request.header("X-XSRF-TOKEN", condition.equals("MISMATCH") ? "different-token" : csrf.token());
+        }
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("AUTH403_1"));
+        assertNoPreviewWrites();
+    }
+
+    @Test
+    @DisplayName("JWT·CSRF가 유효해도 일반 모임 회원의 미리보기는 거부한다")
+    void previewSplit_regularMember_forbidden() throws Exception {
+        // given
+        CsrfCredentials csrf = requestCsrfCredentials();
+
+        // when
+        var result = mockMvc.perform(previewRequest(target, csrf).content(validPreviewBody()));
+
+        // then
+        result.andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("AUTH403_1"));
+        assertNoPreviewWrites();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"DUPLICATE,SETTLEMENT400_2", "FIELDS,SETTLEMENT400_3", "AMOUNT,SETTLEMENT400_4"})
+    @DisplayName("미리보기 실제 업무 오류는 HTTP 400과 정산 도메인 코드로 반환한다")
+    void previewSplit_invalidBusinessInput_returnsDomainCode(String condition, String code) throws Exception {
+        // given
+        CsrfCredentials csrf = requestCsrfCredentials();
+        String body = switch (condition) {
+            case "DUPLICATE" -> validPreviewBody().replace("[%d]".formatted(target.getId()),
+                    "[%d,%d]".formatted(target.getId(), target.getId()));
+            case "FIELDS" -> validPreviewBody().replace("\"totalAmount\":",
+                    "\"memberAmounts\":[{\"groupMemberId\":%d,\"amount\":500}],\"totalAmount\":".formatted(target.getId()));
+            case "AMOUNT" -> """
+                    {"totalAmount":500,"splitMode":"CUSTOM","memberAmounts":[{"groupMemberId":%d,"amount":499}]}
+                    """.formatted(target.getId());
+            default -> throw new IllegalArgumentException(condition);
+        };
+
+        // when
+        var result = mockMvc.perform(previewRequest(owner, csrf).content(body));
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(code));
+        assertNoPreviewWrites();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"MISSING", "CLOSED", "DELETED"})
+    @DisplayName("미리보기 모임이 없거나 폐쇄·삭제됐으면 GROUP404_1을 반환한다")
+    void previewSplit_unavailableGroup_notFound(String condition) throws Exception {
+        // given
+        CsrfCredentials csrf = requestCsrfCredentials();
+        Long requestedId = group.getId();
+        if (condition.equals("MISSING")) {
+            requestedId = Long.MAX_VALUE;
+        } else if (condition.equals("CLOSED")) {
+            jdbcTemplate.update("UPDATE member_group SET status = 'CLOSED' WHERE id = ?", group.getId());
+        } else {
+            jdbcTemplate.update("UPDATE member_group SET deleted_at = CURRENT_TIMESTAMP(6) WHERE id = ?", group.getId());
+        }
+        entityManager.clear();
+        var request = post("/api/v1/groups/" + requestedId + "/settlements/preview")
+                .cookie(accessTokenCookie(owner), csrf.cookie()).header("X-XSRF-TOKEN", csrf.token())
+                .contentType(MediaType.APPLICATION_JSON).content(validPreviewBody());
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("GROUP404_1"));
+        assertNoPreviewWrites();
+    }
+
+    @Test
+    @DisplayName("Swagger 미리보기에는 공통 200·회원별 결과·필수 CSRF 헤더·두 요청 예시가 정의된다")
+    void apiDocs_previewSplit_matchesHttpContract() throws Exception {
+        // given
+        String operationPath = "/api/v1/groups/{groupId}/settlements/preview";
+
+        // when
+        var response = mockMvc.perform(get("/v3/api-docs")).andExpect(status().isOk()).andReturn().getResponse();
+
+        // then
+        JsonNode document = objectMapper.readTree(response.getContentAsString());
+        JsonNode operation = document.path("paths").path(operationPath).path("post");
+        JsonNode success = resolveSchema(document,
+                operation.path("responses").path("200").path("content").path("application/json").path("schema"));
+        JsonNode preview = resolveSchema(document, success.path("properties").path("result"));
+        JsonNode item = resolveSchema(document, preview.path("properties").path("items").path("items"));
+        JsonNode requestContent = operation.path("requestBody").path("content").path("application/json");
+        JsonNode request = resolveSchema(document, requestContent.path("schema"));
+        JsonNode csrfHeader = null;
+        for (JsonNode parameter : operation.path("parameters")) {
+            if (parameter.path("name").asText().equals("X-XSRF-TOKEN")) {
+                csrfHeader = parameter;
+            }
+            assertFalse(parameter.path("name").asText().equals("memberId"));
+        }
+        assertNotNull(csrfHeader);
+        assertTrue(csrfHeader.path("required").asBoolean());
+        assertEquals("header", csrfHeader.path("in").asText());
+        assertAll(
+                () -> assertTrue(success.path("properties").has("isSuccess")),
+                () -> assertTrue(success.path("properties").has("code")),
+                () -> assertTrue(preview.path("properties").has("splitMode")),
+                () -> assertTrue(preview.path("properties").has("totalAmount")),
+                () -> assertTrue(preview.path("properties").has("targetCount")),
+                () -> assertTrue(item.path("properties").has("groupMemberId")),
+                () -> assertTrue(item.path("properties").has("nickname")),
+                () -> assertTrue(item.path("properties").has("amount")),
+                () -> assertTrue(item.path("properties").has("remainderAmount")),
+                () -> assertFalse(request.path("properties").has("title")),
+                () -> assertFalse(request.path("properties").has("scheduleId")),
+                () -> assertFalse(request.path("properties").has("dueAt")),
+                () -> assertEquals("EQUAL", requestContent.path("examples").path("균등 분할").path("value").path("splitMode").asText()),
+                () -> assertEquals("CUSTOM", requestContent.path("examples").path("회원별 금액 지정").path("value").path("splitMode").asText()),
+                () -> assertTrue(operation.path("responses").has("400")),
+                () -> assertTrue(operation.path("responses").has("401")),
+                () -> assertTrue(operation.path("responses").has("403")),
+                () -> assertTrue(operation.path("responses").has("404")),
+                () -> assertFalse(operation.path("responses").has("201"))
+        );
+    }
+
     private GroupMember persistGroupMember(GroupMemberRole role) {
-        Member member = Member.builder().socialType(SocialType.KAKAO).socialId(UUID.randomUUID().toString()).build();
+        String key = UUID.randomUUID().toString();
+        Member member = Member.builder().socialType(SocialType.KAKAO).socialId(key).nickname("회원" + key).build();
         entityManager.persist(member);
         GroupMember membership = GroupMember.builder().group(group).member(member).role(role)
                 .status(GroupMemberStatus.ACTIVE).joinedAt(LocalDateTime.of(2026, 1, 1, 0, 0)).build();
@@ -272,6 +499,28 @@ class SettlementApiIntegrationTest {
     private MockHttpServletRequestBuilder authenticatedRequest(GroupMember actor, CsrfCredentials csrf) {
         return post(path()).cookie(accessTokenCookie(actor), csrf.cookie()).header("X-XSRF-TOKEN", csrf.token())
                 .contentType(MediaType.APPLICATION_JSON);
+    }
+
+    private MockHttpServletRequestBuilder previewRequest(GroupMember actor, CsrfCredentials csrf) {
+        return post(path() + "/preview").cookie(accessTokenCookie(actor), csrf.cookie())
+                .header("X-XSRF-TOKEN", csrf.token()).contentType(MediaType.APPLICATION_JSON);
+    }
+
+    private String validPreviewBody() {
+        return """
+                {"totalAmount":500,"splitMode":"EQUAL","groupMemberIds":[%d]}
+                """.formatted(target.getId());
+    }
+
+    private void assertNoPreviewWrites() {
+        entityManager.flush();
+        assertAll(
+                this::assertNoSettlement,
+                () -> assertEquals(0, jdbcTemplate.queryForObject("""
+                        SELECT COUNT(*) FROM settlement_item si JOIN group_member gm
+                        ON gm.id = si.group_member_id WHERE gm.group_id = ?
+                        """, Integer.class, group.getId()))
+        );
     }
 
     private Cookie accessTokenCookie(GroupMember actor) {

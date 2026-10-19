@@ -19,6 +19,7 @@ import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
 import com.moeasy.moeasybe.domain.settlement.exception.SettlementException;
 import com.moeasy.moeasybe.domain.settlement.exception.code.SettlementErrorCode;
 import com.moeasy.moeasybe.domain.settlement.service.command.SettlementCommandService;
+import com.moeasy.moeasybe.domain.settlement.service.query.SettlementQueryService;
 import com.moeasy.moeasybe.global.security.jwt.JwtAuthenticationFilter;
 import java.util.List;
 import java.util.stream.Stream;
@@ -54,9 +55,14 @@ class SettlementControllerTest {
     private static final String VALID_BODY = """
             {"title":" 정산 ","totalAmount":500,"splitMode":"EQUAL","groupMemberIds":[11,12,13]}
             """;
+    private static final String PREVIEW_PATH = PATH + "/preview";
+    private static final String PREVIEW_BODY = """
+            {"totalAmount":500,"splitMode":"EQUAL","groupMemberIds":[11,12,13]}
+            """;
 
     @Autowired private MockMvc mockMvc;
     @MockitoBean private SettlementCommandService service;
+    @MockitoBean private SettlementQueryService queryService;
     @MockitoBean private JwtAuthenticationFilter jwtAuthenticationFilter;
     // 애플리케이션의 JPA auditing 설정은 MVC 슬라이스에서 실제 영속성 메타모델을 사용하지 않는다.
     @MockitoBean private JpaMetamodelMappingContext jpaMappingContext;
@@ -186,6 +192,159 @@ class SettlementControllerTest {
 
         // when
         var result = mockMvc.perform(post(PATH).contentType(MediaType.APPLICATION_JSON).content(VALID_BODY));
+
+        // then
+        result.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("GROUP404_1"));
+    }
+
+    @Test
+    @DisplayName("미리보기는 요청과 인증 회원을 QueryService에 전달하고 공통 200 응답을 반환한다")
+    void previewSplit_equal_returnsPreviewEnvelope() throws Exception {
+        // given
+        when(queryService.previewSplit(eq(GROUP_ID), any(SettlementReqDTO.Preview.class), eq(MEMBER_ID)))
+                .thenReturn(SettlementResDTO.Preview.builder().splitMode(SettlementSplitMode.EQUAL)
+                        .totalAmount(500L).targetCount(3).items(List.of(
+                                SettlementResDTO.PreviewItem.builder().groupMemberId(11L).nickname("모이지")
+                                        .amount(167L).remainderAmount(1L).build(),
+                                SettlementResDTO.PreviewItem.builder().groupMemberId(12L).nickname("민지")
+                                        .amount(167L).remainderAmount(1L).build(),
+                                SettlementResDTO.PreviewItem.builder().groupMemberId(13L).nickname("도윤")
+                                        .amount(166L).remainderAmount(0L).build())).build());
+
+        // when
+        var result = mockMvc.perform(post(PREVIEW_PATH).contentType(MediaType.APPLICATION_JSON).content(PREVIEW_BODY));
+
+        // then
+        result.andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.code").value("SETTLEMENT200_1"))
+                .andExpect(jsonPath("$.message").value("정산 분할 미리보기에 성공했습니다."))
+                .andExpect(jsonPath("$.result.splitMode").value("EQUAL"))
+                .andExpect(jsonPath("$.result.totalAmount").value(500))
+                .andExpect(jsonPath("$.result.targetCount").value(3))
+                .andExpect(jsonPath("$.result.items.length()").value(3))
+                .andExpect(jsonPath("$.result.items[0].groupMemberId").value(11))
+                .andExpect(jsonPath("$.result.items[0].nickname").value("모이지"))
+                .andExpect(jsonPath("$.result.items[0].amount").value(167))
+                .andExpect(jsonPath("$.result.items[0].remainderAmount").value(1))
+                .andExpect(jsonPath("$.result.items[2].remainderAmount").value(0));
+        ArgumentCaptor<SettlementReqDTO.Preview> request = ArgumentCaptor.forClass(SettlementReqDTO.Preview.class);
+        verify(queryService).previewSplit(eq(GROUP_ID), request.capture(), eq(MEMBER_ID));
+        assertAll(
+                () -> assertEquals(SettlementSplitMode.EQUAL, request.getValue().splitMode()),
+                () -> assertEquals(500L, request.getValue().totalAmount()),
+                () -> assertEquals(List.of(11L, 12L, 13L), request.getValue().groupMemberIds())
+        );
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    @DisplayName("회원별 미리보기 금액은 중첩 DTO로 읽어 QueryService에 전달한다")
+    void previewSplit_custom_passesMemberAmounts() throws Exception {
+        // given
+        String body = """
+                {"totalAmount":500,"splitMode":"CUSTOM","memberAmounts":[{"groupMemberId":11,"amount":500}]}
+                """;
+        when(queryService.previewSplit(eq(GROUP_ID), any(SettlementReqDTO.Preview.class), eq(MEMBER_ID)))
+                .thenReturn(SettlementResDTO.Preview.builder().splitMode(SettlementSplitMode.CUSTOM)
+                        .totalAmount(500L).targetCount(1).items(List.of(
+                                SettlementResDTO.PreviewItem.builder().groupMemberId(11L).nickname("모이지")
+                                        .amount(500L).remainderAmount(0L).build())).build());
+
+        // when
+        var result = mockMvc.perform(post(PREVIEW_PATH).contentType(MediaType.APPLICATION_JSON).content(body));
+
+        // then
+        result.andExpect(status().isOk()).andExpect(jsonPath("$.result.splitMode").value("CUSTOM"))
+                .andExpect(jsonPath("$.result.items[0].amount").value(500));
+        ArgumentCaptor<SettlementReqDTO.Preview> request = ArgumentCaptor.forClass(SettlementReqDTO.Preview.class);
+        verify(queryService).previewSplit(eq(GROUP_ID), request.capture(), eq(MEMBER_ID));
+        assertEquals(List.of(new SettlementReqDTO.MemberAmount(11L, 500L)), request.getValue().memberAmounts());
+        verifyNoInteractions(service);
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidPreviewFields")
+    @DisplayName("미리보기 필드 검증 실패 시 서비스 실행 전 VALID400_1을 반환한다")
+    void previewSplit_invalidFields_returnsValidationFailure(String body) throws Exception {
+        // given: 필수값·배열·중첩 항목 검증에 실패하는 요청
+
+        // when
+        var result = mockMvc.perform(post(PREVIEW_PATH).contentType(MediaType.APPLICATION_JSON).content(body));
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALID400_1"))
+                .andExpect(jsonPath("$.result").isMap());
+        verifyNoInteractions(queryService, service);
+    }
+
+    private static Stream<String> invalidPreviewFields() {
+        return Stream.of(
+                PREVIEW_BODY.replace("\"totalAmount\":500,", ""),
+                PREVIEW_BODY.replace("\"totalAmount\":500", "\"totalAmount\":0"),
+                PREVIEW_BODY.replace("\"splitMode\":\"EQUAL\",", ""),
+                PREVIEW_BODY.replace("[11,12,13]", "[]"),
+                PREVIEW_BODY.replace("[11,12,13]", "[null]"),
+                PREVIEW_BODY.replace("[11,12,13]", "[-1]"),
+                """
+                {"totalAmount":500,"splitMode":"CUSTOM","memberAmounts":[{"groupMemberId":11,"amount":0}]}
+                """,
+                """
+                {"totalAmount":500,"splitMode":"CUSTOM","memberAmounts":[null]}
+                """
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidPreviewJson")
+    @DisplayName("미리보기의 잘못된 JSON과 숫자·분할 방식 형식은 COMMON400_1을 반환한다")
+    void previewSplit_invalidJson_returnsBadRequest(String body) throws Exception {
+        // given: 파싱 또는 형 변환에 실패하는 요청
+
+        // when
+        var result = mockMvc.perform(post(PREVIEW_PATH).contentType(MediaType.APPLICATION_JSON).content(body));
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+        verifyNoInteractions(queryService, service);
+    }
+
+    private static Stream<String> invalidPreviewJson() {
+        return Stream.concat(Stream.of("\"500\"", "1.5", "5e2", "9223372036854775808")
+                        .map(amount -> PREVIEW_BODY.replace("\"totalAmount\":500", "\"totalAmount\":" + amount)),
+                Stream.of("null", "{", PREVIEW_BODY.replace("\"EQUAL\"", "0"),
+                        PREVIEW_BODY.replace("\"EQUAL\"", "\"INVALID\""),
+                        PREVIEW_BODY.replace("[11,12,13]", "[\"11\"]")));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = SettlementErrorCode.class,
+            names = {"INVALID_TARGET_MEMBERS", "INVALID_SPLIT_MODE_FIELDS", "INVALID_AMOUNT"})
+    @DisplayName("미리보기 서비스 오류는 도메인 코드·메시지와 함께 반환한다")
+    void previewSplit_businessFailure_preservesDomainError(SettlementErrorCode code) throws Exception {
+        // given
+        when(queryService.previewSplit(eq(GROUP_ID), any(SettlementReqDTO.Preview.class), eq(MEMBER_ID)))
+                .thenThrow(new SettlementException(code));
+
+        // when
+        var result = mockMvc.perform(post(PREVIEW_PATH).contentType(MediaType.APPLICATION_JSON).content(PREVIEW_BODY));
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(code.getCode()))
+                .andExpect(jsonPath("$.message").value(code.getMessage()))
+                .andExpect(jsonPath("$.result").isEmpty());
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    @DisplayName("미리보기 대상 모임이 없으면 GROUP404_1을 반환한다")
+    void previewSplit_groupNotFound_returnsNotFound() throws Exception {
+        // given
+        when(queryService.previewSplit(eq(GROUP_ID), any(SettlementReqDTO.Preview.class), eq(MEMBER_ID)))
+                .thenThrow(new GroupException(GroupErrorCode.GROUP_NOT_FOUND));
+
+        // when
+        var result = mockMvc.perform(post(PREVIEW_PATH).contentType(MediaType.APPLICATION_JSON).content(PREVIEW_BODY));
 
         // then
         result.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("GROUP404_1"));
