@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -16,11 +17,15 @@ import com.moeasy.moeasybe.domain.group.exception.code.GroupErrorCode;
 import com.moeasy.moeasybe.domain.settlement.dto.request.SettlementReqDTO;
 import com.moeasy.moeasybe.domain.settlement.dto.response.SettlementResDTO;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
+import com.moeasy.moeasybe.domain.settlement.enums.SettlementStatus;
 import com.moeasy.moeasybe.domain.settlement.exception.SettlementException;
 import com.moeasy.moeasybe.domain.settlement.exception.code.SettlementErrorCode;
 import com.moeasy.moeasybe.domain.settlement.service.command.SettlementCommandService;
 import com.moeasy.moeasybe.domain.settlement.service.query.SettlementQueryService;
 import com.moeasy.moeasybe.global.security.jwt.JwtAuthenticationFilter;
+import com.moeasy.moeasybe.global.apiPayload.code.GeneralErrorCode;
+import com.moeasy.moeasybe.global.apiPayload.exception.GeneralException;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
@@ -29,6 +34,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -76,6 +83,160 @@ class SettlementControllerTest {
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    @DisplayName("목록 조건을 생략하면 기본 페이지와 인증 회원을 QueryService에 전달한다")
+    void getSettlements_defaultQuery_returnsPageEnvelope() throws Exception {
+        // given
+        when(queryService.getSettlements(GROUP_ID, new SettlementReqDTO.Search(0, 20, null, null), MEMBER_ID))
+                .thenReturn(SettlementResDTO.Page.builder().items(List.of()).page(0).size(20)
+                        .totalElements(0L).totalPages(0).hasNext(false).build());
+
+        // when
+        var result = mockMvc.perform(get(PATH));
+
+        // then
+        result.andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SETTLEMENT200_2"))
+                .andExpect(jsonPath("$.result.items").isEmpty())
+                .andExpect(jsonPath("$.result.page").value(0))
+                .andExpect(jsonPath("$.result.size").value(20));
+        verify(queryService).getSettlements(GROUP_ID, new SettlementReqDTO.Search(0, 20, null, null), MEMBER_ID);
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    @DisplayName("목록 필터를 쿼리 문자열에서 읽고 전체 페이지 정보와 초 단위 날짜를 반환한다")
+    void getSettlements_filteredQuery_returnsSummaryAndPagination() throws Exception {
+        // given
+        var query = new SettlementReqDTO.Search(1, 10, SettlementStatus.CLOSED, 7L);
+        var summary = SettlementResDTO.Summary.builder().settlementId(31L).title("식사비")
+                .scheduleId(7L).status(SettlementStatus.CLOSED).splitMode(SettlementSplitMode.EQUAL)
+                .totalAmount(10000L).targetCount(3).dueAt(null)
+                .createdAt(LocalDateTime.of(2026, 10, 20, 14, 0, 0, 123456000)).build();
+        when(queryService.getSettlements(GROUP_ID, query, MEMBER_ID))
+                .thenReturn(SettlementResDTO.Page.builder().items(List.of(summary)).page(1).size(10)
+                        .totalElements(11L).totalPages(2).hasNext(false).build());
+
+        // when
+        var result = mockMvc.perform(get(PATH).param("page", "1").param("size", "10")
+                .param("status", "CLOSED").param("scheduleId", "7"));
+
+        // then
+        result.andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.code").value("SETTLEMENT200_2"))
+                .andExpect(jsonPath("$.message").value("정산 목록 조회에 성공했습니다."))
+                .andExpect(jsonPath("$.result.page").value(1))
+                .andExpect(jsonPath("$.result.size").value(10))
+                .andExpect(jsonPath("$.result.totalElements").value(11))
+                .andExpect(jsonPath("$.result.totalPages").value(2))
+                .andExpect(jsonPath("$.result.hasNext").value(false))
+                .andExpect(jsonPath("$.result.items[0].settlementId").value(31))
+                .andExpect(jsonPath("$.result.items[0].title").value("식사비"))
+                .andExpect(jsonPath("$.result.items[0].scheduleId").value(7))
+                .andExpect(jsonPath("$.result.items[0].status").value("CLOSED"))
+                .andExpect(jsonPath("$.result.items[0].splitMode").value("EQUAL"))
+                .andExpect(jsonPath("$.result.items[0].totalAmount").value(10000))
+                .andExpect(jsonPath("$.result.items[0].targetCount").value(3))
+                .andExpect(jsonPath("$.result.items[0].dueAt").isEmpty())
+                .andExpect(jsonPath("$.result.items[0].createdAt").value("2026-10-20T14:00:00"))
+                .andExpect(jsonPath("$.result.items[0].myItem").doesNotExist());
+        verify(queryService).getSettlements(GROUP_ID, query, MEMBER_ID);
+        verifyNoInteractions(service);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"page,-1", "size,0", "size,101", "scheduleId,0"})
+    @DisplayName("목록 파라미터의 범위 오류는 서비스 실행 전에 VALID400_1로 반환한다")
+    void getSettlements_invalidRange_returnsValidationFailure(String field, String value) throws Exception {
+        // given
+        var request = get(PATH).param(field, value);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALID400_1"))
+                .andExpect(jsonPath("$.result." + field).isArray());
+        verifyNoInteractions(queryService, service);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "-1"})
+    @DisplayName("양수가 아닌 경로의 모임 ID는 서비스 실행 전에 VALID400_1로 반환한다")
+    void getSettlements_invalidGroupId_returnsValidationFailure(String groupId) throws Exception {
+        // given
+        var request = get("/api/v1/groups/" + groupId + "/settlements");
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALID400_1"))
+                .andExpect(jsonPath("$.result.groupId").isArray());
+        verifyNoInteractions(queryService, service);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"page,abc", "page,2147483648", "size,1.5", "scheduleId,9223372036854775808",
+            "scheduleId,1e2", "status,UNKNOWN", "status,open", "status,0"})
+    @DisplayName("목록 파라미터 변환 실패는 COMMON400_1과 null 결과를 반환한다")
+    void getSettlements_invalidParameterType_returnsBadRequest(String field, String value) throws Exception {
+        // given
+        var request = get(PATH).param(field, value);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"))
+                .andExpect(jsonPath("$.result").isEmpty());
+        verifyNoInteractions(queryService, service);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"abc", "9223372036854775808"})
+    @DisplayName("경로 모임 ID의 숫자 변환 실패도 COMMON400_1로 반환한다")
+    void getSettlements_invalidGroupIdType_returnsBadRequest(String groupId) throws Exception {
+        // given
+        var request = get("/api/v1/groups/" + groupId + "/settlements");
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+        verifyNoInteractions(queryService, service);
+    }
+
+    @Test
+    @DisplayName("목록 조회 권한 실패는 AUTH403_1로 반환한다")
+    void getSettlements_forbidden_returnsPermissionFailure() throws Exception {
+        // given
+        when(queryService.getSettlements(GROUP_ID, new SettlementReqDTO.Search(0, 20, null, null), MEMBER_ID))
+                .thenThrow(new GeneralException(GeneralErrorCode.FORBIDDEN));
+
+        // when
+        var result = mockMvc.perform(get(PATH));
+
+        // then
+        result.andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("AUTH403_1"));
+    }
+
+    @Test
+    @DisplayName("목록 조회의 모임 없음은 GROUP404_1로 반환한다")
+    void getSettlements_groupNotFound_returnsNotFound() throws Exception {
+        // given
+        when(queryService.getSettlements(GROUP_ID, new SettlementReqDTO.Search(0, 20, null, null), MEMBER_ID))
+                .thenThrow(new GroupException(GroupErrorCode.GROUP_NOT_FOUND));
+
+        // when
+        var result = mockMvc.perform(get(PATH));
+
+        // then
+        result.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("GROUP404_1"));
     }
 
     @Test

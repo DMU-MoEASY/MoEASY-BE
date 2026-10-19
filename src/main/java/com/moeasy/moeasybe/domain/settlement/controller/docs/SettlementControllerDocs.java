@@ -11,10 +11,77 @@ import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import org.springframework.http.ResponseEntity;
+import org.springdoc.core.annotations.ParameterObject;
 
 @Tag(name = "Settlement", description = "회비·정산 API")
 public interface SettlementControllerDocs {
+
+    @Operation(summary = "정산 목록 조회",
+            description = "해당 모임의 활성 OWNER·MANAGER·MEMBER가 정산 요약과 페이지 정보를 조회합니다. "
+                    + "정산 대상이 아닌 회원도 조회할 수 있으며 폐쇄된 모임도 허용합니다. 삭제된 모임·정산은 제외합니다. "
+                    + "page는 0부터 시작하고 기본값은 0, size는 1~100이며 기본값은 20입니다. "
+                    + "status와 scheduleId는 선택 필터이며 함께 전달하면 모두 적용합니다. "
+                    + "일정은 저장된 연결 ID로만 필터링합니다. 없는 일정·다른 모임의 일정은 빈 목록을 반환하고 "
+                    + "삭제된 일정에 연결된 기존 정산은 조회합니다. "
+                    + "생성 시각 내림차순, 같은 시각에서는 정산 ID 내림차순입니다. "
+                    + "targetCount는 탈퇴·삭제 대상도 포함한 저장된 청구 항목 수입니다. "
+                    + "moeasy_access_token 쿠키가 필요하며 GET 요청이므로 CSRF 헤더는 필요하지 않습니다.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200", useReturnTypeSchema = true, description = "정산 목록 조회 성공",
+                    content = @Content(mediaType = "application/json", examples = {
+                            @ExampleObject(name = "정산 목록", value = """
+                                    {"isSuccess":true,"code":"SETTLEMENT200_2","message":"정산 목록 조회에 성공했습니다.",
+                                     "result":{"items":[{"settlementId":31,"title":"러닝 후 식사비","scheduleId":7,
+                                     "status":"OPEN","splitMode":"EQUAL","totalAmount":10000,"targetCount":3,
+                                     "dueAt":"2026-11-01T23:59:59","createdAt":"2026-10-20T14:00:00"}],
+                                     "page":0,"size":20,"totalElements":1,"totalPages":1,"hasNext":false}}
+                                    """),
+                            @ExampleObject(name = "빈 목록", value = """
+                                    {"isSuccess":true,"code":"SETTLEMENT200_2","message":"정산 목록 조회에 성공했습니다.",
+                                     "result":{"items":[],"page":0,"size":20,"totalElements":0,"totalPages":0,"hasNext":false}}
+                                    """)
+                    })),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400", description = "ID·페이지 범위 또는 쿼리 파라미터 형식 오류",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = {
+                                    @ExampleObject(name = "범위 검증", value = """
+                                            {"isSuccess":false,"code":"VALID400_1","message":"검증에 실패했습니다.",
+                                             "result":{"size":["페이지 크기는 100 이하여야 합니다."]}}
+                                            """),
+                                    @ExampleObject(name = "파라미터 형식", value = """
+                                            {"isSuccess":false,"code":"COMMON400_1","message":"잘못된 요청입니다.","result":null}
+                                            """)
+                            })),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401", description = "인증 쿠키 누락·만료 또는 유효하지 않은 Access Token",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {"isSuccess":false,"code":"AUTH401_1","message":"인증이 필요합니다.","result":null}
+                                    """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403", description = "활성 모임 회원이 아님",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {"isSuccess":false,"code":"AUTH403_1","message":"요청이 거부되었습니다.","result":null}
+                                    """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404", description = "모임 없음·삭제 (폐쇄된 모임은 조회 가능)",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {"isSuccess":false,"code":"GROUP404_1","message":"모임을 찾을 수 없습니다.","result":null}
+                                    """)))
+    })
+    ResponseEntity<ApiResponse<SettlementResDTO.Page>> getSettlements(
+            @Positive(message = "모임 ID는 양수여야 합니다.")
+            @Parameter(description = "조회할 모임 ID (member_group.id)", required = true) Long groupId,
+            @Valid @ParameterObject SettlementReqDTO.Search request,
+            @Parameter(hidden = true) Long memberId
+    );
 
     @Operation(summary = "정산 생성",
             description = "폐쇄·삭제되지 않은 모임의 활성 OWNER 또는 MANAGER가 정산을 생성합니다. "
@@ -91,7 +158,7 @@ public interface SettlementControllerDocs {
                                             {"title":"식사비 정산","scheduleId":7,"totalAmount":20000,"splitMode":"CUSTOM",
                                              "memberAmounts":[{"groupMemberId":11,"amount":12000},{"groupMemberId":12,"amount":8000}]}
                                             """)
-                            })) SettlementReqDTO.Create request,
+                            })) @Valid SettlementReqDTO.Create request,
             @Parameter(hidden = true) Long memberId
     );
 
@@ -167,7 +234,7 @@ public interface SettlementControllerDocs {
                                             {"splitMode":"CUSTOM","totalAmount":20000,
                                              "memberAmounts":[{"groupMemberId":11,"amount":12000},{"groupMemberId":12,"amount":8000}]}
                                             """)
-                            })) SettlementReqDTO.Preview request,
+                            })) @Valid SettlementReqDTO.Preview request,
             @Parameter(hidden = true) Long memberId
     );
 }
