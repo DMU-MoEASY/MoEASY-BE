@@ -18,6 +18,7 @@ import com.moeasy.moeasybe.domain.settlement.exception.SettlementException;
 import com.moeasy.moeasybe.domain.settlement.exception.code.SettlementErrorCode;
 import com.moeasy.moeasybe.domain.settlement.repository.SettlementItemRepository;
 import com.moeasy.moeasybe.domain.settlement.repository.SettlementRepository;
+import com.moeasy.moeasybe.domain.settlement.service.support.SettlementTargetFinder;
 import com.moeasy.moeasybe.domain.settlement.util.SettlementSplitCalculator;
 import com.moeasy.moeasybe.domain.settlement.util.SettlementSplitCalculator.Allocation;
 import com.moeasy.moeasybe.global.apiPayload.code.GeneralErrorCode;
@@ -27,8 +28,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,6 +44,7 @@ public class SettlementCommandService {
     private final SettlementRepository settlementRepository;
     private final SettlementItemRepository settlementItemRepository;
     private final SettlementSplitCalculator splitCalculator;
+    private final SettlementTargetFinder targetFinder;
     private final Clock clock;
 
     @Transactional
@@ -57,8 +57,9 @@ public class SettlementCommandService {
                 .orElseThrow(() -> new GroupException(GroupErrorCode.GROUP_NOT_FOUND));
         GroupMember creator = requireCreator(groupId, memberId);
         validateSchedule(groupId, request.scheduleId());
-        List<Allocation> allocations = calculateAllocations(request);
-        Map<Long, GroupMember> targets = findTargets(groupId, allocations);
+        List<Allocation> allocations = splitCalculator.calculate(
+                request.splitMode(), request.totalAmount(), request.groupMemberIds(), request.memberAmounts());
+        Map<Long, GroupMember> targets = targetFinder.findTargets(groupId, allocations);
         validateDueAt(request.dueAt());
 
         Settlement settlement = settlementRepository.save(SettlementConverter.toEntity(request, group, creator));
@@ -82,37 +83,6 @@ public class SettlementCommandService {
                 .existsByIdAndGroupIdAndDeletedAtIsNull(scheduleId, groupId)) {
             throw new SettlementException(SettlementErrorCode.INVALID_SCHEDULE);
         }
-    }
-
-    private List<Allocation> calculateAllocations(SettlementReqDTO.Create request) {
-        if (request.splitMode() == null) {
-            throw new SettlementException(SettlementErrorCode.INVALID_SPLIT_MODE_FIELDS);
-        }
-        return switch (request.splitMode()) {
-            case EQUAL -> {
-                if (request.groupMemberIds() == null || request.memberAmounts() != null) {
-                    throw new SettlementException(SettlementErrorCode.INVALID_SPLIT_MODE_FIELDS);
-                }
-                yield splitCalculator.calculateEqual(request.totalAmount(), request.groupMemberIds());
-            }
-            case CUSTOM -> {
-                if (request.memberAmounts() == null || request.groupMemberIds() != null) {
-                    throw new SettlementException(SettlementErrorCode.INVALID_SPLIT_MODE_FIELDS);
-                }
-                yield splitCalculator.calculateCustom(request.totalAmount(), request.memberAmounts());
-            }
-        };
-    }
-
-    private Map<Long, GroupMember> findTargets(Long groupId, List<Allocation> allocations) {
-        List<Long> targetIds = allocations.stream().map(Allocation::groupMemberId).toList();
-        List<GroupMember> targets = groupMemberRepository
-                .findAllByGroupIdAndIdInAndStatusAndDeletedAtIsNullAndMemberDeletedAtIsNull(
-                        groupId, targetIds, GroupMemberStatus.ACTIVE);
-        if (targets.size() != allocations.size()) {
-            throw new SettlementException(SettlementErrorCode.INVALID_TARGET_MEMBERS);
-        }
-        return targets.stream().collect(Collectors.toMap(GroupMember::getId, Function.identity()));
     }
 
     private void validateDueAt(LocalDateTime dueAt) {

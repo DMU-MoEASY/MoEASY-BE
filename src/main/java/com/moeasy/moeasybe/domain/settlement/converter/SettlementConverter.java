@@ -6,6 +6,7 @@ import com.moeasy.moeasybe.domain.settlement.dto.request.SettlementReqDTO;
 import com.moeasy.moeasybe.domain.settlement.dto.response.SettlementResDTO;
 import com.moeasy.moeasybe.domain.settlement.entity.Settlement;
 import com.moeasy.moeasybe.domain.settlement.entity.SettlementItem;
+import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
 import com.moeasy.moeasybe.domain.settlement.util.SettlementSplitCalculator.Allocation;
 import java.util.List;
 import java.util.Map;
@@ -41,5 +42,24 @@ public final class SettlementConverter {
 
     public static SettlementResDTO.Created toCreated(Settlement settlement) {
         return SettlementResDTO.Created.builder().settlementId(settlement.getId()).build();
+    }
+
+    public static SettlementResDTO.Preview toPreview(
+            SettlementSplitMode splitMode, Long totalAmount,
+            List<Allocation> allocations, Map<Long, GroupMember> targets) {
+        List<SettlementResDTO.PreviewItem> items = allocations.stream()
+                .map(allocation -> SettlementResDTO.PreviewItem.builder()
+                        .groupMemberId(allocation.groupMemberId())
+                        .nickname(targets.get(allocation.groupMemberId()).getMember().getNickname())
+                        .amount(allocation.amount())
+                        .remainderAmount(allocation.remainderAmount())
+                        .build())
+                .toList();
+        return SettlementResDTO.Preview.builder()
+                .splitMode(splitMode)
+                .totalAmount(totalAmount)
+                .targetCount(items.size())
+                .items(items)
+                .build();
     }
 }

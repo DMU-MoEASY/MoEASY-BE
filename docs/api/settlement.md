@@ -14,7 +14,7 @@
 | 정산 생성 Service·Repository·Converter | 구현됨 | 권한·일정·대상·조건부 필드·납부 기한 검증 및 정산·청구의 트랜잭션 저장 |
 | 정산 생성 엔드포인트·Swagger | 구현됨 | JWT·CSRF 검증, 요청 validation, HTTP 201 공통 응답과 요청·응답 예시 |
 | 대상 선택용 모임 회원 목록 조회 | 미구현 | 경로·필터·응답 필드 정의됨 |
-| 분할 미리보기 | 계약·DTO·성공 코드 구현됨. Service·Controller·Swagger 미구현 | [분할 미리보기 API](#분할-미리보기-api) 참고. 아직 호출할 수 없음 |
+| 분할 미리보기 | 계약·DTO·성공 코드·Service·Converter 구현됨. Controller·Swagger 미구현 | [분할 미리보기 API](#분할-미리보기-api) 참고. 아직 호출할 수 없음 |
 | 정산 목록·상세 조회 | 미구현 | 후속 정의 |
 | 납부·환불·영수증 관리·수정·취소·마감 | 미구현 | [후속 기능](#후속-기능) 참고 |
 
@@ -55,7 +55,7 @@
 
 필수 배열은 비어 있을 수 없다. 사용하지 않는 조건부 필드는 생략하거나 null로 전달한다. 해당 필드에 값이 들어오면 잘못된 조합으로 거부한다.
 
-요청 DTO는 필수값·길이·양수·빈 배열·중첩 항목을 검증하고 제목의 앞뒤 공백을 제거한다. 중복 대상·금액·합계 검증과 배분 계산은 `SettlementSplitCalculator`에서 담당한다. 선택한 분할 방식에 필요한 배열의 누락·불필요한 필드 전달, 생성 권한, 일정과 대상의 실제 존재·소속·상태, 납부 기한은 `SettlementCommandService`에서 검증한다. `SettlementController`에서 요청 DTO를 검증하고 JWT principal의 회원 ID와 함께 서비스로 전달한다.
+요청 DTO는 필수값·길이·양수·빈 배열·중첩 항목을 검증하고 제목의 앞뒤 공백을 제거한다. 분할 방식에 필요한 배열의 누락·불필요한 필드 전달, 중복 대상·금액·합계 검증과 배분 계산은 `SettlementSplitCalculator`에서 담당한다. 생성 권한, 일정과 대상의 실제 존재·소속·상태, 납부 기한은 `SettlementCommandService`에서 검증한다. `SettlementController`에서 요청 DTO를 검증하고 JWT principal의 회원 ID와 함께 서비스로 전달한다.
 
 | 분할 방식 | 대상·금액 처리 |
 | --- | --- |
@@ -204,18 +204,29 @@ HTTP 201과 생성한 `settlementId`를 `ApiResponse<SettlementResDTO.Created>` 
 
 ### 계산 구현
 
-- 정산 전용 공통 보조 기능은 `settlement.util`에 둔다. 공유 계산 로직은 `util/SettlementSplitCalculator.java`에 두고, 계산 결과는 그 클래스 내부의 `Allocation` record로 정의한다. 정산 처리 서비스는 `service.command`와 `service.query`로 구분하여 계산기를 재사용한다. 생성 서비스는 구현되어 있으며 조회·미리보기 서비스는 후속 구현한다.
+- 정산 전용 공통 보조 기능은 `settlement.util`에 둔다. 공유 계산 로직은 `util/SettlementSplitCalculator.java`에 두고, 계산 결과는 그 클래스 내부의 `Allocation` record로 정의한다. 정산 처리 서비스는 `service.command`와 `service.query`로 구분한다. 생성·미리보기 서비스는 같은 계산기를 사용하며 목록·상세 조회는 후속 구현한다.
+- 공통 진입점 `calculate`가 분할 방식과 조건부 배열 조합을 검증한 뒤 `calculateEqual` 또는 `calculateCustom`으로 위임한다. 사용하지 않는 배열에 빈 배열을 전달해도 잘못된 조합으로 거부한다.
 - `SettlementSplitCalculator.calculateEqual`은 대상 ID를 오름차순 정렬한 후 위 규칙으로 배분한다. 총액이 인원수보다 작아 0원 청구가 생기면 거부한다.
 - `calculateCustom`은 회원별 양수 금액을 보존하며 `Math.addExact`로 합산한다. `Long` 범위 초과 또는 요청 총액과의 불일치는 거부하고 자동 보정하지 않는다.
 - 두 메서드는 중복 ID를 제거하지 않고 오류로 처리한다. DTO 검증을 거치지 않는 내부 호출에서도 빈 대상·null 항목·양수가 아닌 ID·금액을 거부한다.
 - 반환값은 `groupMemberId`, 청구액 `amount`, 나머지 추가분 `remainderAmount`를 담은 내부 결과 목록이다. 두 방식 모두 ID 오름차순이며 `CUSTOM`의 나머지 추가분은 0원이다. 입력 목록의 순서는 변경하지 않는다.
-- 계산기는 DB를 조회하거나 저장하지 않는다. 생성 서비스가 사용하며 미리보기 서비스에서도 재사용한다. 요청자 권한과 회원의 실제 존재·소속·상태는 서비스에서 별도로 검증한다. 미리보기 요청·응답 DTO는 정의되어 있으며 서비스와 API 연결은 아직 구현되지 않았다.
+- 계산기는 DB를 조회하거나 저장하지 않는다. 생성·미리보기 서비스가 재사용하며 요청자 권한과 회원의 실제 존재·소속·상태는 서비스에서 별도로 검증한다. 미리보기 서비스와 DTO는 구현되어 있으며 Controller 연결은 아직 구현되지 않았다.
+- 대상 조회·소속·활성·삭제 여부 검증은 `service.support.SettlementTargetFinder.findTargets`를 생성·미리보기 서비스에서 공유한다. 계산기가 검증한 배분 목록을 입력받아 대상 ID별 모임 회원을 반환하며, 트랜잭션 경계는 호출하는 서비스가 관리한다.
 
 ### 분할 미리보기 API
 
 `POST /api/v1/groups/{groupId}/settlements/preview`
 
-현재 요청·응답 DTO와 성공 코드는 구현되어 있다. Service·Controller·Swagger 연결은 아직 구현되지 않아 호출할 수 없다. 미리보기는 조회 성격의 유스케이스로 `SettlementQueryService`에서 처리하고 생성과 같은 `SettlementSplitCalculator`를 재사용한다.
+현재 요청·응답 DTO, 성공 코드, Service·Converter는 구현되어 있다. Controller·Swagger 연결은 아직 구현되지 않아 호출할 수 없다. 미리보기는 조회 성격의 유스케이스로 `SettlementQueryService.previewSplit`에서 처리하고 생성과 같은 `SettlementSplitCalculator`를 재사용한다.
+
+`previewSplit`은 `@Transactional(readOnly = true)` 안에서 다음 순서로 처리한다.
+
+1. 폐쇄·삭제되지 않은 모임과 요청자의 활성 모임 회원 정보를 조회하고 `OWNER`·`MANAGER` 권한을 확인한다.
+2. 공통 계산기로 조건부 필드·대상 ID·금액을 검증하고 ID 오름차순의 분할 결과를 계산한다.
+3. 대상 목록을 한 번에 조회하여 같은 모임의 활성·미삭제 회원인지 확인한다. 회원 계정도 함께 로딩하여 닉네임별 추가 조회를 피한다.
+4. `SettlementConverter.toPreview`가 계산 결과와 현재 닉네임을 조립한다. 정산·청구 Repository를 통한 저장은 수행하지 않는다.
+
+실제 MySQL 통합 테스트에서 서비스 트랜잭션 종료 후 정산·청구 미저장, 권한·대상 검증과 동일 입력의 생성·미리보기 청구액 일치를 확인한다.
 
 #### 권한과 검증
 

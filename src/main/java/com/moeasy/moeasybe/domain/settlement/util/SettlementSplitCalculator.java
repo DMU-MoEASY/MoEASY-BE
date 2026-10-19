@@ -1,6 +1,7 @@
 package com.moeasy.moeasybe.domain.settlement.util;
 
 import com.moeasy.moeasybe.domain.settlement.dto.request.SettlementReqDTO;
+import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
 import com.moeasy.moeasybe.domain.settlement.exception.SettlementException;
 import com.moeasy.moeasybe.domain.settlement.exception.code.SettlementErrorCode;
 import java.util.Comparator;
@@ -12,6 +13,28 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class SettlementSplitCalculator {
+
+    public List<Allocation> calculate(
+            SettlementSplitMode splitMode, Long totalAmount, List<Long> groupMemberIds,
+            List<SettlementReqDTO.MemberAmount> memberAmounts) {
+        if (splitMode == null) {
+            throw new SettlementException(SettlementErrorCode.INVALID_SPLIT_MODE_FIELDS);
+        }
+        return switch (splitMode) {
+            case EQUAL -> {
+                if (groupMemberIds == null || memberAmounts != null) {
+                    throw new SettlementException(SettlementErrorCode.INVALID_SPLIT_MODE_FIELDS);
+                }
+                yield calculateEqual(totalAmount, groupMemberIds);
+            }
+            case CUSTOM -> {
+                if (memberAmounts == null || groupMemberIds != null) {
+                    throw new SettlementException(SettlementErrorCode.INVALID_SPLIT_MODE_FIELDS);
+                }
+                yield calculateCustom(totalAmount, memberAmounts);
+            }
+        };
+    }
 
     public List<Allocation> calculateEqual(Long totalAmount, List<Long> groupMemberIds) {
         validateAmount(totalAmount);

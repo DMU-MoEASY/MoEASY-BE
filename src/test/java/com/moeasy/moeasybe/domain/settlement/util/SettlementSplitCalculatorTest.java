@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.moeasy.moeasybe.domain.settlement.dto.request.SettlementReqDTO;
+import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
 import com.moeasy.moeasybe.domain.settlement.exception.SettlementException;
 import com.moeasy.moeasybe.domain.settlement.exception.code.SettlementErrorCode;
 import com.moeasy.moeasybe.domain.settlement.util.SettlementSplitCalculator.Allocation;
@@ -23,6 +24,58 @@ import org.junit.jupiter.params.provider.ValueSource;
 class SettlementSplitCalculatorTest {
 
     private final SettlementSplitCalculator calculator = new SettlementSplitCalculator();
+
+    @ParameterizedTest
+    @MethodSource("validSplitRequests")
+    @DisplayName("공통 계산 진입점은 분할 방식에 맞는 동일한 배분 규칙을 적용한다")
+    void calculate_validFields_returnsAllocation(
+            SettlementReqDTO.Preview request, List<Allocation> expected) {
+        // given: 생성과 미리보기가 사용하는 공통 필드
+
+        // when
+        List<Allocation> result = calculator.calculate(
+                request.splitMode(), request.totalAmount(), request.groupMemberIds(), request.memberAmounts());
+
+        // then
+        assertEquals(expected, result);
+    }
+
+    private static Stream<Arguments> validSplitRequests() {
+        return Stream.of(
+                Arguments.of(new SettlementReqDTO.Preview(SettlementSplitMode.EQUAL, 5L, List.of(12L, 11L), null),
+                        List.of(new Allocation(11L, 3L, 1L), new Allocation(12L, 2L, 0L))),
+                Arguments.of(new SettlementReqDTO.Preview(SettlementSplitMode.CUSTOM, 5L, null,
+                                List.of(new SettlementReqDTO.MemberAmount(12L, 4L),
+                                        new SettlementReqDTO.MemberAmount(11L, 1L))),
+                        List.of(new Allocation(11L, 1L, 0L), new Allocation(12L, 4L, 0L)))
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidSplitRequests")
+    @DisplayName("분할 방식 누락·필수 배열 누락·불필요한 배열 전달은 공통 진입점에서 거부한다")
+    void calculate_invalidFields_throwsSplitModeError(SettlementReqDTO.Preview request) {
+        // given: 사용하지 않는 빈 배열도 생략 또는 null과 다르다.
+
+        // when
+        SettlementException exception = assertThrows(SettlementException.class,
+                () -> calculator.calculate(request.splitMode(), request.totalAmount(),
+                        request.groupMemberIds(), request.memberAmounts()));
+
+        // then
+        assertEquals(SettlementErrorCode.INVALID_SPLIT_MODE_FIELDS, exception.getCode());
+    }
+
+    private static Stream<SettlementReqDTO.Preview> invalidSplitRequests() {
+        return Stream.of(
+                new SettlementReqDTO.Preview(null, 5L, List.of(11L), null),
+                new SettlementReqDTO.Preview(SettlementSplitMode.EQUAL, 5L, null, null),
+                new SettlementReqDTO.Preview(SettlementSplitMode.EQUAL, 5L, List.of(11L), List.of()),
+                new SettlementReqDTO.Preview(SettlementSplitMode.CUSTOM, 5L, null, null),
+                new SettlementReqDTO.Preview(SettlementSplitMode.CUSTOM, 5L, List.of(),
+                        List.of(new SettlementReqDTO.MemberAmount(11L, 5L)))
+        );
+    }
 
     @ParameterizedTest
     @MethodSource("equalSplitCases")
