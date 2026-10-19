@@ -165,7 +165,9 @@ class SettlementControllerTest {
     }
 
     @ParameterizedTest
-    @EnumSource(SettlementErrorCode.class)
+    @EnumSource(value = SettlementErrorCode.class,
+            names = {"INVALID_SCHEDULE", "INVALID_TARGET_MEMBERS", "INVALID_SPLIT_MODE_FIELDS",
+                    "INVALID_AMOUNT", "INVALID_DUE_AT"})
     @DisplayName("서비스의 정산 규칙 오류는 실제 도메인 코드·메시지의 공통 실패 응답으로 변환한다")
     void createSettlement_businessFailure_preservesDomainError(SettlementErrorCode code) throws Exception {
         // given

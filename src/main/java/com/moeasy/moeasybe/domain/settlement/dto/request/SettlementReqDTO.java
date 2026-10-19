@@ -4,8 +4,11 @@ import com.moeasy.moeasybe.domain.settlement.dto.deserializer.SettlementDueAtDes
 import com.moeasy.moeasybe.domain.settlement.dto.deserializer.SettlementLongDeserializer;
 import com.moeasy.moeasybe.domain.settlement.dto.deserializer.SettlementSplitModeDeserializer;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
+import com.moeasy.moeasybe.domain.settlement.enums.SettlementStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -17,6 +20,30 @@ import tools.jackson.databind.annotation.JsonDeserialize;
 public final class SettlementReqDTO {
 
     private SettlementReqDTO() {
+    }
+
+    @Schema(name = "SettlementSearchRequest", description = "정산 목록 조회 조건")
+    public record Search(
+            @Min(value = 0, message = "페이지 번호는 0 이상이어야 합니다.")
+            @Schema(description = "0부터 시작하는 페이지 번호", defaultValue = "0", example = "0")
+            Integer page,
+
+            @Min(value = 1, message = "페이지 크기는 1 이상이어야 합니다.")
+            @Max(value = 100, message = "페이지 크기는 100 이하여야 합니다.")
+            @Schema(description = "페이지 크기 (1~100)", defaultValue = "20", example = "20")
+            Integer size,
+
+            @Schema(description = "정산 상태 필터 (생략하면 전체 상태)", example = "OPEN")
+            SettlementStatus status,
+
+            @Positive(message = "일정 ID는 양수여야 합니다.")
+            @Schema(description = "연결된 일정 ID 필터 (생략하면 일정 연결 여부와 무관하게 조회)", example = "7")
+            Long scheduleId
+    ) {
+        public Search {
+            page = page == null ? 0 : page;
+            size = size == null ? 20 : size;
+        }
     }
 
     @Schema(name = "SettlementCreateRequest", description = "정산 생성 요청")
