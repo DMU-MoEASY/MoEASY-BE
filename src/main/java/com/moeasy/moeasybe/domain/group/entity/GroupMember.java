@@ -52,6 +52,13 @@ public class GroupMember extends BaseEntity {
     @Column(name = "joined_at", nullable = false)
     private LocalDateTime joinedAt;
 
+    public void rejoin(LocalDateTime approvedAt) {
+        role = GroupMemberRole.MEMBER;
+        status = GroupMemberStatus.ACTIVE;
+        markDeletedAt(null);
+        joinedAt = approvedAt;
+    }
+
     @Builder
     private GroupMember(Group group, Member member, GroupMemberRole role,
             GroupMemberStatus status, LocalDateTime joinedAt) {

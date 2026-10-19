@@ -1,5 +1,6 @@
 package com.moeasy.moeasybe.domain.group.validate;
 
+import com.moeasy.moeasybe.domain.group.entity.GroupMember;
 import com.moeasy.moeasybe.domain.group.enums.GroupMemberRole;
 import com.moeasy.moeasybe.domain.group.enums.GroupMemberStatus;
 import com.moeasy.moeasybe.domain.group.exception.GroupException;
@@ -16,6 +17,13 @@ import org.springframework.stereotype.Component;
 public class GroupAccessValidator {
     private final GroupMemberRepository groupMemberRepository;
     private final GroupDeletionHistoryRepository deletionHistoryRepository;
+
+    public GroupMember requireJoinManager(Long groupId, Long memberId) {
+        return groupMemberRepository.findByGroupIdAndMemberId(groupId, memberId)
+                .filter(m -> m.getStatus() == GroupMemberStatus.ACTIVE && m.getDeletedAt() == null)
+                .filter(m -> m.getRole() == GroupMemberRole.OWNER || m.getRole() == GroupMemberRole.MANAGER)
+                .orElseThrow(() -> new GeneralException(GeneralErrorCode.FORBIDDEN));
+    }
 
     public void requireOwner(Long groupId, Long memberId) {
         if (!groupMemberRepository.existsByGroupIdAndMemberIdAndRoleAndStatus(
