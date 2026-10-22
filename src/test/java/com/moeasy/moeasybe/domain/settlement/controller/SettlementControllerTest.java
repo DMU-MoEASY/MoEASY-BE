@@ -1,0 +1,640 @@
+package com.moeasy.moeasybe.domain.settlement.controller;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.moeasy.moeasybe.domain.group.exception.GroupException;
+import com.moeasy.moeasybe.domain.group.exception.code.GroupErrorCode;
+import com.moeasy.moeasybe.domain.settlement.dto.request.SettlementReqDTO;
+import com.moeasy.moeasybe.domain.settlement.dto.response.SettlementResDTO;
+import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
+import com.moeasy.moeasybe.domain.settlement.enums.SettlementStatus;
+import com.moeasy.moeasybe.domain.settlement.enums.SettlementItemStatus;
+import com.moeasy.moeasybe.domain.settlement.exception.SettlementException;
+import com.moeasy.moeasybe.domain.settlement.exception.code.SettlementErrorCode;
+import com.moeasy.moeasybe.domain.settlement.service.command.SettlementCommandService;
+import com.moeasy.moeasybe.domain.settlement.service.query.SettlementQueryService;
+import com.moeasy.moeasybe.global.security.jwt.JwtAuthenticationFilter;
+import com.moeasy.moeasybe.global.apiPayload.code.GeneralErrorCode;
+import com.moeasy.moeasybe.global.apiPayload.exception.GeneralException;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.http.MediaType;
+import org.springframework.data.jpa.mapping.JpaMetamodelMappingContext;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.method.support.HandlerMethodArgumentResolver;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+@WebMvcTest(SettlementController.class)
+@AutoConfigureMockMvc(addFilters = false)
+class SettlementControllerTest {
+
+    private static final Long GROUP_ID = 10L;
+    private static final Long MEMBER_ID = 42L;
+    private static final String PATH = "/api/v1/groups/10/settlements";
+    private static final String VALID_BODY = """
+            {"title":" 정산 ","totalAmount":500,"splitMode":"EQUAL","groupMemberIds":[11,12,13]}
+            """;
+    private static final String PREVIEW_PATH = PATH + "/preview";
+    private static final String PREVIEW_BODY = """
+            {"totalAmount":500,"splitMode":"EQUAL","groupMemberIds":[11,12,13]}
+            """;
+
+    @Autowired private MockMvc mockMvc;
+    @MockitoBean private SettlementCommandService service;
+    @MockitoBean private SettlementQueryService queryService;
+    @MockitoBean private JwtAuthenticationFilter jwtAuthenticationFilter;
+    // 애플리케이션의 JPA auditing 설정은 MVC 슬라이스에서 실제 영속성 메타모델을 사용하지 않는다.
+    @MockitoBean private JpaMetamodelMappingContext jpaMappingContext;
+
+    @BeforeEach
+    void setUp() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(MEMBER_ID, null, List.of()));
+    }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    @DisplayName("상세 조회는 두 경로 ID와 인증 회원을 전달하고 공통 200 상세 응답을 반환한다")
+    void getSettlement_validPath_returnsDetailEnvelope() throws Exception {
+        // given
+        var detail = SettlementResDTO.Detail.builder().settlementId(31L).groupId(GROUP_ID)
+                .title("식사비").status(SettlementStatus.OPEN).splitMode(SettlementSplitMode.EQUAL)
+                .totalAmount(100L).targetCount(1).createdAt(LocalDateTime.of(2026, 10, 20, 14, 0))
+                .createdBy(SettlementResDTO.Creator.builder().groupMemberId(11L).nickname("정규").build())
+                .items(List.of(SettlementResDTO.Item.builder().settlementItemId(101L).groupMemberId(11L)
+                        .nickname("정규").amount(100L)
+                        .status(SettlementItemStatus.PENDING).build()))
+                .build();
+        when(queryService.getSettlement(GROUP_ID, 31L, MEMBER_ID)).thenReturn(detail);
+
+        // when
+        var result = mockMvc.perform(get(PATH + "/31"));
+
+        // then
+        result.andExpect(status().isOk()).andExpect(jsonPath("$.code").value("SETTLEMENT200_3"))
+                .andExpect(jsonPath("$.message").value("정산 상세 조회에 성공했습니다."))
+                .andExpect(jsonPath("$.result.settlementId").value(31))
+                .andExpect(jsonPath("$.result.groupId").value(GROUP_ID))
+                .andExpect(jsonPath("$.result.targetCount").value(1))
+                .andExpect(jsonPath("$.result.createdAt").value("2026-10-20T14:00:00"))
+                .andExpect(jsonPath("$.result.createdBy.nickname").value("정규"))
+                .andExpect(jsonPath("$.result.items[0].settlementItemId").value(101))
+                .andExpect(jsonPath("$.result.items[0].groupMemberId").value(11))
+                .andExpect(jsonPath("$.result.items[0].amount").value(100))
+                .andExpect(jsonPath("$.result.items[0].status").value("PENDING"))
+                .andExpect(jsonPath("$.result.items[0].remainderAmount").doesNotExist())
+                .andExpect(jsonPath("$.result.mySettlementItemId").doesNotExist());
+        verify(queryService).getSettlement(GROUP_ID, 31L, MEMBER_ID);
+        verifyNoInteractions(service);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"0,31,groupId", "-1,31,groupId", "10,0,settlementId", "10,-1,settlementId"})
+    @DisplayName("상세 조회의 모임·정산 ID 양수 검증은 Docs 인터페이스 선언으로 동작한다")
+    void getSettlement_nonPositivePath_returnsValidationFailure(String groupId, String settlementId, String field)
+            throws Exception {
+        // given
+        var request = get("/api/v1/groups/" + groupId + "/settlements/" + settlementId);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALID400_1"))
+                .andExpect(jsonPath("$.result." + field).isArray());
+        verifyNoInteractions(queryService, service);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"abc,31", "10,abc", "9223372036854775808,31", "10,9223372036854775808"})
+    @DisplayName("상세 경로의 숫자 변환 실패는 COMMON400_1로 반환한다")
+    void getSettlement_invalidPathType_returnsBadRequest(String groupId, String settlementId) throws Exception {
+        // given
+        var request = get("/api/v1/groups/" + groupId + "/settlements/" + settlementId);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+        verifyNoInteractions(queryService, service);
+    }
+
+    @Test
+    @DisplayName("상세 정산 없음 오류는 SETTLEMENT404_1의 공통 실패 응답으로 반환한다")
+    void getSettlement_missingSettlement_returnsNotFound() throws Exception {
+        // given
+        when(queryService.getSettlement(GROUP_ID, 31L, MEMBER_ID))
+                .thenThrow(new SettlementException(SettlementErrorCode.SETTLEMENT_NOT_FOUND));
+
+        // when
+        var result = mockMvc.perform(get(PATH + "/31"));
+
+        // then
+        result.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SETTLEMENT404_1"))
+                .andExpect(jsonPath("$.message").value("정산을 찾을 수 없습니다."))
+                .andExpect(jsonPath("$.result").isEmpty());
+    }
+
+    @Test
+    @DisplayName("목록 조건을 생략하면 기본 페이지와 인증 회원을 QueryService에 전달한다")
+    void getSettlements_defaultQuery_returnsPageEnvelope() throws Exception {
+        // given
+        when(queryService.getSettlements(GROUP_ID, new SettlementReqDTO.Search(0, 20, null, null), MEMBER_ID))
+                .thenReturn(SettlementResDTO.Page.builder().items(List.of()).page(0).size(20)
+                        .totalElements(0L).totalPages(0).hasNext(false).build());
+
+        // when
+        var result = mockMvc.perform(get(PATH));
+
+        // then
+        result.andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SETTLEMENT200_2"))
+                .andExpect(jsonPath("$.result.items").isEmpty())
+                .andExpect(jsonPath("$.result.page").value(0))
+                .andExpect(jsonPath("$.result.size").value(20));
+        verify(queryService).getSettlements(GROUP_ID, new SettlementReqDTO.Search(0, 20, null, null), MEMBER_ID);
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    @DisplayName("목록 필터를 쿼리 문자열에서 읽고 전체 페이지 정보와 초 단위 날짜를 반환한다")
+    void getSettlements_filteredQuery_returnsSummaryAndPagination() throws Exception {
+        // given
+        var query = new SettlementReqDTO.Search(1, 10, SettlementStatus.CLOSED, 7L);
+        var summary = SettlementResDTO.Summary.builder().settlementId(31L).title("식사비")
+                .scheduleId(7L).status(SettlementStatus.CLOSED).splitMode(SettlementSplitMode.EQUAL)
+                .totalAmount(10000L).targetCount(3).dueAt(null)
+                .createdAt(LocalDateTime.of(2026, 10, 20, 14, 0, 0, 123456000)).build();
+        when(queryService.getSettlements(GROUP_ID, query, MEMBER_ID))
+                .thenReturn(SettlementResDTO.Page.builder().items(List.of(summary)).page(1).size(10)
+                        .totalElements(11L).totalPages(2).hasNext(false).build());
+
+        // when
+        var result = mockMvc.perform(get(PATH).param("page", "1").param("size", "10")
+                .param("status", "CLOSED").param("scheduleId", "7"));
+
+        // then
+        result.andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.code").value("SETTLEMENT200_2"))
+                .andExpect(jsonPath("$.message").value("정산 목록 조회에 성공했습니다."))
+                .andExpect(jsonPath("$.result.page").value(1))
+                .andExpect(jsonPath("$.result.size").value(10))
+                .andExpect(jsonPath("$.result.totalElements").value(11))
+                .andExpect(jsonPath("$.result.totalPages").value(2))
+                .andExpect(jsonPath("$.result.hasNext").value(false))
+                .andExpect(jsonPath("$.result.items[0].settlementId").value(31))
+                .andExpect(jsonPath("$.result.items[0].title").value("식사비"))
+                .andExpect(jsonPath("$.result.items[0].scheduleId").value(7))
+                .andExpect(jsonPath("$.result.items[0].status").value("CLOSED"))
+                .andExpect(jsonPath("$.result.items[0].splitMode").value("EQUAL"))
+                .andExpect(jsonPath("$.result.items[0].totalAmount").value(10000))
+                .andExpect(jsonPath("$.result.items[0].targetCount").value(3))
+                .andExpect(jsonPath("$.result.items[0].dueAt").isEmpty())
+                .andExpect(jsonPath("$.result.items[0].createdAt").value("2026-10-20T14:00:00"))
+                .andExpect(jsonPath("$.result.items[0].myItem").doesNotExist());
+        verify(queryService).getSettlements(GROUP_ID, query, MEMBER_ID);
+        verifyNoInteractions(service);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"page,-1", "size,0", "size,101", "scheduleId,0"})
+    @DisplayName("목록 파라미터의 범위 오류는 서비스 실행 전에 VALID400_1로 반환한다")
+    void getSettlements_invalidRange_returnsValidationFailure(String field, String value) throws Exception {
+        // given
+        var request = get(PATH).param(field, value);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALID400_1"))
+                .andExpect(jsonPath("$.result." + field).isArray());
+        verifyNoInteractions(queryService, service);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "-1"})
+    @DisplayName("양수가 아닌 경로의 모임 ID는 서비스 실행 전에 VALID400_1로 반환한다")
+    void getSettlements_invalidGroupId_returnsValidationFailure(String groupId) throws Exception {
+        // given
+        var request = get("/api/v1/groups/" + groupId + "/settlements");
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALID400_1"))
+                .andExpect(jsonPath("$.result.groupId").isArray());
+        verifyNoInteractions(queryService, service);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"page,abc", "page,2147483648", "size,1.5", "scheduleId,9223372036854775808",
+            "scheduleId,1e2", "status,UNKNOWN", "status,open", "status,0"})
+    @DisplayName("목록 파라미터 변환 실패는 COMMON400_1과 null 결과를 반환한다")
+    void getSettlements_invalidParameterType_returnsBadRequest(String field, String value) throws Exception {
+        // given
+        var request = get(PATH).param(field, value);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"))
+                .andExpect(jsonPath("$.result").isEmpty());
+        verifyNoInteractions(queryService, service);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"abc", "9223372036854775808"})
+    @DisplayName("경로 모임 ID의 숫자 변환 실패도 COMMON400_1로 반환한다")
+    void getSettlements_invalidGroupIdType_returnsBadRequest(String groupId) throws Exception {
+        // given
+        var request = get("/api/v1/groups/" + groupId + "/settlements");
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+        verifyNoInteractions(queryService, service);
+    }
+
+    @Test
+    @DisplayName("목록 조회 권한 실패는 AUTH403_1로 반환한다")
+    void getSettlements_forbidden_returnsPermissionFailure() throws Exception {
+        // given
+        when(queryService.getSettlements(GROUP_ID, new SettlementReqDTO.Search(0, 20, null, null), MEMBER_ID))
+                .thenThrow(new GeneralException(GeneralErrorCode.FORBIDDEN));
+
+        // when
+        var result = mockMvc.perform(get(PATH));
+
+        // then
+        result.andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("AUTH403_1"));
+    }
+
+    @Test
+    @DisplayName("목록 조회의 모임 없음은 GROUP404_1로 반환한다")
+    void getSettlements_groupNotFound_returnsNotFound() throws Exception {
+        // given
+        when(queryService.getSettlements(GROUP_ID, new SettlementReqDTO.Search(0, 20, null, null), MEMBER_ID))
+                .thenThrow(new GroupException(GroupErrorCode.GROUP_NOT_FOUND));
+
+        // when
+        var result = mockMvc.perform(get(PATH));
+
+        // then
+        result.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("GROUP404_1"));
+    }
+
+    @Test
+    @DisplayName("균등 정산 요청은 경로·인증 회원과 함께 전달하고 생성 식별자를 공통 201 응답으로 반환한다")
+    void createSettlement_equal_returnsCreatedEnvelope() throws Exception {
+        // given
+        when(service.createSettlement(eq(GROUP_ID), any(SettlementReqDTO.Create.class), eq(MEMBER_ID)))
+                .thenReturn(SettlementResDTO.Created.builder().settlementId(99L).build());
+
+        // when
+        var result = mockMvc.perform(post(PATH).contentType(MediaType.APPLICATION_JSON).content(VALID_BODY));
+
+        // then
+        result.andExpect(status().isCreated())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.code").value("SETTLEMENT201_1"))
+                .andExpect(jsonPath("$.message").value("정산 생성에 성공했습니다."))
+                .andExpect(jsonPath("$.result.settlementId").value(99));
+        ArgumentCaptor<SettlementReqDTO.Create> request = ArgumentCaptor.forClass(SettlementReqDTO.Create.class);
+        verify(service).createSettlement(eq(GROUP_ID), request.capture(), eq(MEMBER_ID));
+        assertAll(
+                () -> assertEquals("정산", request.getValue().title()),
+                () -> assertEquals(500L, request.getValue().totalAmount()),
+                () -> assertEquals(SettlementSplitMode.EQUAL, request.getValue().splitMode()),
+                () -> assertEquals(List.of(11L, 12L, 13L), request.getValue().groupMemberIds())
+        );
+    }
+
+    @Test
+    @DisplayName("개별 금액과 선택적 일정·납부 기한을 역직렬화해 서비스로 전달한다")
+    void createSettlement_custom_passesMemberAmountsAndOptionalFields() throws Exception {
+        // given
+        String body = """
+                {"title":"식사비","description":"설명","scheduleId":7,"dueAt":"2026-12-01T12:00:00",
+                 "totalAmount":500,"splitMode":"CUSTOM","memberAmounts":[{"groupMemberId":11,"amount":500}]}
+                """;
+        when(service.createSettlement(eq(GROUP_ID), any(SettlementReqDTO.Create.class), eq(MEMBER_ID)))
+                .thenReturn(SettlementResDTO.Created.builder().settlementId(100L).build());
+
+        // when
+        var result = mockMvc.perform(post(PATH).contentType(MediaType.APPLICATION_JSON).content(body));
+
+        // then
+        result.andExpect(status().isCreated()).andExpect(jsonPath("$.result.settlementId").value(100));
+        ArgumentCaptor<SettlementReqDTO.Create> request = ArgumentCaptor.forClass(SettlementReqDTO.Create.class);
+        verify(service).createSettlement(eq(GROUP_ID), request.capture(), eq(MEMBER_ID));
+        assertAll(
+                () -> assertEquals(SettlementSplitMode.CUSTOM, request.getValue().splitMode()),
+                () -> assertEquals(List.of(new SettlementReqDTO.MemberAmount(11L, 500L)), request.getValue().memberAmounts()),
+                () -> assertEquals(7L, request.getValue().scheduleId()),
+                () -> assertEquals("2026-12-01T12:00", request.getValue().dueAt().toString()),
+                () -> assertEquals("설명", request.getValue().description())
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidFields")
+    @DisplayName("필수값·길이·양수·빈 배열·중첩 항목 검증에 실패하면 서비스 실행 전에 VALID400_1을 반환한다")
+    void createSettlement_invalidFields_returnsValidationFailure(String body) throws Exception {
+        // given: 요청 본문의 필드 제약을 검증한다.
+
+        // when
+        var result = mockMvc.perform(post(PATH).contentType(MediaType.APPLICATION_JSON).content(body));
+
+        // then
+        result.andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.code").value("VALID400_1"))
+                .andExpect(jsonPath("$.result").isMap());
+        verifyNoInteractions(service);
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidJson")
+    @DisplayName("숫자·분할 방식·날짜의 잘못된 JSON 형식은 COMMON400_1을 반환한다")
+    void createSettlement_invalidJson_returnsBadRequest(String body) throws Exception {
+        // given: 변환할 수 없는 요청을 전달한다.
+
+        // when
+        var result = mockMvc.perform(post(PATH).contentType(MediaType.APPLICATION_JSON).content(body));
+
+        // then
+        result.andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400_1"))
+                .andExpect(jsonPath("$.result").isEmpty());
+        verifyNoInteractions(service);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = SettlementErrorCode.class,
+            names = {"INVALID_SCHEDULE", "INVALID_TARGET_MEMBERS", "INVALID_SPLIT_MODE_FIELDS",
+                    "INVALID_AMOUNT", "INVALID_DUE_AT"})
+    @DisplayName("서비스의 정산 규칙 오류는 실제 도메인 코드·메시지의 공통 실패 응답으로 변환한다")
+    void createSettlement_businessFailure_preservesDomainError(SettlementErrorCode code) throws Exception {
+        // given
+        when(service.createSettlement(eq(GROUP_ID), any(SettlementReqDTO.Create.class), eq(MEMBER_ID)))
+                .thenThrow(new SettlementException(code));
+
+        // when
+        var result = mockMvc.perform(post(PATH).contentType(MediaType.APPLICATION_JSON).content(VALID_BODY));
+
+        // then
+        result.andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.isSuccess").value(false))
+                .andExpect(jsonPath("$.code").value(code.getCode()))
+                .andExpect(jsonPath("$.message").value(code.getMessage()))
+                .andExpect(jsonPath("$.result").isEmpty());
+    }
+
+    @Test
+    @DisplayName("서비스의 모임 없음 오류는 GROUP404_1로 반환한다")
+    void createSettlement_groupNotFound_returnsNotFound() throws Exception {
+        // given
+        when(service.createSettlement(eq(GROUP_ID), any(SettlementReqDTO.Create.class), eq(MEMBER_ID)))
+                .thenThrow(new GroupException(GroupErrorCode.GROUP_NOT_FOUND));
+
+        // when
+        var result = mockMvc.perform(post(PATH).contentType(MediaType.APPLICATION_JSON).content(VALID_BODY));
+
+        // then
+        result.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("GROUP404_1"));
+    }
+
+    @Test
+    @DisplayName("미리보기는 요청과 인증 회원을 QueryService에 전달하고 공통 200 응답을 반환한다")
+    void previewSplit_equal_returnsPreviewEnvelope() throws Exception {
+        // given
+        when(queryService.previewSplit(eq(GROUP_ID), any(SettlementReqDTO.Preview.class), eq(MEMBER_ID)))
+                .thenReturn(SettlementResDTO.Preview.builder().splitMode(SettlementSplitMode.EQUAL)
+                        .totalAmount(500L).targetCount(3).items(List.of(
+                                SettlementResDTO.PreviewItem.builder().groupMemberId(11L).nickname("모이지")
+                                        .amount(167L).remainderAmount(1L).build(),
+                                SettlementResDTO.PreviewItem.builder().groupMemberId(12L).nickname("민지")
+                                        .amount(167L).remainderAmount(1L).build(),
+                                SettlementResDTO.PreviewItem.builder().groupMemberId(13L).nickname("도윤")
+                                        .amount(166L).remainderAmount(0L).build())).build());
+
+        // when
+        var result = mockMvc.perform(post(PREVIEW_PATH).contentType(MediaType.APPLICATION_JSON).content(PREVIEW_BODY));
+
+        // then
+        result.andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.code").value("SETTLEMENT200_1"))
+                .andExpect(jsonPath("$.message").value("정산 분할 미리보기에 성공했습니다."))
+                .andExpect(jsonPath("$.result.splitMode").value("EQUAL"))
+                .andExpect(jsonPath("$.result.totalAmount").value(500))
+                .andExpect(jsonPath("$.result.targetCount").value(3))
+                .andExpect(jsonPath("$.result.items.length()").value(3))
+                .andExpect(jsonPath("$.result.items[0].groupMemberId").value(11))
+                .andExpect(jsonPath("$.result.items[0].nickname").value("모이지"))
+                .andExpect(jsonPath("$.result.items[0].amount").value(167))
+                .andExpect(jsonPath("$.result.items[0].remainderAmount").value(1))
+                .andExpect(jsonPath("$.result.items[2].remainderAmount").value(0));
+        ArgumentCaptor<SettlementReqDTO.Preview> request = ArgumentCaptor.forClass(SettlementReqDTO.Preview.class);
+        verify(queryService).previewSplit(eq(GROUP_ID), request.capture(), eq(MEMBER_ID));
+        assertAll(
+                () -> assertEquals(SettlementSplitMode.EQUAL, request.getValue().splitMode()),
+                () -> assertEquals(500L, request.getValue().totalAmount()),
+                () -> assertEquals(List.of(11L, 12L, 13L), request.getValue().groupMemberIds())
+        );
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    @DisplayName("회원별 미리보기 금액은 중첩 DTO로 읽어 QueryService에 전달한다")
+    void previewSplit_custom_passesMemberAmounts() throws Exception {
+        // given
+        String body = """
+                {"totalAmount":500,"splitMode":"CUSTOM","memberAmounts":[{"groupMemberId":11,"amount":500}]}
+                """;
+        when(queryService.previewSplit(eq(GROUP_ID), any(SettlementReqDTO.Preview.class), eq(MEMBER_ID)))
+                .thenReturn(SettlementResDTO.Preview.builder().splitMode(SettlementSplitMode.CUSTOM)
+                        .totalAmount(500L).targetCount(1).items(List.of(
+                                SettlementResDTO.PreviewItem.builder().groupMemberId(11L).nickname("모이지")
+                                        .amount(500L).remainderAmount(0L).build())).build());
+
+        // when
+        var result = mockMvc.perform(post(PREVIEW_PATH).contentType(MediaType.APPLICATION_JSON).content(body));
+
+        // then
+        result.andExpect(status().isOk()).andExpect(jsonPath("$.result.splitMode").value("CUSTOM"))
+                .andExpect(jsonPath("$.result.items[0].amount").value(500));
+        ArgumentCaptor<SettlementReqDTO.Preview> request = ArgumentCaptor.forClass(SettlementReqDTO.Preview.class);
+        verify(queryService).previewSplit(eq(GROUP_ID), request.capture(), eq(MEMBER_ID));
+        assertEquals(List.of(new SettlementReqDTO.MemberAmount(11L, 500L)), request.getValue().memberAmounts());
+        verifyNoInteractions(service);
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidPreviewFields")
+    @DisplayName("미리보기 필드 검증 실패 시 서비스 실행 전 VALID400_1을 반환한다")
+    void previewSplit_invalidFields_returnsValidationFailure(String body) throws Exception {
+        // given: 필수값·배열·중첩 항목 검증에 실패하는 요청
+
+        // when
+        var result = mockMvc.perform(post(PREVIEW_PATH).contentType(MediaType.APPLICATION_JSON).content(body));
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALID400_1"))
+                .andExpect(jsonPath("$.result").isMap());
+        verifyNoInteractions(queryService, service);
+    }
+
+    private static Stream<String> invalidPreviewFields() {
+        return Stream.of(
+                PREVIEW_BODY.replace("\"totalAmount\":500,", ""),
+                PREVIEW_BODY.replace("\"totalAmount\":500", "\"totalAmount\":0"),
+                PREVIEW_BODY.replace("\"splitMode\":\"EQUAL\",", ""),
+                PREVIEW_BODY.replace("[11,12,13]", "[]"),
+                PREVIEW_BODY.replace("[11,12,13]", "[null]"),
+                PREVIEW_BODY.replace("[11,12,13]", "[-1]"),
+                """
+                {"totalAmount":500,"splitMode":"CUSTOM","memberAmounts":[{"groupMemberId":11,"amount":0}]}
+                """,
+                """
+                {"totalAmount":500,"splitMode":"CUSTOM","memberAmounts":[null]}
+                """
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidPreviewJson")
+    @DisplayName("미리보기의 잘못된 JSON과 숫자·분할 방식 형식은 COMMON400_1을 반환한다")
+    void previewSplit_invalidJson_returnsBadRequest(String body) throws Exception {
+        // given: 파싱 또는 형 변환에 실패하는 요청
+
+        // when
+        var result = mockMvc.perform(post(PREVIEW_PATH).contentType(MediaType.APPLICATION_JSON).content(body));
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+        verifyNoInteractions(queryService, service);
+    }
+
+    private static Stream<String> invalidPreviewJson() {
+        return Stream.concat(Stream.of("\"500\"", "1.5", "5e2", "9223372036854775808")
+                        .map(amount -> PREVIEW_BODY.replace("\"totalAmount\":500", "\"totalAmount\":" + amount)),
+                Stream.of("null", "{", PREVIEW_BODY.replace("\"EQUAL\"", "0"),
+                        PREVIEW_BODY.replace("\"EQUAL\"", "\"INVALID\""),
+                        PREVIEW_BODY.replace("[11,12,13]", "[\"11\"]")));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = SettlementErrorCode.class,
+            names = {"INVALID_TARGET_MEMBERS", "INVALID_SPLIT_MODE_FIELDS", "INVALID_AMOUNT"})
+    @DisplayName("미리보기 서비스 오류는 도메인 코드·메시지와 함께 반환한다")
+    void previewSplit_businessFailure_preservesDomainError(SettlementErrorCode code) throws Exception {
+        // given
+        when(queryService.previewSplit(eq(GROUP_ID), any(SettlementReqDTO.Preview.class), eq(MEMBER_ID)))
+                .thenThrow(new SettlementException(code));
+
+        // when
+        var result = mockMvc.perform(post(PREVIEW_PATH).contentType(MediaType.APPLICATION_JSON).content(PREVIEW_BODY));
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(code.getCode()))
+                .andExpect(jsonPath("$.message").value(code.getMessage()))
+                .andExpect(jsonPath("$.result").isEmpty());
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    @DisplayName("미리보기 대상 모임이 없으면 GROUP404_1을 반환한다")
+    void previewSplit_groupNotFound_returnsNotFound() throws Exception {
+        // given
+        when(queryService.previewSplit(eq(GROUP_ID), any(SettlementReqDTO.Preview.class), eq(MEMBER_ID)))
+                .thenThrow(new GroupException(GroupErrorCode.GROUP_NOT_FOUND));
+
+        // when
+        var result = mockMvc.perform(post(PREVIEW_PATH).contentType(MediaType.APPLICATION_JSON).content(PREVIEW_BODY));
+
+        // then
+        result.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("GROUP404_1"));
+    }
+
+    private static Stream<String> invalidFields() {
+        return Stream.of(
+                VALID_BODY.replace("\" 정산 \"", "\"   \""),
+                VALID_BODY.replace("\" 정산 \"", "\"" + "가".repeat(101) + "\""),
+                VALID_BODY.replace("\"totalAmount\":500,", ""),
+                VALID_BODY.replace("\"totalAmount\":500", "\"totalAmount\":0"),
+                VALID_BODY.replace("\"splitMode\":\"EQUAL\",", ""),
+                VALID_BODY.replace("[11,12,13]", "[]"),
+                VALID_BODY.replace("[11,12,13]", "[null]"),
+                VALID_BODY.replace("[11,12,13]", "[-1]"),
+                VALID_BODY.replace("\"title\":", "\"description\":\"" + "가".repeat(501) + "\",\"title\":"),
+                """
+                {"title":"정산","totalAmount":500,"splitMode":"CUSTOM","memberAmounts":[{"groupMemberId":11,"amount":0}]}
+                """,
+                """
+                {"title":"정산","totalAmount":500,"splitMode":"CUSTOM","memberAmounts":[null]}
+                """
+        );
+    }
+
+    private static Stream<String> invalidJson() {
+        return Stream.concat(Stream.of("\"500\"", "1.5", "5e2", "9223372036854775808")
+                        .map(amount -> VALID_BODY.replace("\"totalAmount\":500", "\"totalAmount\":" + amount)),
+                Stream.of(
+                        "null", "{",
+                        VALID_BODY.replace("\"EQUAL\"", "0"),
+                        VALID_BODY.replace("\"EQUAL\"", "\"INVALID\""),
+                        VALID_BODY.replace("\"title\":", "\"dueAt\":\"2026-02-30T12:00:00\",\"title\":"),
+                        VALID_BODY.replace("[11,12,13]", "[\"11\"]")
+                ));
+    }
+
+    @TestConfiguration
+    static class PrincipalResolverConfiguration implements WebMvcConfigurer {
+
+        @Override
+        public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
+            resolvers.add(new AuthenticationPrincipalArgumentResolver());
+        }
+    }
+}

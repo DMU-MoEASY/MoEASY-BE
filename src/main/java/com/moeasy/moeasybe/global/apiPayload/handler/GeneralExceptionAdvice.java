@@ -11,6 +11,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -30,11 +31,15 @@ public class GeneralExceptionAdvice {
                 .body(ApiResponse.onFailure(ex.getCode(), null));
     }
 
-    // @Valid 검증 실패 (RequestBody)
+    // @Valid 검증 실패 (RequestBody, ModelAttribute)
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Map<String, List<String>>>> handleMethodArgumentNotValidException(
             MethodArgumentNotValidException ex
     ) {
+        if (ex.getBindingResult().getFieldErrors().stream().anyMatch(error -> error.isBindingFailure())) {
+            GeneralErrorCode code = GeneralErrorCode.BAD_REQUEST;
+            return ResponseEntity.status(code.getStatus()).body(ApiResponse.onFailure(code, null));
+        }
         Map<String, List<String>> errors = new HashMap<>();
 
         ex.getBindingResult().getFieldErrors().forEach(error ->
@@ -72,7 +77,8 @@ public class GeneralExceptionAdvice {
     }
 
     // 잘못된 요청 값 또는 JSON 본문
-    @ExceptionHandler({IllegalArgumentException.class, HttpMessageNotReadableException.class})
+    @ExceptionHandler({IllegalArgumentException.class, HttpMessageNotReadableException.class,
+            MethodArgumentTypeMismatchException.class})
     public ResponseEntity<ApiResponse<Void>> handleIllegalArgument(
             Exception ex
     ) {
