@@ -201,8 +201,11 @@ class SettlementListRepositoryTest {
                 .title("정산").scheduleId(scheduleId).totalAmount(1000L).splitMode(SettlementSplitMode.EQUAL).build();
         entityManager.persist(settlement);
         entityManager.flush();
-        jdbcTemplate.update("UPDATE settlement SET status = ?, created_at = ? WHERE id = ?",
-                status.name(), createdAt, settlement.getId());
+        entityManager.createQuery("update Settlement s set s.status = :status, s.createdAt = :createdAt where s.id = :id")
+                .setParameter("status", status)
+                .setParameter("createdAt", createdAt)
+                .setParameter("id", settlement.getId())
+                .executeUpdate();
         return settlement;
     }
 

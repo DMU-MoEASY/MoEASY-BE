@@ -851,7 +851,10 @@ class SettlementApiIntegrationTest {
         targets.forEach(member -> entityManager.persist(SettlementItem.builder()
                 .settlement(settlement).groupMember(member).amount(100L).build()));
         entityManager.flush();
-        jdbcTemplate.update("UPDATE settlement SET created_at = '2026-10-20 09:00:00' WHERE id = ?", settlement.getId());
+        entityManager.createQuery("update Settlement s set s.createdAt = :createdAt where s.id = :id")
+                .setParameter("createdAt", LocalDateTime.of(2026, 10, 20, 9, 0))
+                .setParameter("id", settlement.getId())
+                .executeUpdate();
         return settlement;
     }
 

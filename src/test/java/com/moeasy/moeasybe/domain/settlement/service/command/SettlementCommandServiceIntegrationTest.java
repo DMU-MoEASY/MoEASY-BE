@@ -153,8 +153,9 @@ class SettlementCommandServiceIntegrationTest {
                         "SELECT created_by_group_member_id FROM settlement WHERE id = ?", Long.class, result.settlementId())),
                 () -> assertEquals(scheduleId, jdbcTemplate.queryForObject(
                         "SELECT schedule_id FROM settlement WHERE id = ?", Long.class, result.settlementId())),
-                () -> assertEquals(dueAt, jdbcTemplate.queryForObject(
-                        "SELECT due_at FROM settlement WHERE id = ?", LocalDateTime.class, result.settlementId())),
+                () -> assertEquals(dueAt, transactionTemplate.execute(status ->
+                        entityManager.createQuery("select s.dueAt from Settlement s where s.id = :id", LocalDateTime.class)
+                                .setParameter("id", result.settlementId()).getSingleResult())),
                 () -> assertEquals("설명", jdbcTemplate.queryForObject(
                         "SELECT description FROM settlement WHERE id = ?", String.class, result.settlementId())),
                 () -> assertEquals("CUSTOM", jdbcTemplate.queryForObject(
