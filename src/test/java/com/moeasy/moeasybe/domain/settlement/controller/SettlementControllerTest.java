@@ -625,6 +625,8 @@ class SettlementControllerTest {
                         VALID_BODY.replace("\"EQUAL\"", "0"),
                         VALID_BODY.replace("\"EQUAL\"", "\"INVALID\""),
                         VALID_BODY.replace("\"title\":", "\"dueAt\":\"2026-02-30T12:00:00\",\"title\":"),
+                        VALID_BODY.replace("\"title\":", "\"dueAt\":\"0999-12-31T23:59:59\",\"title\":"),
+                        VALID_BODY.replace("\"title\":", "\"dueAt\":\"+10000-01-01T00:00:00\",\"title\":"),
                         VALID_BODY.replace("[11,12,13]", "[\"11\"]")
                 ));
     }

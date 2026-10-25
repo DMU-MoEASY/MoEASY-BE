@@ -47,7 +47,7 @@
 | --- | --- | --- |
 | `title` | string | 필수. trim 후 공백이 아닌 1~100자 |
 | `description` | string 또는 null | 선택. 최대 500자 |
-| `dueAt` | string 또는 null | 선택. `yyyy-MM-dd'T'HH:mm:ss`, 한국 시간(`Asia/Seoul`) 기준. 값이 있으면 생성 시각 이후 |
+| `dueAt` | string 또는 null | 선택. `yyyy-MM-dd'T'HH:mm:ss`, 한국 시간(`Asia/Seoul`) 기준. 연도는 DB 저장 범위인 1000~9999이며 값이 있으면 생성 시각 이후 |
 | `scheduleId` | integer 또는 null | 선택. null/생략이면 모임 회비. 값이 있으면 같은 모임에 속하고 삭제되지 않은 일정 |
 | `splitMode` | string | 필수. `EQUAL` 또는 `CUSTOM` |
 | `totalAmount` | integer | 두 분할 방식 모두 필수. 원 단위 양수 |
@@ -55,6 +55,8 @@
 | `memberAmounts` | 객체 배열 | `CUSTOM`에서만 필수. 각 객체는 `groupMemberId`, 원 단위 양수 `amount` |
 
 금액과 ID는 JSON 숫자로 전달한다. 숫자 문자열, 소수·지수 표기, Java `Long` 범위 초과는 거부한다. 프론트의 JavaScript `Number`는 9,007,199,254,740,991을 넘는 정수의 정확성을 보장하지 않는다. 현재 계약은 JSON 숫자를 유지하며, 이 범위 밖의 값을 프론트에서 계산·전송할 때는 정밀도 손실에 유의해야 한다. 서버의 저장 가능 범위와 프론트 `Number`의 정확한 처리 범위는 다르다.
+
+납부 기한의 연도가 1000~9999를 벗어나면 JSON 역직렬화 단계에서 HTTP 400 / `COMMON400_1`로 거부한다. 저장 가능한 날짜라도 생성 시각 이전이거나 같으면 기존 `SETTLEMENT400_5`로 거부한다.
 
 필수 배열은 비어 있을 수 없다. 사용하지 않는 조건부 필드는 생략하거나 null로 전달한다. 해당 필드에 값이 들어오면 잘못된 조합으로 거부한다.
 

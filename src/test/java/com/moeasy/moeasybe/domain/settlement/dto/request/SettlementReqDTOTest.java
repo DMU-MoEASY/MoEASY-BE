@@ -195,11 +195,27 @@ class SettlementReqDTOTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"1000-01-01T00:00:00", "9999-12-31T23:59:59"})
+    @DisplayName("납부 기한의 DB 저장 가능 연도 경계값을 손실 없이 읽는다")
+    void create_dueAtWithinDatabaseRange_preservesDate(String dueAt) {
+        // given
+        String json = withField("dueAt", objectMapper.writeValueAsString(dueAt));
+
+        // when
+        SettlementReqDTO.Create request = objectMapper.readValue(json, SettlementReqDTO.Create.class);
+
+        // then
+        assertEquals(LocalDateTime.parse(dueAt), request.dueAt());
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {
             "2026-02-30T12:00:00", "2026-13-01T12:00:00", "2026-11-01T12:00",
-            "2026-11-01T12:00:00.123", "2026-11-01T12:00:00Z"
+            "2026-11-01T12:00:00.123", "2026-11-01T12:00:00Z",
+            "0999-12-31T23:59:59", "0000-01-01T00:00:00", "-0001-01-01T00:00:00",
+            "+10000-01-01T00:00:00", "+999999999-12-31T23:59:59"
     })
-    @DisplayName("납부 기한은 존재하는 날짜의 초 단위 문자열만 허용한다")
+    @DisplayName("납부 기한은 DB 저장 범위 안의 유효한 초 단위 날짜만 허용한다")
     void create_invalidDueAtFormat_rejectsDate(String dueAt) {
         // given
         String json = withField("dueAt", objectMapper.writeValueAsString(dueAt));

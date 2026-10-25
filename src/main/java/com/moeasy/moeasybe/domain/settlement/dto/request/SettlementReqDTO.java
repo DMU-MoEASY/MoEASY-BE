@@ -58,7 +58,7 @@ public final class SettlementReqDTO {
             String description,
 
             @JsonDeserialize(using = SettlementDueAtDeserializer.class)
-            @Schema(description = "납부 기한 (선택 입력, 한국 시간 기준, 생성 시각 이후)",
+            @Schema(description = "납부 기한 (선택 입력, 한국 시간 기준, 연도 1000~9999, 생성 시각 이후)",
                     type = "string", example = "2026-11-01T23:59:59")
             LocalDateTime dueAt,
 

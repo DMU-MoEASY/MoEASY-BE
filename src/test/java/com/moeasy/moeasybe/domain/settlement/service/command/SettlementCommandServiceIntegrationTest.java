@@ -132,13 +132,14 @@ class SettlementCommandServiceIntegrationTest {
         );
     }
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(strings = {"2026-10-19T09:00:01", "9999-12-31T23:59:59"})
     @DisplayName("운영진도 일정 참석 여부와 무관하게 본인을 포함한 회원별 지정 청구를 생성한다")
-    void createSettlement_managerCustomWithSchedule_commitsSpecifiedAmounts() {
+    void createSettlement_managerCustomWithSchedule_commitsSpecifiedAmounts(String dueAtValue) {
         // given
         GroupMember manager = persistGroupMember(group, GroupMemberRole.MANAGER);
         Long scheduleId = insertSchedule(group.getId());
-        LocalDateTime dueAt = SEOUL_NOW.plusSeconds(1);
+        LocalDateTime dueAt = LocalDateTime.parse(dueAtValue);
         SettlementReqDTO.Create request = new SettlementReqDTO.Create("정산", "설명", dueAt,
                 scheduleId, SettlementSplitMode.CUSTOM, 20000L, null, List.of(
                         new SettlementReqDTO.MemberAmount(manager.getId(), 12000L),
