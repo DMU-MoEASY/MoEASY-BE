@@ -88,6 +88,7 @@ public interface SettlementControllerDocs {
             description = "해당 모임의 활성 OWNER·MANAGER·MEMBER가 정산 요약과 페이지 정보를 조회합니다. "
                     + "정산 대상이 아닌 회원도 조회할 수 있으며 폐쇄된 모임도 허용합니다. 삭제된 모임·정산은 제외합니다. "
                     + "page는 0부터 시작하고 기본값은 0, size는 1~100이며 기본값은 20입니다. "
+                    + "page와 size의 곱이 2147483647을 초과하면 COMMON400_1로 거부합니다. "
                     + "status와 scheduleId는 선택 필터이며 함께 전달하면 모두 적용합니다. "
                     + "일정은 저장된 연결 ID로만 필터링합니다. 없는 일정·다른 모임의 일정은 빈 목록을 반환하고 "
                     + "삭제된 일정에 연결된 기존 정산은 조회합니다. "
@@ -111,7 +112,7 @@ public interface SettlementControllerDocs {
                                     """)
                     })),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "400", description = "ID·페이지 범위 또는 쿼리 파라미터 형식 오류",
+                    responseCode = "400", description = "ID·페이지 범위, 조회 offset 범위 또는 쿼리 파라미터 형식 오류",
                     content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
                             examples = {
                                     @ExampleObject(name = "범위 검증", value = """

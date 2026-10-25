@@ -64,6 +64,9 @@ public class SettlementQueryService {
         if (groupId == null || request == null || memberId == null) {
             throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
         }
+        if ((long) request.page() * request.size() > Integer.MAX_VALUE) {
+            throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
+        }
         groupRepository.findById(groupId).filter(group -> group.getDeletedAt() == null)
                 .orElseThrow(() -> new GroupException(GroupErrorCode.GROUP_NOT_FOUND));
         requireMember(groupId, memberId);

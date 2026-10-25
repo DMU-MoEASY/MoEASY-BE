@@ -349,6 +349,8 @@ HTTP 200, `SETTLEMENT200_1`로 `ApiResponse<SettlementResDTO.Preview>`를 반환
 | `status` | string | 선택. `OPEN`·`CLOSED`·`CANCELLED`. 생략하면 전체 상태 |
 | `scheduleId` | integer | 선택. 양의 정수. 해당 일정에 연결된 정산만 조회하며 생략하면 일정 연결 여부와 무관하게 조회 |
 
+조회 시작 위치인 `page × size`는 JPA가 지원하는 `Integer.MAX_VALUE` 이하여야 한다. 초과하면 DB 조회 전에 HTTP 400 / `COMMON400_1`로 거부한다. 페이지 번호 자체에 별도의 고정 상한을 두지는 않는다.
+
 ```http
 GET /api/v1/groups/1/settlements?page=0&size=20&status=OPEN&scheduleId=7
 ```
@@ -496,7 +498,7 @@ Swagger에서는 인증 쿠키가 있는 상태에서 목록의 `settlementId`�
 | 모임 없음·삭제 | 404 | `GROUP404_1` |
 | 상세의 정산 없음·삭제 또는 다른 모임의 정산 | 404 | `SETTLEMENT404_1` |
 | 양수 ID·페이지 번호·페이지 크기 범위 검증 실패 | 400 | `VALID400_1` |
-| 숫자 변환 실패·범위 초과·유효하지 않은 상태 필터 | 400 | `COMMON400_1` |
+| 숫자 변환 실패·범위 초과·유효하지 않은 상태 필터·조회 offset 범위 초과 | 400 | `COMMON400_1` |
 
 `SETTLEMENT404_1`의 메시지는 `정산을 찾을 수 없습니다.`로 정의한다. 조회는 CSRF 검증을 요구하지 않으며, 폐쇄 상태 자체를 모임 없음으로 처리하지 않는다. 목록의 일정 필터는 연결 ID만 비교하므로 일정 없음·삭제를 오류로 반환하지 않는다.
 
