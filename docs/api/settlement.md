@@ -30,6 +30,7 @@
 - 인증에는 JWT HttpOnly 쿠키를 사용한다. POST·PATCH·PUT·DELETE 요청에는 기존 CSRF 쿠키와 `X-XSRF-TOKEN` 헤더가 필요하다. 저장하지 않는 POST 미리보기도 같은 검증을 적용한다.
 - 생성자·요청자의 회원 ID는 JWT에서 주입받으며 요청 본문으로 받지 않는다.
 - `groupId`는 `member_group.id`다. 정산 대상의 `groupMemberId`는 `group_member.id`이며 로그인 회원의 `memberId`와 다르다. 모든 ID는 양의 정수다.
+- 생성·미리보기·조회 API 모두 경로의 `groupId`가 0 이하이면 서비스 호출 전에 HTTP 400 / `VALID400_1`과 `groupId` 검증 메시지를 반환한다.
 - 활성 모임 회원은 같은 모임에 속하며 `group_member.status=ACTIVE`, `group_member.deleted_at IS NULL`이고 연결된 `member`도 삭제되지 않은 회원이다.
 
 ## 정산 생성

@@ -122,6 +122,42 @@ class SettlementControllerTest {
     }
 
     @ParameterizedTest
+    @ValueSource(longs = {0L, -1L})
+    @DisplayName("생성의 모임 ID가 0 이하이면 서비스 호출 전에 VALID400_1을 반환한다")
+    void createSettlement_nonPositiveGroupId_returnsValidationFailure(long groupId) throws Exception {
+        // given
+        var request = post("/api/v1/groups/" + groupId + "/settlements")
+                .contentType(MediaType.APPLICATION_JSON).content(VALID_BODY);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALID400_1"))
+                .andExpect(jsonPath("$.result.groupId[0]").value("모임 ID는 양수여야 합니다."));
+        verifyNoInteractions(service, queryService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {0L, -1L})
+    @DisplayName("미리보기의 모임 ID가 0 이하이면 서비스 호출 전에 VALID400_1을 반환한다")
+    void previewSplit_nonPositiveGroupId_returnsValidationFailure(long groupId) throws Exception {
+        // given
+        var request = post("/api/v1/groups/" + groupId + "/settlements/preview")
+                .contentType(MediaType.APPLICATION_JSON).content(PREVIEW_BODY);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALID400_1"))
+                .andExpect(jsonPath("$.result.groupId[0]").value("모임 ID는 양수여야 합니다."));
+        verifyNoInteractions(service, queryService);
+    }
+
+    @ParameterizedTest
     @CsvSource({"0,31,groupId", "-1,31,groupId", "10,0,settlementId", "10,-1,settlementId"})
     @DisplayName("상세 조회의 모임·정산 ID 양수 검증은 Docs 인터페이스 선언으로 동작한다")
     void getSettlement_nonPositivePath_returnsValidationFailure(String groupId, String settlementId, String field)

@@ -213,6 +213,7 @@ public interface SettlementControllerDocs {
                                     """)))
     })
     ResponseEntity<ApiResponse<SettlementResDTO.Created>> createSettlement(
+            @Positive(message = "모임 ID는 양수여야 합니다.")
             @Parameter(description = "정산을 생성할 모임 ID (member_group.id)", required = true) Long groupId,
             @io.swagger.v3.oas.annotations.parameters.RequestBody(required = true,
                     content = @Content(mediaType = "application/json",
@@ -289,6 +290,7 @@ public interface SettlementControllerDocs {
                                     """)))
     })
     ResponseEntity<ApiResponse<SettlementResDTO.Preview>> previewSplit(
+            @Positive(message = "모임 ID는 양수여야 합니다.")
             @Parameter(description = "분할을 미리볼 모임 ID (member_group.id)", required = true) Long groupId,
             @io.swagger.v3.oas.annotations.parameters.RequestBody(required = true,
                     content = @Content(mediaType = "application/json",
