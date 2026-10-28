@@ -131,7 +131,8 @@ class SettlementQueryServiceIntegrationTest {
         Settlement settlement = persistListSettlement("기존 정산", List.of(owner, target));
         invalidateMembership(owner, condition);
         invalidateMembership(target, condition);
-        jdbcTemplate.update("UPDATE member_group SET status = 'CLOSED' WHERE id = ?", group.getId());
+        transactionTemplate.executeWithoutResult(status -> entityManager.find(Group.class, group.getId())
+                .close(LocalDateTime.of(2026, 10, 20, 10, 0)));
         jdbcTemplate.update("UPDATE settlement SET status = 'CANCELLED' WHERE id = ?", settlement.getId());
         jdbcTemplate.update("UPDATE settlement_item SET status = 'CANCELLED' WHERE settlement_id = ?", settlement.getId());
 
@@ -206,15 +207,11 @@ class SettlementQueryServiceIntegrationTest {
         assertEquals(SettlementErrorCode.SETTLEMENT_NOT_FOUND, exception.getCode());
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"MISSING", "DELETED"})
-    @DisplayName("상세 조회도 모임이 없거나 삭제됐으면 GROUP404_1로 거부한다")
-    void getSettlement_unavailableGroup_rejectsRequest(String condition) {
+    @Test
+    @DisplayName("없는 모임의 상세 조회는 GROUP404_1로 거부한다")
+    void getSettlement_missingGroup_rejectsRequest() {
         // given
-        Long groupId = condition.equals("MISSING") ? Long.MAX_VALUE : group.getId();
-        if (condition.equals("DELETED")) {
-            jdbcTemplate.update("UPDATE member_group SET deleted_at = CURRENT_TIMESTAMP(6) WHERE id = ?", groupId);
-        }
+        Long groupId = Long.MAX_VALUE;
 
         // when
         GeneralException exception = assertThrows(GeneralException.class,
@@ -297,11 +294,16 @@ class SettlementQueryServiceIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"ACTIVE", "ARCHIVED", "CLOSED"})
-    @DisplayName("폐쇄·보관된 모임도 삭제되지 않았으면 활성 회원이 기존 정산을 조회한다")
+    @DisplayName("활동·보관·실제 폐쇄 상태의 모임에서 활성 회원은 기존 정산을 조회한다")
     void getSettlements_existingGroupStatus_allowsRead(String status) {
         // given
         Settlement settlement = persistListSettlement("기존 정산", List.of(owner, target));
-        jdbcTemplate.update("UPDATE member_group SET status = ? WHERE id = ?", status, group.getId());
+        if (status.equals("CLOSED")) {
+            transactionTemplate.executeWithoutResult(transaction -> entityManager.find(Group.class, group.getId())
+                    .close(LocalDateTime.of(2026, 10, 20, 10, 0)));
+        } else {
+            jdbcTemplate.update("UPDATE member_group SET status = ? WHERE id = ?", status, group.getId());
+        }
         invalidateMembership(target, "DELETED_MEMBER");
         SettlementReqDTO.Search request = new SettlementReqDTO.Search(null, null, null, null);
 
@@ -317,15 +319,11 @@ class SettlementQueryServiceIntegrationTest {
         );
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"MISSING", "DELETED"})
-    @DisplayName("없거나 삭제된 모임의 목록 조회는 GROUP404_1로 거부한다")
-    void getSettlements_unavailableGroup_rejectsRequest(String condition) {
+    @Test
+    @DisplayName("없는 모임의 목록 조회는 GROUP404_1로 거부한다")
+    void getSettlements_missingGroup_rejectsRequest() {
         // given
-        Long groupId = condition.equals("MISSING") ? Long.MAX_VALUE : group.getId();
-        if (condition.equals("DELETED")) {
-            jdbcTemplate.update("UPDATE member_group SET deleted_at = CURRENT_TIMESTAMP(6) WHERE id = ?", groupId);
-        }
+        Long groupId = Long.MAX_VALUE;
         SettlementReqDTO.Search request = new SettlementReqDTO.Search(null, null, null, null);
 
         // when

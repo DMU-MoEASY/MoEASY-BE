@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -17,6 +18,7 @@ import com.moeasy.moeasybe.domain.group.entity.GroupMember;
 import com.moeasy.moeasybe.domain.group.enums.GroupJoinPolicy;
 import com.moeasy.moeasybe.domain.group.enums.GroupMemberRole;
 import com.moeasy.moeasybe.domain.group.enums.GroupMemberStatus;
+import com.moeasy.moeasybe.domain.group.enums.GroupStatus;
 import com.moeasy.moeasybe.domain.member.entity.Member;
 import com.moeasy.moeasybe.domain.member.enums.SocialType;
 import com.moeasy.moeasybe.domain.settlement.entity.Settlement;
@@ -123,7 +125,7 @@ class SettlementApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("폐쇄 모임의 상세에서도 삭제된 계정의 닉네임·청구 내역을 그대로 제공한다")
+    @DisplayName("실제 폐쇄 API 호출 후에도 상세에서 삭제 계정의 닉네임·청구 내역을 제공한다")
     void getSettlement_closedGroupAndDeletedAccounts_preservesHistory() throws Exception {
         // given
         GroupMember requester = persistGroupMember(GroupMemberRole.MEMBER);
@@ -131,8 +133,7 @@ class SettlementApiIntegrationTest {
         Cookie cookie = accessTokenCookie(requester);
         String creatorNickname = owner.getMember().getNickname();
         String targetNickname = target.getMember().getNickname();
-        entityManager.flush();
-        jdbcTemplate.update("UPDATE member_group SET status = 'CLOSED' WHERE id = ?", group.getId());
+        closeGroupViaApi();
         jdbcTemplate.update("UPDATE member SET deleted_at = CURRENT_TIMESTAMP(6) WHERE id in (?, ?)",
                 owner.getMember().getId(), target.getMember().getId());
         jdbcTemplate.update("UPDATE group_member SET status = 'LEFT', deleted_at = CURRENT_TIMESTAMP(6) WHERE id in (?, ?)",
@@ -269,14 +270,13 @@ class SettlementApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("폐쇄된 모임의 일반 회원도 상태 필터로 기존 정산을 조회한다")
+    @DisplayName("실제 폐쇄 API 호출 후에도 일반 회원이 상태 필터로 기존 정산을 조회한다")
     void getSettlements_closedGroup_returnsFilteredHistory() throws Exception {
         // given
         Settlement closed = persistListSettlement("마감 정산", List.of(owner));
         persistListSettlement("진행 정산", List.of(owner));
         Cookie cookie = accessTokenCookie(target);
-        entityManager.flush();
-        jdbcTemplate.update("UPDATE member_group SET status = 'CLOSED' WHERE id = ?", group.getId());
+        closeGroupViaApi();
         jdbcTemplate.update("UPDATE settlement SET status = 'CLOSED' WHERE id = ?", closed.getId());
         entityManager.clear();
         var request = get(path()).cookie(cookie).param("status", "CLOSED");
@@ -288,6 +288,69 @@ class SettlementApiIntegrationTest {
         result.andExpect(status().isOk()).andExpect(jsonPath("$.result.totalElements").value(1))
                 .andExpect(jsonPath("$.result.items[0].settlementId").value(closed.getId()))
                 .andExpect(jsonPath("$.result.items[0].status").value("CLOSED"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("실제 폐쇄 후에도 탈퇴한 회원의 목록·상세 조회는 403이다")
+    void getSettlementReads_closedGroupAndLeftMember_forbidden(boolean detail) throws Exception {
+        // given
+        Settlement settlement = persistListSettlement("기존 정산", List.of(owner, target));
+        Cookie cookie = accessTokenCookie(target);
+        closeGroupViaApi();
+        jdbcTemplate.update("UPDATE group_member SET status = 'LEFT' WHERE id = ?", target.getId());
+        entityManager.clear();
+        var request = get(path() + (detail ? "/" + settlement.getId() : "")).cookie(cookie);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("AUTH403_1"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("실제 폐쇄 후에도 삭제된 정산은 목록에서 제외하고 상세는 404이다")
+    void getSettlementReads_closedGroupAndDeletedSettlement_excludesRecord(boolean detail) throws Exception {
+        // given
+        Settlement settlement = persistListSettlement("삭제 정산", List.of(owner));
+        Cookie cookie = accessTokenCookie(target);
+        closeGroupViaApi();
+        entityManager.createQuery("update Settlement s set s.deletedAt = :deletedAt where s.id = :id")
+                .setParameter("deletedAt", LocalDateTime.of(2026, 10, 20, 10, 0))
+                .setParameter("id", settlement.getId()).executeUpdate();
+        entityManager.clear();
+        var request = get(path() + (detail ? "/" + settlement.getId() : "")).cookie(cookie);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        if (detail) {
+            result.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SETTLEMENT404_1"));
+        } else {
+            result.andExpect(status().isOk()).andExpect(jsonPath("$.result.items").isEmpty())
+                    .andExpect(jsonPath("$.result.totalElements").value(0));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("실제 폐쇄 후에는 정산 생성·미리보기가 계속 거부된다")
+    void createAndPreview_closedGroup_notFound(boolean preview) throws Exception {
+        // given
+        closeGroupViaApi();
+        CsrfCredentials csrf = requestCsrfCredentials();
+        var request = preview ? previewRequest(owner, csrf).content(validPreviewBody())
+                : authenticatedRequest(owner, csrf).content(validBody());
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("GROUP404_1"));
+        assertNoPreviewWrites();
     }
 
     @ParameterizedTest
@@ -343,17 +406,14 @@ class SettlementApiIntegrationTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"MISSING,false", "DELETED,false", "MISSING,true", "DELETED,true"})
-    @DisplayName("목록·상세의 모임이 없거나 삭제되면 404이며 폐쇄 상태와 구분한다")
-    void getSettlementReads_unavailableGroup_notFound(String condition, boolean detail) throws Exception {
+    @ValueSource(booleans = {false, true})
+    @DisplayName("없는 모임의 목록·상세 조회는 GROUP404_1을 반환한다")
+    void getSettlementReads_missingGroup_notFound(boolean detail) throws Exception {
         // given
         Cookie cookie = accessTokenCookie(owner);
         entityManager.flush();
-        if (condition.equals("DELETED")) {
-            jdbcTemplate.update("UPDATE member_group SET deleted_at = CURRENT_TIMESTAMP(6) WHERE id = ?", group.getId());
-        }
         entityManager.clear();
-        Long groupId = condition.equals("MISSING") ? Long.MAX_VALUE : group.getId();
+        Long groupId = Long.MAX_VALUE;
         var request = get("/api/v1/groups/" + groupId + "/settlements" + (detail ? "/1" : "")).cookie(cookie);
 
         // when
@@ -856,6 +916,25 @@ class SettlementApiIntegrationTest {
                 .setParameter("id", settlement.getId())
                 .executeUpdate();
         return settlement;
+    }
+
+    private void closeGroupViaApi() throws Exception {
+        entityManager.flush();
+        entityManager.clear();
+        CsrfCredentials csrf = requestCsrfCredentials();
+        String body = objectMapper.writeValueAsString(Map.of(
+                "reason", "모임 활동 종료", "confirmationText", group.getName(), "archiveContent", false));
+        mockMvc.perform(delete("/api/v1/groups/" + group.getId())
+                        .cookie(accessTokenCookie(owner), csrf.cookie()).header("X-XSRF-TOKEN", csrf.token())
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value("GROUP200_3"));
+        entityManager.flush();
+        entityManager.clear();
+        Group closedGroup = entityManager.find(Group.class, group.getId());
+        assertAll(
+                () -> assertEquals(GroupStatus.CLOSED, closedGroup.getStatus()),
+                () -> assertNotNull(closedGroup.getDeletedAt())
+        );
     }
 
     private CsrfCredentials requestCsrfCredentials() throws Exception {

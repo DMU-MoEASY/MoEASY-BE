@@ -331,7 +331,7 @@ HTTP 200, `SETTLEMENT200_1`로 `ApiResponse<SettlementResDTO.Preview>`를 반환
 - 해당 모임의 활성 회원이면 `OWNER`·`MANAGER`·`MEMBER` 모두 조회할 수 있다. 정산 대상이 아닌 회원도 같은 범위로 조회한다.
 - 일반 회원에게도 전체 대상자의 청구 금액과 청구 상태를 공개한다. 본인 청구만으로 결과를 제한하지 않는다.
 - 탈퇴·강퇴·삭제된 모임 회원, 삭제된 회원 계정과 비회원은 조회할 수 없다.
-- 폐쇄된 모임도 기존 정산을 조회할 수 있다. 삭제된 모임은 조회할 수 없다. 폐쇄 모임에서 생성·미리보기를 허용한다는 의미는 아니다.
+- 폐쇄된 모임도 기존 정산을 조회할 수 있다. 현재 모임 삭제는 폐쇄와 같은 동작이며 `status=CLOSED`와 `deleted_at`을 함께 설정한다. 목록·상세 조회에서는 모임의 존재 여부만 확인하고 모임 상태·`deleted_at`으로 제한하지 않는다. 폐쇄 모임에서 생성·미리보기를 허용한다는 의미는 아니다.
 - 삭제된 정산은 목록·상세에서 제외한다. `OPEN`·`CLOSED`·`CANCELLED` 상태는 조회 대상이며 목록의 상태 필터로 제한할 수 있다.
 - 정산 생성 이후 대상자가 탈퇴·강퇴되거나 삭제되어도 저장된 청구 항목과 금액은 유지한다. 조회 시 대상자의 현재 활성 여부로 기존 청구 항목을 제외하지 않는다.
 - 닉네임은 조회 시점에 계정에 저장된 값이며 생성 당시 닉네임을 보존한 값이 아니다. 생성자·대상자의 계정이 삭제되어도 저장된 닉네임을 그대로 표시한다. 별도의 익명 이름으로 바꾸거나 청구 항목을 제외하지 않는다.
@@ -402,9 +402,9 @@ HTTP 200, `SETTLEMENT200_2`를 사용한다. 목록에는 정산 요약과 페�
 
 `SettlementQueryService.getSettlements`는 `@Transactional(readOnly = true)` 안에서 다음 순서로 처리한다.
 
-1. 모임이 존재하고 삭제되지 않았는지 확인한다. `CLOSED`를 포함해 모임 상태 자체로 조회를 제한하지 않는다.
+1. `GroupRepository.findById`로 모임이 존재하는지 확인한다. 폐쇄 시 설정되는 모임 상태·`deleted_at`은 조회 제한에 사용하지 않는다.
 2. 요청자의 모임 회원 상태가 `ACTIVE`이고 모임 회원 정보와 연결된 계정이 삭제되지 않았는지 확인한다. 역할이나 청구 대상 여부는 제한하지 않는다.
-3. `SettlementRepository.findPageByGroup`에서 모임·정산 삭제 여부·상태·일정 필터를 적용하고 생성 시각·ID 내림차순으로 페이지를 조회한다. 전체 건수에도 같은 필터를 사용한다.
+3. `SettlementRepository.findPageByGroup`에서 모임 ID·정산 삭제 여부·상태·일정 필터를 적용하고 생성 시각·ID 내림차순으로 페이지를 조회한다. 전체 건수에도 같은 필터를 사용한다.
 4. 현재 페이지의 정산 ID들로 청구 항목 수를 한 번에 집계한다. 대상자의 현재 활성·삭제 여부로 집계를 제한하지 않으며, 빈 페이지에서는 집계 쿼리를 실행하지 않는다.
 5. `SettlementConverter.toPage`·`toSummary`로 요약과 페이지 정보를 조립한다. 목록을 표시하기 위해 생성자·대상자의 닉네임이나 청구 항목 전체를 로딩하지 않는다.
 
@@ -415,7 +415,7 @@ HTTP 200, `SETTLEMENT200_2`를 사용한다. 목록에는 정산 요약과 페�
 - `SettlementController.getSettlements`는 경로의 `groupId`와 `@ModelAttribute SettlementReqDTO.Search`로 받은 쿼리 조건, JWT 회원 ID를 QueryService에 전달한다. 요청 본문은 받지 않는다.
 - `SettlementControllerDocs`에 경로 ID의 `@Positive`와 요청 DTO의 `@Valid`를 선언하고 실제 Controller에는 `@Validated`를 적용한다. 생성·미리보기의 `@Valid`도 같은 인터페이스에 선언해 메서드 검증 계약을 일관되게 상속한다. DTO 필드 제약은 DTO에 유지하며 경로 검증 실패는 기존 `ConstraintViolationException` 처리로 `VALID400_1`과 필드별 메시지를 반환한다.
 - 쿼리의 범위 위반은 `VALID400_1`로 반환한다. 숫자·Enum 변환 실패와 경로 ID의 숫자 변환 실패는 `COMMON400_1`, `result=null`로 반환한다. 공통 예외 처리기가 바인딩 실패와 필드 제약 위반을 구분하며, 변환 실패를 500 오류로 노출하지 않는다.
-- 실제 JWT 필터를 사용하는 HTTP 통합 테스트에서 역할별 정상 조회, CSRF 없는 GET, 폐쇄 모임 조회, 인증 실패·접근 거부·모임 없음·입력 오류와 OpenAPI 스키마를 검증한다.
+- 실제 JWT 필터를 사용하는 HTTP 통합 테스트에서 역할별 정상 조회, CSRF 없는 GET, 실제 모임 폐쇄 API 호출 후 조회, 인증 실패·접근 거부·모임 없음·입력 오류와 OpenAPI 스키마를 검증한다. 폐쇄 후에도 활성 회원 권한과 삭제된 정산 제외 조건을 유지하며 생성·미리보기는 거부한다.
 
 Swagger에서는 다음 순서로 확인한다.
 
@@ -480,7 +480,7 @@ HTTP 200, `SETTLEMENT200_3`을 사용한다.
 
 `SettlementQueryService.getSettlement`는 `@Transactional(readOnly = true)` 안에서 다음 순서로 처리한다.
 
-1. 모임이 존재하고 삭제되지 않았는지 확인한다. 폐쇄 여부로 기존 정산 조회를 제한하지 않는다.
+1. 목록과 동일하게 `GroupRepository.findById`로 모임의 존재 여부만 확인한다. 폐쇄된 모임도 기존 정산 조회를 허용한다.
 2. 목록과 같은 활성 회원 검증을 재사용하며 역할·청구 대상 여부는 제한하지 않는다. 조회 권한이 없으면 정산 존재 여부를 확인하기 전에 거부한다.
 3. `SettlementRepository.findByIdAndGroupIdAndDeletedAtIsNull`로 정산 ID·모임 ID·미삭제 조건을 함께 확인한다. 정산 없음·삭제·다른 모임의 정산은 모두 `SETTLEMENT404_1`로 반환한다. `EntityGraph`로 생성자 모임 회원과 계정을 함께 로딩한다.
 4. `SettlementItemRepository.findAllBySettlementIdOrderByGroupMemberIdAsc`로 전체 청구 내역을 조회한다. `EntityGraph`로 대상 계정도 함께 로딩하며, 탈퇴·강퇴·삭제된 대상이나 청구 상태를 이유로 항목을 제외하지 않는다.
@@ -498,7 +498,7 @@ Swagger에서는 인증 쿠키가 있는 상태에서 목록의 `settlementId`�
 | --- | --- | --- |
 | JWT 누락·만료·유효하지 않음 | 401 | `AUTH401_1` |
 | 활성 모임 회원이 아님 | 403 | `AUTH403_1` |
-| 모임 없음·삭제 | 404 | `GROUP404_1` |
+| 모임 없음 | 404 | `GROUP404_1` |
 | 상세의 정산 없음·삭제 또는 다른 모임의 정산 | 404 | `SETTLEMENT404_1` |
 | 양수 ID·페이지 번호·페이지 크기 범위 검증 실패 | 400 | `VALID400_1` |
 | 숫자 변환 실패·범위 초과·유효하지 않은 상태 필터·조회 offset 범위 초과 | 400 | `COMMON400_1` |

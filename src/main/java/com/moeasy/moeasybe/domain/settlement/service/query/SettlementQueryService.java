@@ -48,7 +48,7 @@ public class SettlementQueryService {
         if (groupId == null || settlementId == null || memberId == null) {
             throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
         }
-        groupRepository.findById(groupId).filter(group -> group.getDeletedAt() == null)
+        groupRepository.findById(groupId)
                 .orElseThrow(() -> new GroupException(GroupErrorCode.GROUP_NOT_FOUND));
         requireMember(groupId, memberId);
 
@@ -67,7 +67,7 @@ public class SettlementQueryService {
         if ((long) request.page() * request.size() > Integer.MAX_VALUE) {
             throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
         }
-        groupRepository.findById(groupId).filter(group -> group.getDeletedAt() == null)
+        groupRepository.findById(groupId)
                 .orElseThrow(() -> new GroupException(GroupErrorCode.GROUP_NOT_FOUND));
         requireMember(groupId, memberId);
 

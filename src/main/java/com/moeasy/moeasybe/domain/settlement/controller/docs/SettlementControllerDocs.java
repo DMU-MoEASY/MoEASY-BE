@@ -21,7 +21,7 @@ public interface SettlementControllerDocs {
 
     @Operation(summary = "정산 상세 조회",
             description = "모임의 활성 OWNER·MANAGER·MEMBER가 정산 정보와 전체 회원별 청구 내역을 조회합니다. "
-                    + "정산 대상이 아니어도 조회할 수 있으며 폐쇄된 모임도 허용합니다. 삭제된 모임·정산은 조회할 수 없습니다. "
+                    + "정산 대상이 아니어도 조회할 수 있으며 폐쇄된 모임도 허용합니다. 삭제된 정산은 조회할 수 없습니다. "
                     + "정산은 경로의 모임에 속해야 하며 다른 모임의 정산은 정산 없음으로 처리합니다. "
                     + "청구 항목은 groupMemberId 오름차순이며 탈퇴·강퇴·삭제된 대상도 포함합니다. "
                     + "생성자·대상자의 계정이 삭제되어도 저장된 닉네임을 그대로 표시합니다. "
@@ -65,7 +65,7 @@ public interface SettlementControllerDocs {
                                     {"isSuccess":false,"code":"AUTH403_1","message":"요청이 거부되었습니다.","result":null}
                                     """))),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "404", description = "모임 없음·삭제 또는 정산 없음·삭제·다른 모임의 정산",
+                    responseCode = "404", description = "모임 없음 또는 정산 없음·삭제·다른 모임의 정산",
                     content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
                             examples = {
                                     @ExampleObject(name = "모임 없음", value = """
@@ -86,7 +86,7 @@ public interface SettlementControllerDocs {
 
     @Operation(summary = "정산 목록 조회",
             description = "해당 모임의 활성 OWNER·MANAGER·MEMBER가 정산 요약과 페이지 정보를 조회합니다. "
-                    + "정산 대상이 아닌 회원도 조회할 수 있으며 폐쇄된 모임도 허용합니다. 삭제된 모임·정산은 제외합니다. "
+                    + "정산 대상이 아닌 회원도 조회할 수 있으며 폐쇄된 모임도 허용합니다. 삭제된 정산은 제외합니다. "
                     + "page는 0부터 시작하고 기본값은 0, size는 1~100이며 기본값은 20입니다. "
                     + "page와 size의 곱이 2147483647을 초과하면 COMMON400_1로 거부합니다. "
                     + "status와 scheduleId는 선택 필터이며 함께 전달하면 모두 적용합니다. "
@@ -136,7 +136,7 @@ public interface SettlementControllerDocs {
                                     {"isSuccess":false,"code":"AUTH403_1","message":"요청이 거부되었습니다.","result":null}
                                     """))),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "404", description = "모임 없음·삭제 (폐쇄된 모임은 조회 가능)",
+                    responseCode = "404", description = "모임 없음 (폐쇄된 모임은 조회 가능)",
                     content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
                             examples = @ExampleObject(value = """
                                     {"isSuccess":false,"code":"GROUP404_1","message":"모임을 찾을 수 없습니다.","result":null}
