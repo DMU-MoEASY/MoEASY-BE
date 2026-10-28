@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -34,7 +35,11 @@ import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.S3Object;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
@@ -162,6 +167,99 @@ class S3StorageServiceTest {
         var exception = assertThrows(StorageOperationException.class,
                 () -> service.getObjectMetadata("group-covers/1/key"));
 
+        assertThat(exception.getCode().getCode()).isEqualTo("STORAGE503_1");
+    }
+
+    @Test
+    void mapsForbiddenHeadWithExistingKeyToStorageUnavailable() {
+        // given
+        String key = "group-covers/1/key";
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(S3Exception.builder().statusCode(403).build());
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenReturn(ListObjectsV2Response.builder()
+                        .contents(S3Object.builder().key(key).build())
+                        .isTruncated(false).build());
+
+        // when
+        var exception = assertThrows(StorageOperationException.class,
+                () -> service.getObjectMetadata(key));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("STORAGE503_1");
+    }
+
+    @Test
+    void mapsTruncatedListingToStorageUnavailable() {
+        // given
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(S3Exception.builder().statusCode(404).build());
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenReturn(ListObjectsV2Response.builder().isTruncated(true).build());
+
+        // when
+        var exception = assertThrows(StorageOperationException.class,
+                () -> service.getObjectMetadata("group-covers/1/key"));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("STORAGE503_1");
+    }
+
+    @Test
+    void confirmsAbsenceAfterNoSuchKey() {
+        // given
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(NoSuchKeyException.builder().statusCode(404).build());
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenReturn(ListObjectsV2Response.builder().isTruncated(false).build());
+
+        // when
+        var metadata = service.getObjectMetadata("group-covers/1/key");
+
+        // then
+        assertThat(metadata).isEmpty();
+    }
+
+    @Test
+    void mapsNoSuchBucketToStorageUnavailableWithoutListing() {
+        // given
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(NoSuchBucketException.builder().statusCode(404).build());
+
+        // when
+        var exception = assertThrows(StorageOperationException.class,
+                () -> service.getObjectMetadata("group-covers/1/key"));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("STORAGE503_1");
+        verify(s3Client, never()).listObjectsV2(any(ListObjectsV2Request.class));
+    }
+
+    @Test
+    void mapsServerFailureToStorageUnavailable() {
+        // given
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(S3Exception.builder().statusCode(503).build());
+
+        // when
+        var exception = assertThrows(StorageOperationException.class,
+                () -> service.getObjectMetadata("group-covers/1/key"));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("STORAGE503_1");
+    }
+
+    @Test
+    void mapsClientFailureToStorageUnavailable() {
+        // given
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenThrow(SdkClientException.create("connect"));
+
+        // when
+        var exception = assertThrows(StorageOperationException.class,
+                () -> service.getObjectMetadata("group-covers/1/key"));
+
+        // then
         assertThat(exception.getCode().getCode()).isEqualTo("STORAGE503_1");
     }
 

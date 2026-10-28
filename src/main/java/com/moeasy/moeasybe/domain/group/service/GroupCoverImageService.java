@@ -36,12 +36,7 @@ public class GroupCoverImageService {
         S3StorageService.PresignedUpload upload = storageService.createPresignedPutUrl(key, contentType);
         uploadRepository.save(GroupConverter.toCoverUpload(key, member, contentType,
                 LocalDateTime.ofInstant(issuedAt, clock.getZone())));
-        return GroupResDTO.CoverImageUploadIssue.builder()
-                .coverImageKey(key)
-                .uploadUrl(upload.url().toString())
-                .uploadUrlExpiresAt(upload.expiresAt())
-                .requiredHeaders(upload.requiredHeaders())
-                .build();
+        return GroupConverter.toCoverImageUploadIssue(key, upload);
     }
 
     public String createViewUrl(String key) {
