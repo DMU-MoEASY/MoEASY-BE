@@ -5,6 +5,7 @@ import com.moeasy.moeasybe.domain.group.dto.request.GroupReqDTO;
 import com.moeasy.moeasybe.domain.group.dto.response.GroupResDTO;
 import com.moeasy.moeasybe.domain.group.exception.code.GroupSuccessCode;
 import com.moeasy.moeasybe.domain.group.service.command.GroupCommandService;
+import com.moeasy.moeasybe.domain.group.service.GroupCoverImageService;
 import com.moeasy.moeasybe.domain.group.service.query.GroupQueryService;
 import com.moeasy.moeasybe.global.apiPayload.ApiResponse;
 import jakarta.validation.Valid;
@@ -27,6 +28,18 @@ public class GroupController implements GroupControllerDocs {
 
     private final GroupCommandService groupCommandService;
     private final GroupQueryService groupQueryService;
+    private final GroupCoverImageService coverImageService;
+
+    @Override
+    @PostMapping("/cover-image-uploads")
+    public ResponseEntity<ApiResponse<GroupResDTO.CoverImageUploadIssue>> issueCoverImageUpload(
+            @Valid @RequestBody GroupReqDTO.CoverImageUploadIssue request,
+            @AuthenticationPrincipal Long memberId
+    ) {
+        GroupResDTO.CoverImageUploadIssue result = coverImageService.issueUpload(memberId, request.contentType());
+        return ResponseEntity.status(GroupSuccessCode.GROUP_COVER_UPLOAD_ISSUED.getStatus())
+                .body(ApiResponse.onSuccess(GroupSuccessCode.GROUP_COVER_UPLOAD_ISSUED, result));
+    }
 
     @Override
     @PostMapping

@@ -2,6 +2,7 @@ package com.moeasy.moeasybe.domain.group.controller;
 
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -12,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.moeasy.moeasybe.domain.group.dto.request.GroupReqDTO;
 import com.moeasy.moeasybe.domain.group.dto.response.GroupResDTO;
 import com.moeasy.moeasybe.domain.group.service.command.GroupCommandService;
+import com.moeasy.moeasybe.domain.group.service.GroupCoverImageService;
 import com.moeasy.moeasybe.domain.group.service.query.GroupQueryService;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -38,11 +40,38 @@ class GroupControllerTest {
     @Mock
     private GroupQueryService groupQueryService;
 
+    @Mock
+    private GroupCoverImageService coverImageService;
+
     private MockMvc mockMvc;
+
+    @Test
+    void 커버_이미지_업로드_URL_발급시_인증_회원과_요청_MIME을_전달한다() throws Exception {
+        // given
+        when(coverImageService.issueUpload(eq(AUTHENTICATED_MEMBER_ID), eq("image/jpeg")))
+                .thenReturn(GroupResDTO.CoverImageUploadIssue.builder()
+                        .coverImageKey("group-covers/42/123e4567-e89b-12d3-a456-426614174000")
+                        .uploadUrl("https://example.test/upload")
+                        .uploadUrlExpiresAt(java.time.Instant.parse("2026-01-01T00:05:00Z"))
+                        .requiredHeaders(java.util.Map.of("Content-Type", "image/jpeg"))
+                        .build());
+
+        // when
+        mockMvc.perform(post("/api/v1/groups/cover-image-uploads")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"contentType\":\"image/jpeg\"}"))
+                // then
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value("GROUP201_2"))
+                .andExpect(jsonPath("$.result.coverImageKey").value("group-covers/42/123e4567-e89b-12d3-a456-426614174000"))
+                .andExpect(jsonPath("$.result.requiredHeaders['Content-Type']").value("image/jpeg"));
+
+        verify(coverImageService).issueUpload(AUTHENTICATED_MEMBER_ID, "image/jpeg");
+    }
 
     @BeforeEach
     void setUp() {
-        GroupController controller = new GroupController(groupCommandService, groupQueryService);
+        GroupController controller = new GroupController(groupCommandService, groupQueryService, coverImageService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();

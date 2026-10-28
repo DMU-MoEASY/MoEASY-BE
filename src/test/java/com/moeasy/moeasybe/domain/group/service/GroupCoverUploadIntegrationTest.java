@@ -32,10 +32,12 @@ class GroupCoverUploadIntegrationTest {
         Long memberId = jdbcTemplate.queryForObject("SELECT id FROM member WHERE social_id = ?", Long.class,
                 socialId);
         when(storageService.createPresignedPutUrl(any(), any()))
-                .thenReturn(URI.create("https://example.test/upload"));
+                .thenReturn(new S3StorageService.PresignedUpload(URI.create("https://example.test/upload"),
+                        java.time.Instant.parse("2026-01-01T00:05:00Z"),
+                        java.util.Map.of("Content-Type", "image/jpeg")));
 
         // when
-        GroupCoverImageService.UploadIssue issue = coverImageService.issueUpload(memberId, "image/jpeg");
+        var issue = coverImageService.issueUpload(memberId, "image/jpeg");
 
         // then
         assertThat(issue.coverImageKey()).startsWith("group-covers/" + memberId + "/");

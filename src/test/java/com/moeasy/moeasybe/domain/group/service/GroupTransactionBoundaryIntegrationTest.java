@@ -34,12 +34,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
-import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
-import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
-import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
-import software.amazon.awssdk.services.s3.model.S3Exception;
+import com.moeasy.moeasybe.storage.S3StorageService;
+import com.moeasy.moeasybe.storage.code.StorageErrorCode;
 import tools.jackson.databind.ObjectMapper;
 
 @SpringBootTest
@@ -47,7 +43,7 @@ class GroupTransactionBoundaryIntegrationTest {
     @Autowired private GroupCommandService commandService;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private ObjectMapper objectMapper;
-    @MockitoBean private S3Client s3Client;
+    @MockitoBean private S3StorageService storageService;
     @MockitoBean private GroupCoverImageService coverImageService;
     @MockitoSpyBean private GroupRepository groupRepository;
 
@@ -82,10 +78,10 @@ class GroupTransactionBoundaryIntegrationTest {
         String createKey = issueCover(memberId);
         String updateKey = issueCover(memberId);
         AtomicInteger headCalls = new AtomicInteger();
-        when(s3Client.headObject(any(HeadObjectRequest.class))).thenAnswer(invocation -> {
+        when(storageService.getObjectMetadata(any())).thenAnswer(invocation -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             headCalls.incrementAndGet();
-            return HeadObjectResponse.builder().contentType("image/png").build();
+            return java.util.Optional.of(new S3StorageService.ObjectMetadata("image/png"));
         });
 
         // when
@@ -111,8 +107,8 @@ class GroupTransactionBoundaryIntegrationTest {
         Long memberId = insertMember();
         Long categoryId = insertCategory();
         String key = issueCover(memberId);
-        when(s3Client.headObject(any(HeadObjectRequest.class)))
-                .thenThrow(S3Exception.builder().statusCode(503).message("S3 unavailable").build());
+        when(storageService.getObjectMetadata(any())).thenThrow(
+                new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE));
 
         // when
         StorageOperationException exception = assertThrows(StorageOperationException.class,
@@ -134,11 +130,9 @@ class GroupTransactionBoundaryIntegrationTest {
         Long memberId = insertMember();
         Long categoryId = insertCategory();
         String key = issueCover(memberId);
-        when(s3Client.headObject(any(HeadObjectRequest.class)))
-                .thenThrow(S3Exception.builder().statusCode(403).message("access denied").build());
-        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenAnswer(invocation -> {
+        when(storageService.getObjectMetadata(any())).thenAnswer(invocation -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
-            return ListObjectsV2Response.builder().isTruncated(false).build();
+            return java.util.Optional.empty();
         });
 
         // when
@@ -146,7 +140,7 @@ class GroupTransactionBoundaryIntegrationTest {
                 () -> commandService.createGroup(createRequest(categoryId, key), memberId));
 
         // then
-        assertThat(exception.getCode().getCode()).isEqualTo("COMMON400_1");
+        assertThat(exception.getCode().getCode()).isEqualTo("GROUP400_4");
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM member_group WHERE category_id = ? AND name = '원래 모임'",
                 Integer.class, categoryId)).isZero();
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM group_member WHERE member_id = ?", Integer.class,
@@ -160,8 +154,8 @@ class GroupTransactionBoundaryIntegrationTest {
         Long memberId = insertMember();
         Long groupId = createGroup(memberId);
         String key = issueCover(memberId);
-        when(s3Client.headObject(any(HeadObjectRequest.class)))
-                .thenThrow(S3Exception.builder().statusCode(503).message("S3 unavailable").build());
+        when(storageService.getObjectMetadata(any())).thenThrow(
+                new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE));
 
         // when
         StorageOperationException exception = assertThrows(StorageOperationException.class,
@@ -192,7 +186,7 @@ class GroupTransactionBoundaryIntegrationTest {
 
         // then
         assertThat(exception.getCode().getCode()).isEqualTo("AUTH403_1");
-        verify(s3Client, never()).headObject(any(HeadObjectRequest.class));
+        verify(storageService, never()).getObjectMetadata(any());
     }
 
     @Test
@@ -204,11 +198,11 @@ class GroupTransactionBoundaryIntegrationTest {
         String key = issueCover(memberId);
         CountDownLatch headEntered = new CountDownLatch(1);
         CountDownLatch releaseHead = new CountDownLatch(1);
-        when(s3Client.headObject(any(HeadObjectRequest.class))).thenAnswer(invocation -> {
+        when(storageService.getObjectMetadata(any())).thenAnswer(invocation -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             headEntered.countDown();
             assertThat(releaseHead.await(10, TimeUnit.SECONDS)).isTrue();
-            return HeadObjectResponse.builder().contentType("image/png").build();
+            return java.util.Optional.of(new S3StorageService.ObjectMetadata("image/png"));
         });
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
@@ -246,10 +240,10 @@ class GroupTransactionBoundaryIntegrationTest {
         String key = issueCover(memberId);
         CountDownLatch headEntered = new CountDownLatch(1);
         CountDownLatch releaseHead = new CountDownLatch(1);
-        when(s3Client.headObject(any(HeadObjectRequest.class))).thenAnswer(invocation -> {
+        when(storageService.getObjectMetadata(any())).thenAnswer(invocation -> {
             headEntered.countDown();
             assertThat(releaseHead.await(10, TimeUnit.SECONDS)).isTrue();
-            return HeadObjectResponse.builder().contentType("image/png").build();
+            return java.util.Optional.of(new S3StorageService.ObjectMetadata("image/png"));
         });
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {

@@ -10,6 +10,7 @@ import com.moeasy.moeasybe.domain.group.entity.GroupMember;
 import com.moeasy.moeasybe.domain.group.enums.GroupMemberRole;
 import com.moeasy.moeasybe.domain.group.enums.GroupMemberStatus;
 import com.moeasy.moeasybe.domain.member.entity.Member;
+import com.moeasy.moeasybe.storage.S3StorageService;
 import java.time.LocalDateTime;
 
 public final class GroupConverter {
@@ -49,6 +50,16 @@ public final class GroupConverter {
                 .member(member)
                 .contentType(contentType)
                 .issuedAt(issuedAt)
+                .build();
+    }
+
+    public static GroupResDTO.CoverImageUploadIssue toCoverImageUploadIssue(
+            String key, S3StorageService.PresignedUpload upload) {
+        return GroupResDTO.CoverImageUploadIssue.builder()
+                .coverImageKey(key)
+                .uploadUrl(upload.url().toString())
+                .uploadUrlExpiresAt(upload.expiresAt())
+                .requiredHeaders(upload.requiredHeaders())
                 .build();
     }
 
