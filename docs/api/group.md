@@ -2,11 +2,11 @@
 
 ## 범위와 공통 계약
 
-Group API의 공통 접두사는 `/api/v1`이다. 아래 표의 `/groups` 경로에는 모두 이 접두사가 적용된다. Issue #14는 아래 네 API만 구현한다. 목록·검색·가입·초대 및 참여/미참여 조회는 [후속 범위](#후속-범위)에 보존한다.
+Group API의 공통 접두사는 `/api/v1`이다. 아래 표의 `/groups` 경로에는 모두 이 접두사가 적용된다. Issue #14의 그룹 CRUD와 Issue #23의 승인제 가입 관리 API를 제공한다. 목록·검색·초대 및 참여/미참여 조회는 [후속 범위](#후속-범위)에 보존한다.
 
 - Group API의 식별자 `groupId`는 `member_group.id`에 대응하는 양의 정수다.
-- 네 API는 모두 Issue #15의 JWT로 인증된 회원만 호출할 수 있다. 상세 조회에는 Group 멤버십을 요구하지 않는다. 수정과 폐쇄는 해당 Group의 활성 `OWNER` 멤버십을 요구한다.
-- 명세의 기존 `STAFF`는 DB 역할 `MANAGER`를 뜻한다. `MANAGER` 역할 Enum은 정의하지만 이번 범위에서 권한을 부여하거나 사용하는 API는 없다.
+- 모든 API는 Issue #15의 JWT로 인증된 회원만 호출할 수 있다. 상세 조회에는 Group 멤버십을 요구하지 않는다. 수정과 폐쇄는 해당 Group의 활성 `OWNER` 멤버십을 요구한다.
+- 명세의 기존 `STAFF`는 DB 역할 `MANAGER`를 뜻한다. 가입 관리의 목록·승인·거절에는 삭제되지 않은 활성 OWNER·MANAGER 권한이 필요하다. 역할 임명·회수 API는 포함하지 않는다.
 - 정상·오류 응답은 공통 `ApiResponse<T>` 형식을 따른다. 아래 Group 코드는 `GroupSuccessCode`와 `GroupErrorCode`에 정의되어 있다.
 
 | Method | Endpoint | 기능 | 권한 |
@@ -136,6 +136,87 @@ S3 `HeadObject`가 403 또는 일반 404를 반환하면 해당 키만 목록 �
 
 응답에는 키 대신 `S3StorageService.createPresignedGetUrl`로 만든 `coverImageUrl`을 사용한다. URL은 설정된 유효 시간이 지나면 다시 조회해 발급받아야 한다. 이미지가 없으면 `null`이다. 비공개 S3 접근·서명 요청에는 요청과 데이터 전송 비용이 발생할 수 있다.
 
+## 승인제 가입 관리 (Issue #23)
+
+공통 경로는 `/api/v1/groups/{groupId}/join-requests`다. 그룹·회원·신청 식별자는 숫자 ID를 사용한다. 인증된 회원 ID는 JWT에서 가져오며, 요청의 회원·처리자 ID를 신뢰하지 않는다. 쿠키 인증 쓰기 요청은 기존 CSRF 쿠키·헤더 계약을 따른다.
+
+| Method | 하위 경로 | 기능 | 권한 | 성공 코드 |
+| --- | --- | --- | --- | --- |
+| POST | 없음 | 가입 신청 | 인증 회원 | 201, `GROUP201_3` |
+| DELETE | `/me` | 본인 대기 신청 취소 | 신청자 본인 | 200, `GROUP200_4` |
+| GET | 없음 | 대기 신청 목록 | 활성 OWNER·MANAGER | 200, `GROUP200_5` |
+| GET | `/me` | 본인 최근 신청 | 본인 | 200, `GROUP200_6` |
+| POST | `/{requestId}/approve` | 승인 | 활성 OWNER·MANAGER | 200, `GROUP200_7` |
+| POST | `/{requestId}/reject` | 거절 | 활성 OWNER·MANAGER | 200, `GROUP200_8` |
+
+### 요청·응답
+
+가입 신청 본문은 `{"introduction":"함께하고 싶어요"}`다. 소개글은 필수·공백 불가·최대 500자다. 성공 결과는 `requestId`, `status`(`PENDING`), `createdAt`이다.
+
+취소와 승인은 본문이 없다. 거절 본문은 `{"rejectionReason":"현재 모집 대상과 다릅니다"}`이며 사유는 선택·최대 500자다. 사유 없이 `{}`도 허용한다. 취소·승인·거절 성공 결과는 모두 `null`이다.
+
+신청·취소·승인·거절 요청에는 `X-XSRF-TOKEN` 헤더가 필수다. 먼저 `GET /api/v1/auth/csrf`를 호출하고 응답의 `result.token`을 헤더에 전달하며, 발급된 `XSRF-TOKEN` 쿠키도 유지한다. 토큰이 없거나 일치하지 않으면 HTTP 403으로 거부한다.
+
+목록은 `?page=0&size=20`으로 조회한다. 기본값은 페이지 0, 크기 20이며 페이지는 0 이상, 크기는 1~100이다. 숫자가 아닌 입력과 정수 범위 초과는 HTTP 400, `COMMON400_1`, “잘못된 요청입니다.”, `result: null`로 반환하며 내부 타입·변환 예외 메시지는 노출하지 않는다. 단순 범위 위반(`page=-1`, `size=0/101`)은 `VALID400_1`로 반환한다. 조회 offset인 `(long) page * size`는 `Integer.MAX_VALUE`(2,147,483,647) 이하여야 하며, 초과하면 조회 전에 HTTP 400, `COMMON400_1`로 거부한다. 예를 들어 `size=20`이면 `page=107374182`까지 허용하고 `page=107374183`부터 거부한다. PENDING만 `createdAt ASC, id ASC`로 조회한다.
+
+```json
+{
+  "items": [
+    {"requestId": 1, "memberId": 2, "nickname": "러너", "introduction": "소개", "createdAt": "2026-10-19T12:00:00"}
+  ],
+  "page": 0,
+  "size": 20,
+  "hasNext": false
+}
+```
+
+빈 페이지는 `items: []`, `hasNext: false`다. 총 개수는 반환하지 않는다.
+
+본인 최근 신청은 `createdAt DESC, id DESC`의 첫 행을 선택한다. 결과 필드는 `requestId`, `status`, `introduction`, `rejectionReason`, `createdAt`, `processedAt`이며 이력이 없으면 `result: null`이다.
+
+### 상태·권한·멤버십
+
+- 신청은 ACTIVE·APPROVAL 그룹에서만 허용한다. OPEN 가입 신청은 HTTP 400이다.
+- 승인·거절은 ACTIVE 그룹에서만 허용한다. ARCHIVED에서는 조회·본인 취소만 허용한다.
+- 없는 그룹·삭제·폐쇄 그룹은 HTTP 404다. 다른 그룹의 신청 ID도 HTTP 404다.
+- 목록·승인·거절 권한은 역할 OWNER 또는 MANAGER, 상태 ACTIVE, `deletedAt=null`을 모두 만족해야 한다. ACTIVE이지만 소프트 삭제된 운영진도 HTTP 403이다.
+- 기존 그룹 수정·폐쇄는 OWNER 전용을 유지한다. 기존 `requireOwner()`의 삭제 여부 조건 누락은 별도 불일치이며, 신규 가입 관리 검증에서는 삭제 여부까지 검사한다.
+- 정원에는 삭제되지 않은 ACTIVE 멤버십만 계산하며 OWNER·MANAGER도 포함한다. 대기 신청은 자리를 예약하지 않는다. 신청·승인 시 각각 정원을 확인한다.
+- 삭제되지 않은 ACTIVE 회원의 신청은 이미 가입 오류로 거부한다. 동일 그룹 PENDING 신청도 중복 오류로 거부한다.
+- LEFT와 `ACTIVE + deletedAt != null` 회원은 재신청·재가입 복구를 허용한다. KICKED는 삭제 여부와 무관하게 재신청을 차단한다.
+- 재가입 승인 시 기존 멤버십 ID를 유지하고 `role=MEMBER`, `status=ACTIVE`, `deletedAt=null`, `joinedAt=승인 시각`으로 복구한다. 과거 OWNER·MANAGER 권한은 복원하지 않는다.
+- 거절·취소 후에는 새 신청을 생성하고 기존 이력을 보존한다. 그룹 폐쇄 시에도 신청을 물리 삭제하지 않는다.
+
+### 상태 전이·시각·동시성
+
+PENDING만 APPROVED·REJECTED·CANCELLED로 전이할 수 있다. 승인·거절은 운영진 멤버십 ID와 처리 시각을 저장한다. 취소는 처리 시각을 저장하고 처리자 ID는 null이다.
+
+신청의 생성·수정 시각은 JPA auditing으로 매핑하며 MySQL DATETIME(6) 정밀도로 맞춘다. 생성 응답의 `createdAt`은 DB 저장값과 일치한다. 승인에서는 한 번 얻은 시각을 신규·복구 멤버십의 `joinedAt`과 신청 `processedAt`에 함께 사용한다.
+
+신청·승인·거절·취소는 기존 폐쇄와 같은 그룹 비관적 락을 먼저 획득하고 상태·권한·신청·정원을 검증한다. 승인 시 정원 확인, 멤버십 생성·복구, 신청 처리 정보를 하나의 트랜잭션에 저장하며 실패 시 모두 롤백한다. 먼저 커밋된 신청 상태 전이가 유효하고 후속 처리는 상태에 맞는 409를 반환한다. 폐쇄가 먼저 커밋되면 후속 가입 처리는 404다.
+
+대기 신청 중복은 서비스 검사와 `uq_group_join_request_pending`으로 방어한다. 저장·flush에서 해당 유일 제약 충돌만 중복 신청 409로 변환하고 도메인 예외를 던져 롤백한다. 다른 무결성 오류는 중복 신청으로 변환하지 않는다. 이후 즉시 가입·초대 수락 등 인원 증가 경로도 동일 그룹 락을 따라야 한다.
+
+### 가입 관리 오류 코드
+
+| 상황 | HTTP | 코드 |
+| --- | --- | --- |
+| 소개글·거절 사유·페이지 검증 실패 | 400 | `VALID400_1` 또는 `COMMON400_1` |
+| OPEN 그룹 가입 신청 | 400 | `GROUP400_7` |
+| 미인증·잘못된 JWT | 401 | `AUTH401_1` |
+| 활성·미삭제 OWNER·MANAGER가 아님 | 403 | `AUTH403_1` |
+| 신청 시 JWT의 회원이 DB에 없음 | 404 | `MEMBER404_1` |
+| CSRF 토큰 누락·불일치 (신청·취소·승인·거절) | 403 | `AUTH403_1` |
+| 그룹 없음·삭제·폐쇄 | 404 | `GROUP404_1` |
+| 신청 없음·다른 그룹의 신청 | 404 | `GROUP404_3` |
+| ARCHIVED에서 신청·승인·거절 | 409 | `GROUP409_1` |
+| 이미 가입 | 409 | `GROUP409_2` |
+| 중복 PENDING 신청·대기 신청 유일 제약 충돌 | 409 | `GROUP409_3` |
+| 정원 초과 | 409 | `GROUP409_4` |
+| KICKED 회원 | 409 | `GROUP409_5` |
+| 이미 처리된 신청의 승인·거절 | 409 | `GROUP409_6` |
+| 취소할 PENDING 없음 | 409 | `GROUP409_7` |
+
 ## 후속 범위
 
 아래 항목은 이동 전 Group 명세의 내용을 보존한 것이다. Issue #14에서 구현하거나 이번 오류·권한 계약을 적용하지 않는다. 각 기능을 구현할 때 경로·권한·상태·응답을 재확정한다. 폐쇄 Group의 콘텐츠 비노출도 해당 콘텐츠 기능에서 적용한다.
@@ -144,9 +225,6 @@ S3 `HeadObject`가 403 또는 일반 404를 반환하면 해당 키만 목록 �
 | --- | --- | --- | --- |
 | GET | /groups | 키워드·카테고리·지역·거리 기반 검색 | Public/USER |
 | GET | /users/me/groups | 내 참여 모임 조회 | USER |
-| POST | /groups/{groupId}/join-requests | 가입 신청 | USER |
-| GET | /groups/{groupId}/join-requests/me | 내 가입 신청 상태 | USER |
-| DELETE | /groups/{groupId}/join-requests/me | 대기 중 가입 신청 취소 | 신청자 |
 | POST | /groups/{groupId}/invite-links | 초대 링크·코드 생성 | GROUP_STAFF |
 | GET | /group-invites/{inviteCode} | 초대 링크 유효성·모임 요약 조회 | Public |
 | POST | /group-invites/{inviteCode}/accept | 초대 수락 또는 가입 신청 | USER |
