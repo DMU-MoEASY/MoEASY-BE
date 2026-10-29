@@ -27,9 +27,6 @@ public class GroupJoinRequestQueryService {
     @Transactional(readOnly = true)
     public GroupJoinRequestResDTO.PendingList getPending(Long groupId, int page, int size, Long memberId) {
         GroupRequestValidator.requireMemberId(memberId);
-        if (page < 0 || size < 1 || size > 100) {
-            throw new IllegalArgumentException("페이지는 0 이상, 크기는 1~100이어야 합니다.");
-        }
         if ((long) page * size > Integer.MAX_VALUE) {
             throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
         }

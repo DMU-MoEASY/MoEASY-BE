@@ -14,8 +14,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.moeasy.moeasybe.domain.group.dto.request.GroupJoinRequestReqDTO;
 import com.moeasy.moeasybe.domain.group.dto.response.GroupJoinRequestResDTO;
 import com.moeasy.moeasybe.domain.group.enums.GroupJoinRequestStatus;
+import com.moeasy.moeasybe.domain.group.service.command.GroupCommandService;
 import com.moeasy.moeasybe.domain.group.service.command.GroupJoinRequestCommandService;
 import com.moeasy.moeasybe.domain.group.service.query.GroupJoinRequestQueryService;
+import com.moeasy.moeasybe.domain.group.service.query.GroupQueryService;
 import com.moeasy.moeasybe.global.apiPayload.handler.GeneralExceptionAdvice;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -41,13 +43,15 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
-@WebMvcTest(GroupJoinRequestController.class)
-@ContextConfiguration(classes = {GroupJoinRequestController.class, GeneralExceptionAdvice.class})
+@WebMvcTest(GroupController.class)
+@ContextConfiguration(classes = {GroupController.class, GeneralExceptionAdvice.class})
 @AutoConfigureMockMvc(addFilters = false)
 @Import(GroupJoinRequestControllerTest.PrincipalConfiguration.class)
 class GroupJoinRequestControllerTest {
     private static final String PATH = "/api/v1/groups/10/join-requests";
     @Autowired private MockMvc mvc;
+    @MockitoBean private GroupCommandService groupCommands;
+    @MockitoBean private GroupQueryService groupQueries;
     @MockitoBean private GroupJoinRequestCommandService commands;
     @MockitoBean private GroupJoinRequestQueryService queries;
 
@@ -138,7 +142,9 @@ class GroupJoinRequestControllerTest {
 
         // then
         result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.isSuccess").value(false))
-                .andExpect(jsonPath("$.code").value("VALID400_1"));
+                .andExpect(jsonPath("$.code").value("COMMON400_1"))
+                .andExpect(jsonPath("$.message").value("잘못된 요청입니다."))
+                .andExpect(jsonPath("$.result").value(org.hamcrest.Matchers.nullValue()));
         verifyNoInteractions(queries);
     }
 

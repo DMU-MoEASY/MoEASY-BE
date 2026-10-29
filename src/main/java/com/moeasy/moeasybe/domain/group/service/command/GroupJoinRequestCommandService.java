@@ -18,9 +18,9 @@ import com.moeasy.moeasybe.domain.group.repository.GroupRepository;
 import com.moeasy.moeasybe.domain.group.validate.GroupAccessValidator;
 import com.moeasy.moeasybe.domain.group.validate.GroupRequestValidator;
 import com.moeasy.moeasybe.domain.member.entity.Member;
+import com.moeasy.moeasybe.domain.member.exception.MemberException;
+import com.moeasy.moeasybe.domain.member.exception.code.MemberErrorCode;
 import com.moeasy.moeasybe.domain.member.repository.MemberRepository;
-import com.moeasy.moeasybe.global.apiPayload.code.GeneralErrorCode;
-import com.moeasy.moeasybe.global.apiPayload.exception.GeneralException;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -54,7 +54,7 @@ public class GroupJoinRequestCommandService {
         }
         requireCapacity(group);
         Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new GeneralException(GeneralErrorCode.UNAUTHORIZED));
+                .orElseThrow(() -> new MemberException(MemberErrorCode.MEMBER_NOT_FOUND));
         GroupJoinRequest entity = GroupJoinRequestConverter.toEntity(group, member, request);
         try {
             joinRequestRepository.saveAndFlush(entity);

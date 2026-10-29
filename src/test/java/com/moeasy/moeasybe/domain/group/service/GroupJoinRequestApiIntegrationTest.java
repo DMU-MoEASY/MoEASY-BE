@@ -11,6 +11,7 @@ import com.jayway.jsonpath.JsonPath;
 import com.moeasy.moeasybe.domain.auth.config.AuthCookieNames;
 import com.moeasy.moeasybe.global.security.jwt.JwtTokenProvider;
 import jakarta.servlet.http.Cookie;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -64,6 +65,39 @@ class GroupJoinRequestApiIntegrationTest extends JoinRequestIntegrationSupport {
     }
 
     @Test
+    @DisplayName("유효한 JWT의 회원이 DB에 없으면 회원 없음 404를 반환한다")
+    void create_authenticatedMemberMissing_notFound() throws Exception {
+        // given
+        Long group = group(member(), 3);
+        Long missingMember = Long.MAX_VALUE;
+
+        // when
+        var result = mvc.perform(auth(post(path(group)), missingMember).content("{\"introduction\":\"소개\"}"));
+
+        // then
+        result.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("MEMBER404_1"));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM group_join_request WHERE group_id = ?",
+                Integer.class, group)).isZero();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"POST,''", "DELETE,/me", "POST,/1/approve", "POST,/1/reject"})
+    @DisplayName("모든 가입 신청 변경 API는 인증되어도 CSRF 토큰이 없으면 403이다")
+    void write_missingCsrf_forbidden(String method, String suffix) throws Exception {
+        // given
+        Long actor = member();
+        var request = org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .request(HttpMethod.valueOf(method), path(1L) + suffix)
+                .cookie(token(actor)).contentType(MediaType.APPLICATION_JSON).content("{}");
+
+        // when
+        var result = mvc.perform(request);
+
+        // then
+        result.andExpect(status().isForbidden());
+    }
+
+    @Test
     @DisplayName("인증된 실제 API로 신청·목록·거절·재신청·취소·승인 전체 흐름을 수행한다")
     void endpoints_authenticatedLifecycle_preservesContract() throws Exception {
         // given
@@ -101,18 +135,21 @@ class GroupJoinRequestApiIntegrationTest extends JoinRequestIntegrationSupport {
                 Integer.class, group, applicant)).isEqualTo(1);
     }
 
-    @Test
-    @DisplayName("실제 보안 필터 환경에서도 비숫자 페이지 입력은 공통 400이다")
-    void getPending_invalidNumber_commonBadRequest() throws Exception {
+    @ParameterizedTest
+    @CsvSource({"page,abc", "size,abc", "page,2147483648", "size,999999999999999999999"})
+    @DisplayName("실제 보안 필터 환경에서도 페이지 타입 변환 실패는 내부 정보 없는 공통 400이다")
+    void getPending_invalidNumber_commonBadRequest(String name, String value) throws Exception {
         // given
         Long owner = member();
         Long group = group(owner, 3);
 
         // when
-        var result = mvc.perform(auth(get(path(group)).param("page", "abc"), owner));
+        var result = mvc.perform(auth(get(path(group)).param(name, value), owner));
 
         // then
-        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALID400_1"));
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"))
+                .andExpect(jsonPath("$.message").value("잘못된 요청입니다."))
+                .andExpect(jsonPath("$.result").value(org.hamcrest.Matchers.nullValue()));
     }
 
     @ParameterizedTest
@@ -157,6 +194,18 @@ class GroupJoinRequestApiIntegrationTest extends JoinRequestIntegrationSupport {
         assertThat(doc.read("$.paths['" + base + "/me'].delete.responses['200'].description", String.class)).isNotBlank();
         assertThat(doc.read("$.paths['" + base + "/{requestId}/approve'].post.responses['409'].description", String.class)).isNotBlank();
         assertThat(doc.read("$.paths['" + base + "/{requestId}/reject'].post.responses['200'].description", String.class)).isNotBlank();
+        assertThat(doc.read("$.paths['" + base + "/me'].get.responses['404'].description", String.class))
+                .isEqualTo("GROUP404_1: 그룹 없음·삭제·폐쇄");
+        assertThat(doc.read("$.paths['" + base + "/me'].delete.responses['409'].description", String.class))
+                .isEqualTo("GROUP409_7: 취소할 대기 신청 없음");
+        for (String operation : List.of("['" + base + "'].post", "['" + base + "/me'].delete",
+                "['" + base + "/{requestId}/approve'].post", "['" + base + "/{requestId}/reject'].post")) {
+            assertThat(doc.<List<Boolean>>read("$.paths" + operation
+                    + ".parameters[?(@.in == 'header' && @.name == 'X-XSRF-TOKEN')].required"))
+                    .containsExactly(true);
+            assertThat(doc.read("$.paths" + operation + ".responses['403'].description", String.class)).contains("CSRF");
+        }
+
     }
 
     private String path(Long group) {

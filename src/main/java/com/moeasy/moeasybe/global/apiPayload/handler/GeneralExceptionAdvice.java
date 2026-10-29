@@ -31,11 +31,15 @@ public class GeneralExceptionAdvice {
                 .body(ApiResponse.onFailure(ex.getCode(), null));
     }
 
-    // @Valid 검증 실패 (RequestBody)
+    // @Valid 검증 실패 (RequestBody, ModelAttribute)
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Map<String, List<String>>>> handleMethodArgumentNotValidException(
             MethodArgumentNotValidException ex
     ) {
+        if (ex.getBindingResult().getFieldErrors().stream().anyMatch(error -> error.isBindingFailure())) {
+            GeneralErrorCode code = GeneralErrorCode.BAD_REQUEST;
+            return ResponseEntity.status(code.getStatus()).body(ApiResponse.onFailure(code, null));
+        }
         Map<String, List<String>> errors = new HashMap<>();
 
         ex.getBindingResult().getFieldErrors().forEach(error ->

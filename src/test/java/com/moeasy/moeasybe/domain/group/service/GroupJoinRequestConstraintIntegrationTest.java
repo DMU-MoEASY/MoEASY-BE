@@ -17,6 +17,7 @@ import com.moeasy.moeasybe.domain.member.entity.Member;
 import com.moeasy.moeasybe.domain.member.repository.MemberRepository;
 import com.moeasy.moeasybe.global.apiPayload.handler.GeneralExceptionAdvice;
 import jakarta.persistence.EntityManager;
+import java.sql.SQLException;
 import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -108,6 +109,9 @@ class GroupJoinRequestConstraintIntegrationTest extends JoinRequestIntegrationSu
         var propagated = assertThrows(DataIntegrityViolationException.class, () -> apply(group, applicant));
 
         // then
+        assertAll(
+                () -> assertThat(databaseError.getMostSpecificCause()).isInstanceOf(SQLException.class),
+                () -> assertThat(((SQLException) databaseError.getMostSpecificCause()).getErrorCode()).isEqualTo(1062));
         assertThat(propagated).isSameAs(databaseError);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM group_join_request WHERE group_id = ?",
                 Integer.class, group)).isZero();
