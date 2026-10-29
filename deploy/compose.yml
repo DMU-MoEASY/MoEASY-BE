@@ -40,6 +40,7 @@ services:
     env_file:
       - .env
     environment:
+      JAVA_TOOL_OPTIONS: "-Duser.timezone=Asia/Seoul"
       # 컨테이너 안에서는 localhost가 아니라 서비스 이름으로 연결한다.
       DB_URL: jdbc:mysql://mysql:3306/moeasy?serverTimezone=Asia/Seoul&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false
       REDIS_HOST: redis

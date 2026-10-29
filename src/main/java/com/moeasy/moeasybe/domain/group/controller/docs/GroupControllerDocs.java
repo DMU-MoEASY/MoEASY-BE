@@ -20,6 +20,18 @@ import org.springframework.web.bind.annotation.RequestBody;
 @Tag(name = "Group", description = "그룹 생성·조회·수정·폐쇄 및 가입 신청 관리 API")
 public interface GroupControllerDocs {
 
+    @Operation(summary = "그룹 커버 이미지 업로드 URL 발급", description = "인증 회원에게 Group 커버 이미지용 S3 PUT URL을 발급합니다.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "발급 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "지원하지 않는 형식"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 실패"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "503", description = "저장소 장애")
+    })
+    ResponseEntity<ApiResponse<GroupResDTO.CoverImageUploadIssue>> issueCoverImageUpload(
+            @RequestBody GroupReqDTO.CoverImageUploadIssue request,
+            @Parameter(hidden = true) Long memberId
+    );
+
     @Operation(
             summary = "그룹 생성",
             description = "인증된 회원이 그룹을 생성합니다. 생성한 회원은 활성 OWNER로 등록됩니다. "
@@ -110,7 +122,7 @@ public interface GroupControllerDocs {
             summary = "가입 신청", description = "소개글은 필수·공백 불가·최대 500자입니다. ACTIVE APPROVAL 그룹에서 정원을 확인합니다.")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "JOIN_REQUEST_CREATED"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "입력 형식·소개글 검증 실패 또는 GROUP400_3: 승인제 그룹이 아님"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "입력 형식·소개글 검증 실패 또는 GROUP400_7: 승인제 그룹이 아님"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 실패"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "CSRF 토큰 누락 또는 불일치"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "GROUP404_1: 그룹 없음·삭제·폐쇄 또는 MEMBER404_1: 회원 없음"),

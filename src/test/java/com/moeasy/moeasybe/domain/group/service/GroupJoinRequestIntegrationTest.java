@@ -244,7 +244,7 @@ class GroupJoinRequestIntegrationTest extends JoinRequestIntegrationSupport {
         var error = assertThrows(GroupException.class, () -> apply(group, member()));
 
         // then
-        assertThat(error.getCode().getCode()).isEqualTo("GROUP400_3");
+        assertThat(error.getCode().getCode()).isEqualTo("GROUP400_7");
     }
 
     @ParameterizedTest

@@ -1,86 +1,42 @@
 package com.moeasy.moeasybe.domain.group.validate;
 
 import com.moeasy.moeasybe.domain.group.entity.GroupCoverUpload;
+import com.moeasy.moeasybe.domain.group.exception.GroupException;
+import com.moeasy.moeasybe.domain.group.exception.code.GroupErrorCode;
 import com.moeasy.moeasybe.domain.group.repository.GroupCoverUploadRepository;
 import com.moeasy.moeasybe.global.apiPayload.code.GeneralErrorCode;
 import com.moeasy.moeasybe.global.apiPayload.exception.GeneralException;
-import com.moeasy.moeasybe.global.config.AwsS3Properties;
-import com.moeasy.moeasybe.storage.code.StorageErrorCode;
-import com.moeasy.moeasybe.storage.exception.StorageOperationException;
+import com.moeasy.moeasybe.storage.S3StorageService;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import software.amazon.awssdk.core.exception.SdkException;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
-import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
-import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
-import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
-import software.amazon.awssdk.services.s3.model.S3Exception;
 
 @Component
 @RequiredArgsConstructor
-@Slf4j
 public class GroupCoverImageValidator {
-    private final S3Client s3Client;
-    private final AwsS3Properties properties;
+    private final S3StorageService storageService;
     private final GroupCoverUploadRepository uploadRepository;
 
     public void validateIssueRequest(Long memberId, String contentType) {
-        if (memberId == null || memberId <= 0 || !isSupportedType(contentType)) {
+        if (memberId == null || memberId <= 0) {
             throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
+        }
+        if (!isSupportedType(contentType)) {
+            throw new GroupException(GroupErrorCode.UNSUPPORTED_COVER_IMAGE_TYPE);
         }
     }
 
     public void verifyOwnedAndExists(Long memberId, String key) {
         if (key == null || key.isBlank()
                 || key.length() > 500 || !key.matches("group-covers/" + memberId + "/[0-9a-fA-F-]{36}")) {
-            throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
+            throw new GroupException(GroupErrorCode.INVALID_OR_UNOWNED_COVER_IMAGE_KEY);
         }
         GroupCoverUpload issuance = uploadRepository.findByObjectKeyAndMemberId(key, memberId)
-                .orElseThrow(() -> new GeneralException(GeneralErrorCode.BAD_REQUEST));
-        try {
-            var object = s3Client.headObject(HeadObjectRequest.builder()
-                    .bucket(properties.getS3().getBucket())
-                    .key(key)
-                    .build());
-            if (!issuance.getContentType().equals(object.contentType())) {
-                throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
-            }
-        } catch (NoSuchKeyException e) {
-            resolveAmbiguousHeadFailure(key, e);
-        } catch (NoSuchBucketException e) {
-            log.error("S3 커버 이미지 객체 조회에 실패했습니다.", e);
-            throw new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE);
-        } catch (S3Exception e) {
-            if (e.statusCode() == 403 || e.statusCode() == 404) {
-                resolveAmbiguousHeadFailure(key, e);
-            }
-            log.error("S3 커버 이미지 객체 조회에 실패했습니다.", e);
-            throw new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE);
-        } catch (SdkException e) {
-            log.error("S3 커버 이미지 객체 조회에 실패했습니다.", e);
-            throw new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE);
+                .orElseThrow(() -> new GroupException(GroupErrorCode.INVALID_OR_UNOWNED_COVER_IMAGE_KEY));
+        var object = storageService.getObjectMetadata(key)
+                .orElseThrow(() -> new GroupException(GroupErrorCode.COVER_IMAGE_OBJECT_NOT_FOUND));
+        if (!issuance.getContentType().equals(object.contentType())) {
+            throw new GroupException(GroupErrorCode.COVER_IMAGE_CONTENT_TYPE_MISMATCH);
         }
-    }
-
-    private void resolveAmbiguousHeadFailure(String key, S3Exception headFailure) {
-        try {
-            var listing = s3Client.listObjectsV2(ListObjectsV2Request.builder()
-                    .bucket(properties.getS3().getBucket())
-                    .prefix(key)
-                    .maxKeys(1)
-                    .build());
-            boolean exactKeyExists = listing.contents().stream().anyMatch(object -> key.equals(object.key()));
-            if (!exactKeyExists && !Boolean.TRUE.equals(listing.isTruncated())) {
-                throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
-            }
-        } catch (SdkException listFailure) {
-            log.error("S3 커버 이미지 목록 조회에 실패했습니다.", listFailure);
-            throw new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE);
-        }
-        log.error("S3 커버 이미지 객체 조회 결과가 모호합니다.", headFailure);
-        throw new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE);
     }
 
     private boolean isSupportedType(String type) {

@@ -15,8 +15,8 @@ import com.moeasy.moeasybe.domain.member.repository.MemberRepository;
 import com.moeasy.moeasybe.global.apiPayload.ApiResponse;
 import com.moeasy.moeasybe.global.apiPayload.exception.GeneralException;
 import com.moeasy.moeasybe.global.apiPayload.handler.GeneralExceptionAdvice;
-import com.moeasy.moeasybe.global.config.AwsS3Properties;
 import com.moeasy.moeasybe.storage.S3StorageService;
+import com.moeasy.moeasybe.storage.code.StorageErrorCode;
 import com.moeasy.moeasybe.storage.exception.StorageOperationException;
 import java.net.URI;
 import java.time.Clock;
@@ -32,20 +32,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
-import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
-import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
-import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
-import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
-import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
-import software.amazon.awssdk.services.s3.model.S3Exception;
-import software.amazon.awssdk.services.s3.model.S3Object;
 import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 class GroupCoverImageServiceTest {
     @Mock private S3StorageService storageService;
-    @Mock private S3Client s3Client;
     @Mock private GroupCoverUploadRepository uploadRepository;
     @Mock private MemberRepository memberRepository;
     private GroupCoverImageService service;
@@ -53,28 +44,42 @@ class GroupCoverImageServiceTest {
 
     @BeforeEach
     void setUp() {
-        AwsS3Properties properties = new AwsS3Properties();
-        AwsS3Properties.S3 s3 = new AwsS3Properties.S3();
-        s3.setBucket("test-bucket");
-        properties.setS3(s3);
-        validator = new GroupCoverImageValidator(s3Client, properties, uploadRepository);
+        validator = new GroupCoverImageValidator(storageService, uploadRepository);
         service = new GroupCoverImageService(storageService, uploadRepository,
-                memberRepository, validator, Clock.systemUTC());
+                memberRepository, validator,
+                Clock.fixed(java.time.Instant.parse("2026-01-01T00:00:00Z"), java.time.ZoneOffset.UTC));
     }
 
     @Test
     @DisplayName("커버 업로드 키는 회원 경로로 발급된다")
     void issueUpload_validImage_returnsOwnedKey() {
         // given
-        when(storageService.createPresignedPutUrl(any(), any())).thenReturn(URI.create("https://example.test/upload"));
+        when(storageService.createPresignedPutUrl(any(), any())).thenReturn(new S3StorageService.PresignedUpload(
+                URI.create("https://example.test/upload"), java.time.Instant.parse("2026-01-01T00:07:00Z"),
+                java.util.Map.of("Content-Type", "image/jpeg")));
         when(memberRepository.findById(12L)).thenReturn(Optional.of(Member.builder().build()));
 
         // when
-        GroupCoverImageService.UploadIssue issue = service.issueUpload(12L, "image/jpeg");
+        var issue = service.issueUpload(12L, "image/jpeg");
 
         // then
         assertThat(issue.coverImageKey()).matches("group-covers/12/[0-9a-f-]{36}");
         assertThat(issue.uploadUrl()).isEqualTo("https://example.test/upload");
+        assertThat(issue.requiredHeaders()).containsEntry("Content-Type", "image/jpeg");
+        assertThat(issue.uploadUrlExpiresAt()).isEqualTo(java.time.Instant.parse("2026-01-01T00:07:00Z"));
+    }
+
+    @Test
+    @DisplayName("지원하지 않는 Content-Type은 발급 전에 원인별 오류로 거부한다")
+    void issueUpload_unsupportedContentType_rejectsBeforeSigning() {
+        // when
+        GeneralException exception = assertThrows(GeneralException.class,
+                () -> service.issueUpload(12L, "image/gif"));
+
+        // then
+        assertThat(exception.getCode().getCode()).isEqualTo("GROUP400_6");
+        verify(memberRepository, never()).findById(any());
+        verify(storageService, never()).createPresignedPutUrl(any(), any());
     }
 
     @Test
@@ -117,7 +122,7 @@ class GroupCoverImageServiceTest {
                 () -> validator.verifyOwnedAndExists(12L, key));
 
         // then
-        assertThat(exception.getCode().getCode()).isEqualTo("COMMON400_1");
+        assertThat(exception.getCode().getCode()).isEqualTo("GROUP400_3");
     }
 
     @Test
@@ -127,17 +132,14 @@ class GroupCoverImageServiceTest {
         String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
         when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
                 .thenReturn(Optional.of(issuance(key)));
-        when(s3Client.headObject(any(HeadObjectRequest.class)))
-                .thenReturn(HeadObjectResponse.builder().contentType("image/png").build());
-        ArgumentCaptor<HeadObjectRequest> request = ArgumentCaptor.forClass(HeadObjectRequest.class);
+        when(storageService.getObjectMetadata(key))
+                .thenReturn(Optional.of(new S3StorageService.ObjectMetadata("image/png")));
 
         // when
         validator.verifyOwnedAndExists(12L, key);
 
         // then
-        verify(s3Client).headObject(request.capture());
-        assertThat(request.getValue().bucket()).isEqualTo("test-bucket");
-        assertThat(request.getValue().key()).isEqualTo(key);
+        verify(storageService).getObjectMetadata(key);
     }
 
     @Test
@@ -147,15 +149,15 @@ class GroupCoverImageServiceTest {
         String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
         when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
                 .thenReturn(Optional.of(issuance(key)));
-        when(s3Client.headObject(any(HeadObjectRequest.class)))
-                .thenReturn(HeadObjectResponse.builder().contentType("image/jpeg").build());
+        when(storageService.getObjectMetadata(key))
+                .thenReturn(Optional.of(new S3StorageService.ObjectMetadata("image/jpeg")));
 
         // when
         GeneralException exception = assertThrows(GeneralException.class,
                 () -> validator.verifyOwnedAndExists(12L, key));
 
         // then
-        assertThat(exception.getCode().getCode()).isEqualTo("COMMON400_1");
+        assertThat(exception.getCode().getCode()).isEqualTo("GROUP400_5");
     }
 
     @Test
@@ -165,22 +167,14 @@ class GroupCoverImageServiceTest {
         String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
         when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
                 .thenReturn(Optional.of(issuance(key)));
-        when(s3Client.headObject(any(HeadObjectRequest.class)))
-                .thenThrow(S3Exception.builder().statusCode(404).message("missing").build());
-        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
-                .thenReturn(ListObjectsV2Response.builder().isTruncated(false).build());
-        ArgumentCaptor<ListObjectsV2Request> listRequest = ArgumentCaptor.forClass(ListObjectsV2Request.class);
+        when(storageService.getObjectMetadata(key)).thenReturn(Optional.empty());
 
         // when
         GeneralException exception = assertThrows(GeneralException.class,
                 () -> validator.verifyOwnedAndExists(12L, key));
 
         // then
-        assertThat(exception.getCode().getCode()).isEqualTo("COMMON400_1");
-        verify(s3Client).listObjectsV2(listRequest.capture());
-        assertThat(listRequest.getValue().bucket()).isEqualTo("test-bucket");
-        assertThat(listRequest.getValue().prefix()).isEqualTo(key);
-        assertThat(listRequest.getValue().maxKeys()).isEqualTo(1);
+        assertThat(exception.getCode().getCode()).isEqualTo("GROUP400_4");
     }
 
     @Test
@@ -190,17 +184,14 @@ class GroupCoverImageServiceTest {
         String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
         when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
                 .thenReturn(Optional.of(issuance(key)));
-        when(s3Client.headObject(any(HeadObjectRequest.class)))
-                .thenThrow(NoSuchKeyException.builder().message("missing").build());
-        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
-                .thenReturn(ListObjectsV2Response.builder().isTruncated(false).build());
+        when(storageService.getObjectMetadata(key)).thenReturn(Optional.empty());
 
         // when
         GeneralException exception = assertThrows(GeneralException.class,
                 () -> validator.verifyOwnedAndExists(12L, key));
 
         // then
-        assertThat(exception.getCode().getCode()).isEqualTo("COMMON400_1");
+        assertThat(exception.getCode().getCode()).isEqualTo("GROUP400_4");
     }
 
     @Test
@@ -210,17 +201,14 @@ class GroupCoverImageServiceTest {
         String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
         when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
                 .thenReturn(Optional.of(issuance(key)));
-        when(s3Client.headObject(any(HeadObjectRequest.class)))
-                .thenThrow(S3Exception.builder().statusCode(403).message("access denied").build());
-        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
-                .thenReturn(ListObjectsV2Response.builder().isTruncated(false).build());
+        when(storageService.getObjectMetadata(key)).thenReturn(Optional.empty());
 
         // when
         GeneralException exception = assertThrows(GeneralException.class,
                 () -> validator.verifyOwnedAndExists(12L, key));
 
         // then
-        assertThat(exception.getCode().getCode()).isEqualTo("COMMON400_1");
+        assertThat(exception.getCode().getCode()).isEqualTo("GROUP400_4");
     }
 
     @Test
@@ -230,11 +218,8 @@ class GroupCoverImageServiceTest {
         String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
         when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
                 .thenReturn(Optional.of(issuance(key)));
-        when(s3Client.headObject(any(HeadObjectRequest.class)))
-                .thenThrow(S3Exception.builder().statusCode(403).message("access denied").build());
-        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
-                .thenReturn(ListObjectsV2Response.builder()
-                        .contents(S3Object.builder().key(key).build()).isTruncated(false).build());
+        when(storageService.getObjectMetadata(key)).thenThrow(
+                new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE));
 
         // when
         StorageOperationException exception = assertThrows(StorageOperationException.class,
@@ -251,10 +236,8 @@ class GroupCoverImageServiceTest {
         String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
         when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
                 .thenReturn(Optional.of(issuance(key)));
-        when(s3Client.headObject(any(HeadObjectRequest.class)))
-                .thenThrow(S3Exception.builder().statusCode(403).message("access denied").build());
-        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
-                .thenThrow(S3Exception.builder().statusCode(403).message("list denied").build());
+        when(storageService.getObjectMetadata(key)).thenThrow(
+                new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE));
 
         // when
         StorageOperationException exception = assertThrows(StorageOperationException.class,
@@ -271,10 +254,8 @@ class GroupCoverImageServiceTest {
         String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
         when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
                 .thenReturn(Optional.of(issuance(key)));
-        when(s3Client.headObject(any(HeadObjectRequest.class)))
-                .thenThrow(S3Exception.builder().statusCode(404).message("not found").build());
-        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
-                .thenThrow(NoSuchBucketException.builder().statusCode(404).message("missing bucket").build());
+        when(storageService.getObjectMetadata(key)).thenThrow(
+                new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE));
 
         // when
         StorageOperationException exception = assertThrows(StorageOperationException.class,
@@ -291,12 +272,8 @@ class GroupCoverImageServiceTest {
         String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
         when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
                 .thenReturn(Optional.of(issuance(key)));
-        when(s3Client.headObject(any(HeadObjectRequest.class)))
-                .thenThrow(S3Exception.builder().statusCode(404).message("not found").build());
-        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
-                .thenReturn(ListObjectsV2Response.builder()
-                        .contents(S3Object.builder().key(key + "-suffix").build())
-                        .isTruncated(true).build());
+        when(storageService.getObjectMetadata(key)).thenThrow(
+                new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE));
 
         // when
         StorageOperationException exception = assertThrows(StorageOperationException.class,
@@ -313,8 +290,8 @@ class GroupCoverImageServiceTest {
         String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
         when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
                 .thenReturn(Optional.of(issuance(key)));
-        when(s3Client.headObject(any(HeadObjectRequest.class)))
-                .thenThrow(S3Exception.builder().statusCode(503).message("AWS internal detail").build());
+        when(storageService.getObjectMetadata(key)).thenThrow(
+                new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE));
 
         // when
         StorageOperationException exception = assertThrows(StorageOperationException.class,
@@ -337,8 +314,8 @@ class GroupCoverImageServiceTest {
         String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
         when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
                 .thenReturn(Optional.of(issuance(key)));
-        when(s3Client.headObject(any(HeadObjectRequest.class)))
-                .thenThrow(SdkClientException.builder().message("connection failed").build());
+        when(storageService.getObjectMetadata(key)).thenThrow(
+                new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE));
 
         // when
         StorageOperationException exception = assertThrows(StorageOperationException.class,
@@ -355,8 +332,8 @@ class GroupCoverImageServiceTest {
         String key = "group-covers/12/123e4567-e89b-12d3-a456-426614174000";
         when(uploadRepository.findByObjectKeyAndMemberId(key, 12L))
                 .thenReturn(Optional.of(issuance(key)));
-        when(s3Client.headObject(any(HeadObjectRequest.class)))
-                .thenThrow(NoSuchBucketException.builder().statusCode(404).message("missing bucket").build());
+        when(storageService.getObjectMetadata(key)).thenThrow(
+                new StorageOperationException(StorageErrorCode.STORAGE_UNAVAILABLE));
 
         // when
         StorageOperationException exception = assertThrows(StorageOperationException.class,
@@ -377,7 +354,7 @@ class GroupCoverImageServiceTest {
                 () -> validator.verifyOwnedAndExists(12L, key));
 
         // then
-        assertThat(exception.getCode().getCode()).isEqualTo("COMMON400_1");
+        assertThat(exception.getCode().getCode()).isEqualTo("GROUP400_3");
     }
 
     private GroupCoverUpload issuance(String key) {

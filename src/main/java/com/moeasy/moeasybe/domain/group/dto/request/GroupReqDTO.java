@@ -61,4 +61,9 @@ public final class GroupReqDTO {
             @NotNull Boolean archiveContent
     ) {
     }
+
+    public record CoverImageUploadIssue(
+            @NotBlank String contentType
+    ) {
+    }
 }

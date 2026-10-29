@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.moeasy.moeasybe.domain.group.dto.request.GroupJoinRequestReqDTO;
 import com.moeasy.moeasybe.domain.group.dto.response.GroupJoinRequestResDTO;
 import com.moeasy.moeasybe.domain.group.enums.GroupJoinRequestStatus;
+import com.moeasy.moeasybe.domain.group.service.GroupCoverImageService;
 import com.moeasy.moeasybe.domain.group.service.command.GroupCommandService;
 import com.moeasy.moeasybe.domain.group.service.command.GroupJoinRequestCommandService;
 import com.moeasy.moeasybe.domain.group.service.query.GroupJoinRequestQueryService;
@@ -52,6 +53,7 @@ class GroupJoinRequestControllerTest {
     @Autowired private MockMvc mvc;
     @MockitoBean private GroupCommandService groupCommands;
     @MockitoBean private GroupQueryService groupQueries;
+    @MockitoBean private GroupCoverImageService coverImageService;
     @MockitoBean private GroupJoinRequestCommandService commands;
     @MockitoBean private GroupJoinRequestQueryService queries;
 
@@ -86,7 +88,7 @@ class GroupJoinRequestControllerTest {
                 .content("{\"introduction\":\"소개\",\"memberId\":999}"));
 
         // then
-        result.andExpect(status().isCreated()).andExpect(jsonPath("$.code").value("GROUP201_2"))
+        result.andExpect(status().isCreated()).andExpect(jsonPath("$.code").value("GROUP201_3"))
                 .andExpect(jsonPath("$.result.requestId").value(7)).andExpect(jsonPath("$.result.status").value("PENDING"))
                 .andExpect(jsonPath("$.result.createdAt").exists());
         verify(commands).create(10L, new GroupJoinRequestReqDTO.Create("소개"), 42L);

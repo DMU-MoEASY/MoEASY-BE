@@ -79,17 +79,20 @@ return ResponseEntity.status(MemberSuccessCode.MEMBER_WITHDRAWAL_SUCCESS.getStat
 - PathVariable과 RequestParam 검증이 필요하면 `@Validated`를 사용한다.
 - 형식과 단순 제약은 Request DTO에서 검증한다.
 - DB 조회가 필요한 검증과 비즈니스 규칙은 Service에서 처리한다.
-- `@Valid`와 `@Validated`는 실제 Controller 메서드 파라미터에 작성하고, Docs 인터페이스에는 문서화 어노테이션만 둔다.
+- Docs 인터페이스를 구현하는 Controller에서 메서드 검증을 사용할 때는 `@Positive` 등의 파라미터 제약과 `@Valid`를 인터페이스 메서드에 선언하고 실제 Controller에 `@Validated`를 적용한다. 구현 메서드에서 파라미터 검증 제약을 추가·재정의하면 Bean Validation 상속 규칙과 충돌할 수 있다.
+- 같은 Controller의 생성·조회 등 메서드 검증 계약을 인터페이스에 일관되게 선언한다. 요청 DTO의 필드 제약은 DTO에 두고, `@PathVariable`·`@RequestParam`·`@RequestBody`·`@ModelAttribute` 등의 HTTP 바인딩 어노테이션은 실제 Controller에 둔다.
+- 기존 Controller는 검증 계약 변경이 필요한 범위에서 적용하며, 무관한 Controller의 검증 선언을 일괄 이동하지 않는다.
 - HTTP 요청의 필수 입력 null 방어는 Controller의 validation 단계에서 처리한다.
 
 ## Docs 인터페이스
-Docs 인터페이스에는 Swagger/OpenAPI 문서화만 작성한다.
+Docs 인터페이스에는 Swagger/OpenAPI 문서화와 상속할 메서드 입력 검증 계약을 작성한다.
 
 - `@Tag`
 - `@Operation`
 - `@ApiResponses`
 - `@Parameter`
 - 요청 및 응답 스키마 설명
+- `@Valid`, `@Positive` 등의 메서드 입력 검증 선언 (Validation 절 참고)
 
 Docs와 실제 Controller의 메서드 이름, 매개변수,
 반환 타입은 일치해야 한다.
