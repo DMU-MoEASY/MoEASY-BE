@@ -2,6 +2,9 @@ package com.moeasy.moeasybe.domain.settlement.entity;
 
 import com.moeasy.moeasybe.domain.group.entity.GroupMember;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementItemStatus;
+import com.moeasy.moeasybe.domain.settlement.enums.SettlementStatus;
+import com.moeasy.moeasybe.domain.settlement.exception.SettlementException;
+import com.moeasy.moeasybe.domain.settlement.exception.code.SettlementErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
@@ -70,5 +73,40 @@ public class SettlementItem {
         this.groupMember = groupMember;
         this.amount = amount;
         this.status = SettlementItemStatus.PENDING;
+    }
+
+    /**
+     * 행 잠금을 획득한 서비스가 유효 납부 기록의 최신 합계를 전달해야 한다.
+     * 납부액 자체는 저장하지 않고, 반영 후 누적 납부액을 반환한다.
+     */
+    public long applyPayment(long expectedVersion, long currentPaidAmount, long paymentAmount) {
+        validatePaymentAllowed();
+        if (version != expectedVersion || version == Long.MAX_VALUE) {
+            throw new SettlementException(SettlementErrorCode.ITEM_VERSION_CONFLICT);
+        }
+        if (paymentAmount <= 0 || currentPaidAmount < 0 || currentPaidAmount > amount) {
+            throw new SettlementException(SettlementErrorCode.INVALID_AMOUNT);
+        }
+
+        long remainingAmount = amount - currentPaidAmount;
+        if (paymentAmount > remainingAmount) {
+            throw new SettlementException(SettlementErrorCode.PAYMENT_AMOUNT_EXCEEDS_REMAINING);
+        }
+
+        // 잔액 이하임을 먼저 확인했으므로 합계가 청구액·Long 범위를 넘지 않는다.
+        long paidAmount = currentPaidAmount + paymentAmount;
+        status = paidAmount == amount ? SettlementItemStatus.PAID : SettlementItemStatus.PENDING;
+        version++;
+        return paidAmount;
+    }
+
+    private void validatePaymentAllowed() {
+        if (settlement.getDeletedAt() != null) {
+            throw new SettlementException(SettlementErrorCode.SETTLEMENT_NOT_FOUND);
+        }
+        if (settlement.getStatus() != SettlementStatus.OPEN
+                || (status != SettlementItemStatus.PENDING && status != SettlementItemStatus.PAID)) {
+            throw new SettlementException(SettlementErrorCode.PAYMENT_NOT_ALLOWED);
+        }
     }
 }
