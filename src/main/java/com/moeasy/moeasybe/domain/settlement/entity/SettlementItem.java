@@ -52,6 +52,10 @@ public class SettlementItem {
     @Column(nullable = false, length = 32)
     private SettlementItemStatus status;
 
+    // 납부 변경 시 행 잠금 안에서 명시적으로 증가시킬 업무 버전이다.
+    @Column(nullable = false)
+    private Long version = 0L;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
