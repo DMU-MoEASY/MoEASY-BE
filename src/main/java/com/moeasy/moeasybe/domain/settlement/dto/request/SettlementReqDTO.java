@@ -1,6 +1,6 @@
 package com.moeasy.moeasybe.domain.settlement.dto.request;
 
-import com.moeasy.moeasybe.domain.settlement.dto.deserializer.SettlementDueAtDeserializer;
+import com.moeasy.moeasybe.domain.settlement.dto.deserializer.SettlementDateTimeDeserializer;
 import com.moeasy.moeasybe.domain.settlement.dto.deserializer.SettlementLongDeserializer;
 import com.moeasy.moeasybe.domain.settlement.dto.deserializer.SettlementSplitModeDeserializer;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
@@ -57,7 +57,7 @@ public final class SettlementReqDTO {
             @Schema(description = "정산 설명 (선택 입력)", example = "모임 운영비입니다.")
             String description,
 
-            @JsonDeserialize(using = SettlementDueAtDeserializer.class)
+            @JsonDeserialize(using = SettlementDateTimeDeserializer.class)
             @Schema(description = "납부 기한 (선택 입력, 한국 시간 기준, 연도 1000~9999, 생성 시각 이후)",
                     type = "string", example = "2026-11-01T23:59:59")
             LocalDateTime dueAt,
@@ -119,6 +119,28 @@ public final class SettlementReqDTO {
             @Size(min = 1, message = "회원별 청구액은 한 명 이상 지정해야 합니다.")
             @Schema(description = "CUSTOM에서 필수인 회원별 청구액 목록. EQUAL에서는 생략 또는 null")
             List<@NotNull(message = "회원별 청구액 항목은 비어 있을 수 없습니다.") MemberAmount> memberAmounts
+    ) {
+    }
+
+    @Schema(name = "SettlementRegisterPaymentRequest", description = "모임장·운영진의 수동 납부 등록 요청")
+    public record RegisterPayment(
+            @NotNull(message = "납부 금액은 필수입니다.")
+            @Positive(message = "납부 금액은 양수여야 합니다.")
+            @JsonDeserialize(using = SettlementLongDeserializer.class)
+            @Schema(description = "원 단위 정수 납부액. 현재 남은 청구액 이하", example = "4000")
+            Long amount,
+
+            @NotNull(message = "청구 버전은 필수입니다.")
+            @Min(value = 0, message = "청구 버전은 0 이상이어야 합니다.")
+            @JsonDeserialize(using = SettlementLongDeserializer.class)
+            @Schema(description = "조회한 청구의 현재 버전. 오래된 버전이면 409", example = "0")
+            Long expectedVersion,
+
+            @JsonDeserialize(using = SettlementDateTimeDeserializer.class)
+            @Schema(description = "실제 입금 시각 (선택 입력, 한국 시간, 연도 1000~9999). "
+                    + "미래 시각 불가. 생략·null이면 서비스에서 서버 현재 시각 사용",
+                    type = "string", example = "2026-10-29T14:00:00")
+            LocalDateTime occurredAt
     ) {
     }
 

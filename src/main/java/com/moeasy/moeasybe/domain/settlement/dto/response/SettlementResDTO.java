@@ -15,6 +15,29 @@ public final class SettlementResDTO {
     }
 
     @Builder
+    @Schema(name = "SettlementPaymentRegisteredResponse", description = "납부 등록 결과와 등록 후 청구 현황")
+    public record PaymentRegistered(
+            @Schema(description = "생성한 납부 기록 ID", example = "501")
+            Long paymentId,
+
+            @Schema(description = "납부를 기록한 청구 항목 ID", example = "101")
+            Long settlementItemId,
+
+            @Schema(description = "등록 후 청구 상태 (부분 납부 PENDING, 완납 PAID)", example = "PENDING")
+            SettlementItemStatus status,
+
+            @Schema(description = "등록 후 청구의 유효한 누적 납부액", example = "4000")
+            Long paidAmount,
+
+            @Schema(description = "등록 후 청구의 미납 잔액", example = "6000")
+            Long remainingAmount,
+
+            @Schema(description = "등록 후 청구 버전. 다음 변경 요청의 expectedVersion에 사용", example = "1")
+            Long version
+    ) {
+    }
+
+    @Builder
     @Schema(name = "SettlementPageResponse", description = "정산 목록과 페이지 정보")
     public record Page(
             @Schema(description = "생성 시각 내림차순, 같은 시각에서는 ID 내림차순의 정산 목록")
