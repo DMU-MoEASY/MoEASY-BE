@@ -36,7 +36,7 @@ public class Settlement extends BaseEntity {
     @JoinColumn(name = "group_id", nullable = false)
     private Group group;
 
-    // 일정·회비 규칙 도메인이 구현되기 전까지 ID로 연결하고 DB 외래키를 유지한다.
+    // 일정은 연결 ID로 보관하여 소프트 삭제 후에도 기존 정산 조회 계약을 유지한다.
     @Column(name = "schedule_id")
     private Long scheduleId;
 
