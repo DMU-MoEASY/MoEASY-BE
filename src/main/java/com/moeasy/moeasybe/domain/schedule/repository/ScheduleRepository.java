@@ -1,23 +1,35 @@
 package com.moeasy.moeasybe.domain.schedule.repository;
 
-import lombok.RequiredArgsConstructor;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Repository;
+import com.moeasy.moeasybe.domain.schedule.entity.Schedule;
+import jakarta.persistence.LockModeType;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
 
-@Repository
-@RequiredArgsConstructor
-public class ScheduleRepository {
+import org.springframework.data.repository.query.Param;
 
-    private final JdbcTemplate jdbcTemplate;
+public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
+    boolean existsByIdAndGroupIdAndDeletedAtIsNull(Long scheduleId, Long groupId);
+    Optional<Schedule> findByIdAndDeletedAtIsNull(Long id);
 
-    // TODO: 일정 도메인에서 Schedule 엔티티 구현 시 JpaRepository 기반 조회로 전환하고
-    // 같은 모임 소속·미삭제 일정 조건을 유지한다.
-    public boolean existsByIdAndGroupIdAndDeletedAtIsNull(Long scheduleId, Long groupId) {
-        return Boolean.TRUE.equals(jdbcTemplate.queryForObject("""
-                SELECT EXISTS (
-                    SELECT 1 FROM schedule
-                    WHERE id = ? AND group_id = ? AND deleted_at IS NULL
-                )
-                """, Boolean.class, scheduleId, groupId));
-    }
+    @Query("select s.group.id from Schedule s where s.id = :id and s.deletedAt is null")
+    Optional<Long> findGroupId(@Param("id") Long id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from Schedule s where s.id = :id and s.deletedAt is null")
+    Optional<Schedule> findByIdForUpdate(@Param("id") Long id);
+
+    @Query("""
+            select s from Schedule s where s.group.id = :groupId and s.deletedAt is null
+            and s.startsAt < :to and s.endsAt > :from
+            and (:createdAt is null or s.createdAt < :createdAt or (s.createdAt = :createdAt and s.id < :id))
+            order by s.createdAt desc, s.id desc
+            """)
+    List<Schedule> findWindow(@Param("groupId") Long groupId, @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to, @Param("createdAt") LocalDateTime createdAt,
+            @Param("id") Long id, Pageable pageable);
 }
