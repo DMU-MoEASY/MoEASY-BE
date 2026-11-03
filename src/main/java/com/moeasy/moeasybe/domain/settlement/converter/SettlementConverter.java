@@ -6,8 +6,10 @@ import com.moeasy.moeasybe.domain.settlement.dto.request.SettlementReqDTO;
 import com.moeasy.moeasybe.domain.settlement.dto.response.SettlementResDTO;
 import com.moeasy.moeasybe.domain.settlement.entity.Settlement;
 import com.moeasy.moeasybe.domain.settlement.entity.SettlementItem;
+import com.moeasy.moeasybe.domain.settlement.entity.SettlementPayment;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
 import com.moeasy.moeasybe.domain.settlement.util.SettlementSplitCalculator.Allocation;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import org.springframework.data.domain.Page;
@@ -15,6 +17,28 @@ import org.springframework.data.domain.Page;
 public final class SettlementConverter {
 
     private SettlementConverter() {
+    }
+
+    public static SettlementPayment toPayment(
+            SettlementItem item, long amount, LocalDateTime occurredAt, GroupMember recorder) {
+        return SettlementPayment.builder()
+                .settlementItem(item)
+                .amount(amount)
+                .occurredAt(occurredAt)
+                .recordedByGroupMember(recorder)
+                .build();
+    }
+
+    public static SettlementResDTO.PaymentRegistered toPaymentRegistered(
+            SettlementPayment payment, SettlementItem item, long paidAmount) {
+        return SettlementResDTO.PaymentRegistered.builder()
+                .paymentId(payment.getId())
+                .settlementItemId(item.getId())
+                .status(item.getStatus())
+                .paidAmount(paidAmount)
+                .remainingAmount(item.getAmount() - paidAmount)
+                .version(item.getVersion())
+                .build();
     }
 
     public static SettlementResDTO.Detail toDetail(Settlement settlement, List<SettlementItem> items) {
