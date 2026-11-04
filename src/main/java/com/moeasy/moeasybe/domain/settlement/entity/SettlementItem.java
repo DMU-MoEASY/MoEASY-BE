@@ -80,10 +80,7 @@ public class SettlementItem {
      * 납부액 자체는 저장하지 않고, 반영 후 누적 납부액을 반환한다.
      */
     public long applyPayment(long expectedVersion, long currentPaidAmount, long paymentAmount) {
-        validatePaymentAllowed();
-        if (version != expectedVersion || version == Long.MAX_VALUE) {
-            throw new SettlementException(SettlementErrorCode.ITEM_VERSION_CONFLICT);
-        }
+        validatePaymentChange(expectedVersion);
         if (paymentAmount <= 0 || currentPaidAmount < 0 || currentPaidAmount > amount) {
             throw new SettlementException(SettlementErrorCode.INVALID_AMOUNT);
         }
@@ -100,13 +97,33 @@ public class SettlementItem {
         return paidAmount;
     }
 
-    private void validatePaymentAllowed() {
+    /**
+     * 행 잠금 안에서 취소 전 유효 납부 합계와 취소할 기록의 원본 금액을 전달해야 한다.
+     * 납부 기록 자체의 취소와 이 변경은 서비스의 같은 트랜잭션에서 처리한다.
+     */
+    public long cancelPayment(long expectedVersion, long currentPaidAmount, long paymentAmount) {
+        validatePaymentChange(expectedVersion);
+        if (paymentAmount <= 0 || currentPaidAmount < 0 || currentPaidAmount > amount
+                || paymentAmount > currentPaidAmount) {
+            throw new SettlementException(SettlementErrorCode.INVALID_AMOUNT);
+        }
+
+        long paidAmount = currentPaidAmount - paymentAmount;
+        status = SettlementItemStatus.PENDING;
+        version++;
+        return paidAmount;
+    }
+
+    private void validatePaymentChange(long expectedVersion) {
         if (settlement.getDeletedAt() != null) {
             throw new SettlementException(SettlementErrorCode.SETTLEMENT_NOT_FOUND);
         }
         if (settlement.getStatus() != SettlementStatus.OPEN
                 || (status != SettlementItemStatus.PENDING && status != SettlementItemStatus.PAID)) {
             throw new SettlementException(SettlementErrorCode.PAYMENT_NOT_ALLOWED);
+        }
+        if (version != expectedVersion || version == Long.MAX_VALUE) {
+            throw new SettlementException(SettlementErrorCode.ITEM_VERSION_CONFLICT);
         }
     }
 }

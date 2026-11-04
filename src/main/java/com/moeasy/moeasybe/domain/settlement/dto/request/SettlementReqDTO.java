@@ -144,7 +144,7 @@ public final class SettlementReqDTO {
     ) {
     }
 
-    @Schema(name = "SettlementCancelPaymentRequest", description = "모임장·운영진의 수동 납부 기록 취소 요청")
+    @Schema(name = "SettlementCancelPaymentRequest", description = "모임장·운영진의 납부 기록 취소 요청")
     public record CancelPayment(
             @NotNull(message = "청구 버전은 필수입니다.")
             @Min(value = 0, message = "청구 버전은 0 이상이어야 합니다.")

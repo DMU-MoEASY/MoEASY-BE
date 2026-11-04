@@ -166,6 +166,61 @@ class SettlementItemTest {
         assertUnchanged(item, exception, SettlementErrorCode.SETTLEMENT_NOT_FOUND);
     }
 
+    @ParameterizedTest
+    @CsvSource({"10000, 4000, 6000", "6000, 4000, 2000", "4000, 4000, 0"})
+    @DisplayName("완납·부분 납부에서 기록을 취소하면 남은 납부액과 미납 상태·버전을 갱신한다")
+    void cancelPayment_validAmount_updatesPaidAmountAndVersion(long currentPaid, long cancelled, long expectedPaid) {
+        // given
+        SettlementItem item = createItem(10000L);
+        item.applyPayment(0L, 0L, currentPaid);
+
+        // when
+        long paidAmount = item.cancelPayment(1L, currentPaid, cancelled);
+
+        // then
+        assertAll(
+                () -> assertEquals(expectedPaid, paidAmount),
+                () -> assertEquals(SettlementItemStatus.PENDING, item.getStatus()),
+                () -> assertEquals(2L, item.getVersion()),
+                () -> assertEquals(10000L, item.getAmount()),
+                () -> assertEquals(SettlementStatus.OPEN, item.getSettlement().getStatus())
+        );
+    }
+
+    @ParameterizedTest
+    @CsvSource({"4000, 0", "4000, 4001", "10001, 4000"})
+    @DisplayName("0원 취소·납부 합계 초과 취소·청구액을 넘는 기존 합계는 상태 변경 없이 거부한다")
+    void cancelPayment_invalidAmount_rejectsWithoutMutation(long currentPaid, long cancelled) {
+        // given
+        SettlementItem item = createItem(10000L);
+
+        // when
+        SettlementException exception = assertThrows(SettlementException.class,
+                () -> item.cancelPayment(0L, currentPaid, cancelled));
+
+        // then
+        assertUnchanged(item, exception, SettlementErrorCode.INVALID_AMOUNT);
+    }
+
+    @Test
+    @DisplayName("취소도 현재 청구 버전이 아니면 기존 완납 상태와 버전을 유지한다")
+    void cancelPayment_staleVersion_rejectsWithoutMutation() {
+        // given
+        SettlementItem item = createItem(10000L);
+        item.applyPayment(0L, 0L, 10000L);
+
+        // when
+        SettlementException exception = assertThrows(SettlementException.class,
+                () -> item.cancelPayment(0L, 10000L, 4000L));
+
+        // then
+        assertAll(
+                () -> assertEquals(SettlementErrorCode.ITEM_VERSION_CONFLICT, exception.getCode()),
+                () -> assertEquals(SettlementItemStatus.PAID, item.getStatus()),
+                () -> assertEquals(1L, item.getVersion())
+        );
+    }
+
     private SettlementItem createItem(long amount) {
         Settlement settlement = Settlement.builder().title("회비").totalAmount(amount)
                 .splitMode(SettlementSplitMode.EQUAL).dueAt(LocalDateTime.of(2000, 1, 1, 0, 0)).build();

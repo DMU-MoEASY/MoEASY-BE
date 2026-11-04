@@ -4,6 +4,8 @@ import com.moeasy.moeasybe.domain.group.entity.GroupMember;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementPaymentSource;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementPaymentStatus;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementPaymentType;
+import com.moeasy.moeasybe.domain.settlement.exception.SettlementException;
+import com.moeasy.moeasybe.domain.settlement.exception.code.SettlementErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
@@ -17,6 +19,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -95,5 +98,22 @@ public class SettlementPayment {
         this.paymentType = SettlementPaymentType.PAYMENT;
         this.status = SettlementPaymentStatus.COMPLETED;
         this.source = SettlementPaymentSource.MANUAL;
+    }
+
+    public void cancel(GroupMember cancelledBy, LocalDateTime cancelledAt, String reason) {
+        if (paymentType != SettlementPaymentType.PAYMENT || status != SettlementPaymentStatus.COMPLETED) {
+            throw new SettlementException(SettlementErrorCode.PAYMENT_CANCELLATION_NOT_ALLOWED);
+        }
+        Objects.requireNonNull(cancelledBy, "취소자는 필수입니다.");
+        Objects.requireNonNull(cancelledAt, "취소 시각은 필수입니다.");
+        String normalizedReason = reason == null ? null : reason.trim();
+        if (normalizedReason == null || normalizedReason.isBlank() || normalizedReason.length() > 255) {
+            throw new IllegalArgumentException("취소 사유는 공백이 아닌 1~255자여야 합니다.");
+        }
+
+        this.status = SettlementPaymentStatus.CANCELLED;
+        this.cancelledByGroupMember = cancelledBy;
+        this.cancelledAt = cancelledAt;
+        this.cancelReason = normalizedReason;
     }
 }

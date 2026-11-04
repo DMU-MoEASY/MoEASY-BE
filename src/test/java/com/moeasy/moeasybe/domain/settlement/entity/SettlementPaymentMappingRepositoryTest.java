@@ -20,6 +20,8 @@ import com.moeasy.moeasybe.domain.settlement.enums.SettlementPaymentSource;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementPaymentStatus;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementPaymentType;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
+import com.moeasy.moeasybe.domain.settlement.exception.SettlementException;
+import com.moeasy.moeasybe.domain.settlement.exception.code.SettlementErrorCode;
 import jakarta.persistence.EntityManager;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -27,6 +29,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -81,13 +84,17 @@ class SettlementPaymentMappingRepositoryTest {
         );
     }
 
-    @Test
-    @DisplayName("취소 감사 정보는 원본 납부와 별도로 저장되고 등록 금액·입금 시각은 유지된다")
-    void find_cancelledPayment_preservesOriginalAndCancellationAudit() {
+    @ParameterizedTest
+    @EnumSource(SettlementPaymentSource.class)
+    @DisplayName("수동·은행 납부 모두 취소 감사 정보를 기록하고 원본 정보와 출처를 보존한다")
+    void find_cancelledPayment_preservesOriginalAndCancellationAudit(SettlementPaymentSource source) {
         // given
         Fixture fixture = persistFixture();
         SettlementPayment payment = persistPayment(fixture);
+        jdbcTemplate.update("UPDATE settlement_payment SET source = ? WHERE id = ?", source.name(), payment.getId());
         LocalDateTime cancelledAt = LocalDateTime.of(2026, 10, 29, 15, 0, 0, 654321000);
+        entityManager.refresh(payment);
+        LocalDateTime createdAt = payment.getCreatedAt();
         setCancellationFixture(payment, fixture.operator(), cancelledAt);
         entityManager.clear();
 
@@ -97,11 +104,13 @@ class SettlementPaymentMappingRepositoryTest {
         // then
         assertAll(
                 () -> assertEquals(SettlementPaymentStatus.CANCELLED, reloaded.getStatus()),
+                () -> assertEquals(source, reloaded.getSource()),
                 () -> assertEquals(fixture.operator().getId(), reloaded.getCancelledByGroupMember().getId()),
                 () -> assertEquals(cancelledAt, reloaded.getCancelledAt()),
                 () -> assertEquals("중복 입력 정정", reloaded.getCancelReason()),
                 () -> assertEquals(4000L, reloaded.getAmount()),
                 () -> assertEquals(OCCURRED_AT, reloaded.getOccurredAt()),
+                () -> assertEquals(createdAt, reloaded.getCreatedAt()),
                 () -> assertEquals(fixture.operator().getId(), reloaded.getRecordedByGroupMember().getId())
         );
     }
@@ -270,20 +279,39 @@ class SettlementPaymentMappingRepositoryTest {
         assertTrue(exception.getMostSpecificCause().getMessage().contains("ck_settlement_item_version"));
     }
 
+    @ParameterizedTest
+    @CsvSource({"REFUND, COMPLETED, MANUAL", "PAYMENT, PENDING, BANK"})
+    @DisplayName("출처와 관계없이 환불·미완료 기록은 납부 취소로 변경할 수 없다")
+    void cancel_unsupportedPayment_rejectsWithoutMutation(String type, String status, String source) {
+        // given
+        Fixture fixture = persistFixture();
+        SettlementPayment payment = persistPayment(fixture);
+        jdbcTemplate.update("""
+                UPDATE settlement_payment SET payment_type = ?, status = ?, source = ? WHERE id = ?
+                """, type, status, source, payment.getId());
+        entityManager.clear();
+        SettlementPayment reloaded = entityManager.find(SettlementPayment.class, payment.getId());
+
+        // when
+        SettlementException exception = assertThrows(SettlementException.class,
+                () -> reloaded.cancel(fixture.operator(), OCCURRED_AT.plusHours(1), "오등록"));
+
+        // then
+        entityManager.flush();
+        entityManager.clear();
+        SettlementPayment unchanged = entityManager.find(SettlementPayment.class, payment.getId());
+        assertAll(
+                () -> assertEquals(SettlementErrorCode.PAYMENT_CANCELLATION_NOT_ALLOWED, exception.getCode()),
+                () -> assertEquals(SettlementPaymentStatus.valueOf(status), unchanged.getStatus()),
+                () -> assertNull(unchanged.getCancelledAt()),
+                () -> assertNull(unchanged.getCancelledByGroupMember()),
+                () -> assertNull(unchanged.getCancelReason())
+        );
+    }
+
     private void setCancellationFixture(SettlementPayment payment, GroupMember operator, LocalDateTime cancelledAt) {
-        // 취소 기능 도입 전 매핑을 검증하는 픽스처다. 날짜는 JPA 바인딩으로 저장한다.
-        entityManager.createQuery("""
-                update SettlementPayment p
-                set p.status = :status, p.cancelledByGroupMember = :operator,
-                    p.cancelledAt = :cancelledAt, p.cancelReason = :reason
-                where p.id = :id
-                """)
-                .setParameter("status", SettlementPaymentStatus.CANCELLED)
-                .setParameter("operator", operator)
-                .setParameter("cancelledAt", cancelledAt)
-                .setParameter("reason", "중복 입력 정정")
-                .setParameter("id", payment.getId())
-                .executeUpdate();
+        payment.cancel(operator, cancelledAt, "중복 입력 정정");
+        entityManager.flush();
     }
 
     private SettlementPayment buildPayment(Fixture fixture, long amount) {
