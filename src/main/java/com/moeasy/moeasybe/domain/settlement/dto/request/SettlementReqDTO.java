@@ -22,6 +22,23 @@ public final class SettlementReqDTO {
     private SettlementReqDTO() {
     }
 
+    @Schema(name = "SettlementPaymentSearchRequest", description = "청구별 납부 이력 조회 조건")
+    public record PaymentSearch(
+            @Min(value = 0, message = "페이지 번호는 0 이상이어야 합니다.")
+            @Schema(description = "0부터 시작하는 페이지 번호", defaultValue = "0", example = "0")
+            Integer page,
+
+            @Min(value = 1, message = "페이지 크기는 1 이상이어야 합니다.")
+            @Max(value = 100, message = "페이지 크기는 100 이하여야 합니다.")
+            @Schema(description = "페이지 크기 (1~100)", defaultValue = "20", example = "20")
+            Integer size
+    ) {
+        public PaymentSearch {
+            page = page == null ? 0 : page;
+            size = size == null ? 20 : size;
+        }
+    }
+
     @Schema(name = "SettlementSearchRequest", description = "정산 목록 조회 조건")
     public record Search(
             @Min(value = 0, message = "페이지 번호는 0 이상이어야 합니다.")

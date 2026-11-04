@@ -2,6 +2,9 @@ package com.moeasy.moeasybe.domain.settlement.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementItemStatus;
+import com.moeasy.moeasybe.domain.settlement.enums.SettlementPaymentSource;
+import com.moeasy.moeasybe.domain.settlement.enums.SettlementPaymentStatus;
+import com.moeasy.moeasybe.domain.settlement.enums.SettlementPaymentType;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -12,6 +15,87 @@ import lombok.Builder;
 public final class SettlementResDTO {
 
     private SettlementResDTO() {
+    }
+
+    @Builder
+    @Schema(name = "SettlementPaymentPageResponse", description = "청구별 납부 이력과 페이지 정보")
+    public record PaymentPage(
+            @Schema(description = "생성 시각 내림차순, 같은 시각에서는 납부 기록 ID 내림차순의 이력. 취소 기록 포함")
+            List<PaymentHistory> items,
+
+            @Schema(description = "0부터 시작하는 현재 페이지 번호", example = "0")
+            int page,
+
+            @Schema(description = "요청한 페이지 크기", example = "20")
+            int size,
+
+            @Schema(description = "청구에 속한 전체 납부 기록 수 (취소 기록 포함)", example = "2")
+            long totalElements,
+
+            @Schema(description = "전체 페이지 수", example = "1")
+            int totalPages,
+
+            @Schema(description = "다음 페이지 존재 여부", example = "false")
+            boolean hasNext
+    ) {
+    }
+
+    @Builder
+    @Schema(name = "SettlementPaymentHistory", description = "청구별 납부 기록과 취소 감사 정보")
+    public record PaymentHistory(
+            @Schema(description = "납부 기록 ID", example = "501")
+            Long paymentId,
+
+            @Schema(description = "납부 기록이 속한 청구 항목 ID", example = "101")
+            Long settlementItemId,
+
+            @Schema(description = "기록 종류", example = "PAYMENT")
+            SettlementPaymentType paymentType,
+
+            @Schema(description = "기록 출처", example = "MANUAL")
+            SettlementPaymentSource source,
+
+            @Schema(description = "납부 기록 자체의 상태. 청구 상태와 구분", example = "CANCELLED")
+            SettlementPaymentStatus status,
+
+            @Schema(description = "원 단위 원본 기록 금액. 취소 후에도 보존", example = "4000")
+            Long amount,
+
+            @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss")
+            @Schema(description = "실제 입금 시각 (한국 시간, 기존 데이터에서 알 수 없으면 null)",
+                    type = "string", example = "2026-10-29T14:00:00")
+            LocalDateTime occurredAt,
+
+            @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss")
+            @Schema(description = "기록 생성 시각 (한국 시간)", type = "string", example = "2026-10-29T14:05:00")
+            LocalDateTime createdAt,
+
+            @Schema(description = "등록자. 기존 데이터에서 알 수 없거나 시스템 처리 기록이면 null")
+            PaymentActor recordedBy,
+
+            @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss")
+            @Schema(description = "취소 시각 (한국 시간, 취소되지 않았거나 기존 감사 정보가 없으면 null)",
+                    type = "string", example = "2026-10-29T15:00:00")
+            LocalDateTime cancelledAt,
+
+            @Schema(description = "취소자. 취소되지 않았거나 기존 감사 정보가 없으면 null")
+            PaymentActor cancelledBy,
+
+            @Schema(description = "취소 사유. 취소되지 않았거나 기존 감사 정보가 없으면 null",
+                    example = "다른 회원의 입금을 잘못 등록했습니다.")
+            String cancelReason
+    ) {
+    }
+
+    @Builder
+    @Schema(name = "SettlementPaymentActor", description = "납부 기록 등록자 또는 취소자")
+    public record PaymentActor(
+            @Schema(description = "모임 회원 ID (group_member.id)", example = "11")
+            Long groupMemberId,
+
+            @Schema(description = "연결된 회원에 저장된 현재 닉네임. 탈퇴·계정 삭제 후에도 표시", example = "정규")
+            String nickname
+    ) {
     }
 
     @Builder
