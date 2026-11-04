@@ -13,6 +13,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface SettlementItemRepository extends JpaRepository<SettlementItem, Long> {
 
+    boolean existsByIdAndSettlementId(Long itemId, Long settlementId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select i from SettlementItem i where i.id = :itemId and i.settlement.id = :settlementId")
     Optional<SettlementItem> findByIdAndSettlementIdForUpdate(

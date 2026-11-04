@@ -16,6 +16,7 @@ import com.moeasy.moeasybe.domain.settlement.entity.SettlementItem;
 import com.moeasy.moeasybe.domain.settlement.exception.SettlementException;
 import com.moeasy.moeasybe.domain.settlement.exception.code.SettlementErrorCode;
 import com.moeasy.moeasybe.domain.settlement.repository.SettlementItemRepository;
+import com.moeasy.moeasybe.domain.settlement.repository.SettlementPaymentRepository;
 import com.moeasy.moeasybe.domain.settlement.repository.SettlementRepository;
 import com.moeasy.moeasybe.domain.settlement.service.support.SettlementTargetFinder;
 import com.moeasy.moeasybe.domain.settlement.util.SettlementSplitCalculator;
@@ -40,8 +41,35 @@ public class SettlementQueryService {
     private final GroupMemberRepository groupMemberRepository;
     private final SettlementRepository settlementRepository;
     private final SettlementItemRepository settlementItemRepository;
+    private final SettlementPaymentRepository settlementPaymentRepository;
     private final SettlementSplitCalculator splitCalculator;
     private final SettlementTargetFinder targetFinder;
+
+    @Transactional(readOnly = true)
+    public SettlementResDTO.PaymentPage getPaymentHistory(
+            Long groupId, Long settlementId, Long settlementItemId,
+            SettlementReqDTO.PaymentSearch request, Long memberId) {
+        if (groupId == null || settlementId == null || settlementItemId == null
+                || request == null || memberId == null) {
+            throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
+        }
+        if ((long) request.page() * request.size() > Integer.MAX_VALUE) {
+            throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
+        }
+        groupRepository.findById(groupId)
+                .orElseThrow(() -> new GroupException(GroupErrorCode.GROUP_NOT_FOUND));
+        requireMember(groupId, memberId);
+        settlementRepository.findByIdAndGroupIdAndDeletedAtIsNull(settlementId, groupId)
+                .orElseThrow(() -> new SettlementException(SettlementErrorCode.SETTLEMENT_NOT_FOUND));
+        if (!settlementItemRepository.existsByIdAndSettlementId(settlementItemId, settlementId)) {
+            throw new SettlementException(SettlementErrorCode.ITEM_NOT_FOUND);
+        }
+
+        PageRequest pageable = PageRequest.of(request.page(), request.size(),
+                Sort.by(Sort.Direction.DESC, "createdAt", "id"));
+        return SettlementConverter.toPaymentPage(
+                settlementPaymentRepository.findAllBySettlementItemId(settlementItemId, pageable));
+    }
 
     @Transactional(readOnly = true)
     public SettlementResDTO.Detail getSettlement(Long groupId, Long settlementId, Long memberId) {

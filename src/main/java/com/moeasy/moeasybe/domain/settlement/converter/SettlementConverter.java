@@ -19,6 +19,44 @@ public final class SettlementConverter {
     private SettlementConverter() {
     }
 
+    public static SettlementResDTO.PaymentPage toPaymentPage(Page<SettlementPayment> payments) {
+        return SettlementResDTO.PaymentPage.builder()
+                .items(payments.getContent().stream().map(SettlementConverter::toPaymentHistory).toList())
+                .page(payments.getNumber())
+                .size(payments.getSize())
+                .totalElements(payments.getTotalElements())
+                .totalPages(payments.getTotalPages())
+                .hasNext(payments.hasNext())
+                .build();
+    }
+
+    public static SettlementResDTO.PaymentHistory toPaymentHistory(SettlementPayment payment) {
+        return SettlementResDTO.PaymentHistory.builder()
+                .paymentId(payment.getId())
+                .settlementItemId(payment.getSettlementItem().getId())
+                .paymentType(payment.getPaymentType())
+                .source(payment.getSource())
+                .status(payment.getStatus())
+                .amount(payment.getAmount())
+                .occurredAt(payment.getOccurredAt())
+                .createdAt(payment.getCreatedAt())
+                .recordedBy(toPaymentActor(payment.getRecordedByGroupMember()))
+                .cancelledAt(payment.getCancelledAt())
+                .cancelledBy(toPaymentActor(payment.getCancelledByGroupMember()))
+                .cancelReason(payment.getCancelReason())
+                .build();
+    }
+
+    public static SettlementResDTO.PaymentActor toPaymentActor(GroupMember actor) {
+        if (actor == null) {
+            return null;
+        }
+        return SettlementResDTO.PaymentActor.builder()
+                .groupMemberId(actor.getId())
+                .nickname(actor.getMember().getNickname())
+                .build();
+    }
+
     public static SettlementPayment toPayment(
             SettlementItem item, long amount, LocalDateTime occurredAt, GroupMember recorder) {
         return SettlementPayment.builder()

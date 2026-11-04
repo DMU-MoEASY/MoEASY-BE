@@ -15,6 +15,7 @@ import com.moeasy.moeasybe.domain.group.repository.GroupMemberRepository;
 import com.moeasy.moeasybe.domain.group.repository.GroupRepository;
 import com.moeasy.moeasybe.domain.settlement.dto.request.SettlementReqDTO;
 import com.moeasy.moeasybe.domain.settlement.repository.SettlementItemRepository;
+import com.moeasy.moeasybe.domain.settlement.repository.SettlementPaymentRepository;
 import com.moeasy.moeasybe.domain.settlement.repository.SettlementRepository;
 import com.moeasy.moeasybe.domain.settlement.service.support.SettlementTargetFinder;
 import com.moeasy.moeasybe.domain.settlement.util.SettlementSplitCalculator;
@@ -23,6 +24,7 @@ import com.moeasy.moeasybe.global.apiPayload.exception.GeneralException;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -42,14 +44,31 @@ class SettlementQueryServiceTest {
     @Mock private GroupMemberRepository groupMemberRepository;
     @Mock private SettlementRepository settlementRepository;
     @Mock private SettlementItemRepository settlementItemRepository;
+    @Mock private SettlementPaymentRepository settlementPaymentRepository;
 
     private SettlementQueryService service;
 
     @BeforeEach
     void setUp() {
         service = new SettlementQueryService(groupRepository, groupMemberRepository,
-                settlementRepository, settlementItemRepository, new SettlementSplitCalculator(),
-                new SettlementTargetFinder(groupMemberRepository));
+                settlementRepository, settlementItemRepository, settlementPaymentRepository,
+                new SettlementSplitCalculator(), new SettlementTargetFinder(groupMemberRepository));
+    }
+
+    @Test
+    @DisplayName("납부 이력의 offset이 int 범위를 넘으면 DB 조회 전에 거부한다")
+    void getPaymentHistory_offsetExceedsIntegerRange_rejectsBeforeQuery() {
+        // given
+        var request = new SettlementReqDTO.PaymentSearch(Integer.MAX_VALUE, 100);
+
+        // when
+        GeneralException exception = assertThrows(GeneralException.class,
+                () -> service.getPaymentHistory(GROUP_ID, 31L, 101L, request, MEMBER_ID));
+
+        // then
+        assertEquals(GeneralErrorCode.BAD_REQUEST, exception.getCode());
+        verifyNoInteractions(groupRepository, groupMemberRepository,
+                settlementRepository, settlementItemRepository, settlementPaymentRepository);
     }
 
     @ParameterizedTest
