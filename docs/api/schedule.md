@@ -133,3 +133,7 @@ status, createdAt, updatedAt
 ScheduleApiIntegrationTest는 HTTP·권한·경계·정산 보존을,
 ScheduleConcurrencyIntegrationTest는 실제 별도 트랜잭션의 경합을,
 ScheduleMigrationIntegrationTest는 MySQL 기존 행 상태 이행과 CHECK 제약을 검증한다.
+
+## 가용시간 투표
+
+기존 일정에 연결하는 투표 9개 API·추천·확정·복원·실시간 계약과 API별 코드 읽기 순서는 [availability.md](availability.md)를 참고한다.

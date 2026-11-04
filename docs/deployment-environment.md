@@ -43,3 +43,11 @@ The current image workflow uses the built-in `GITHUB_TOKEN` for GHCR. The develo
 - `DISCORD_WEBHOOK` is optional and is used only for test-failure notifications.
 
 Non-sensitive values such as `AWS_REGION`, `AWS_S3_BUCKET`, `EC2_APP_DIR`, and the image name may be deployment configuration. The bucket baseline script configures an existing bucket but does not create or delete AWS resources, and the repository does not automatically apply IAM policies.
+
+## 가용시간 투표 실시간 연결
+
+가용시간 투표는 `/ws/schedules/{scheduleId}/availability`의 WebSocket Upgrade 전달이 필요하다.
+기존 CORS 허용 Origin과 JWT 쿠키를 사용하며 Redis `moeasy:availability:changed` Pub/Sub으로 인스턴스 간 변경을 전달한다.
+자동 마감·권한 재검사의 기본 주기는 1초다. `availability.close-delay-ms`, `availability.socket-check-ms`로 조정할 수 있다.
+프록시 유휴 제한과 재연결·60초 REST 재동기화, 기존 투표가 있는 환경의 마이그레이션 중단 조건은
+[가용시간 투표 운영 문서](api/availability.md)를 확인한다.

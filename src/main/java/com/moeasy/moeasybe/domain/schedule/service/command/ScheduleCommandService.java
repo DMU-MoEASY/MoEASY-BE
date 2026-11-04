@@ -25,6 +25,7 @@ public class ScheduleCommandService {
     private final ScheduleAccess access;
     private final ScheduleInput input;
     private final Clock clock;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
     @Transactional
     public ScheduleResDTO.Created createSchedule(Long groupId, ScheduleReqDTO.Create request, Long memberId) {
@@ -43,6 +44,7 @@ public class ScheduleCommandService {
         s.update(r.title(), r.description(), r.startsAt(), r.endsAt(), r.locationName(), r.locationAddress(),
                 r.latitude(), r.longitude(), r.placeProvider(), r.placeId());
         schedules.flush();
+        changed(s, "SCHEDULE_CHANGED");
         return ScheduleConverter.toDetail(s);
     }
 
@@ -51,11 +53,18 @@ public class ScheduleCommandService {
         Schedule s = lock(id, memberId, false);
         requireEditable(s, now());
         s.cancel();
+        changed(s, "SCHEDULE_CANCELLED");
     }
 
     @Transactional
     public void deleteSchedule(Long id, Long memberId) {
-        lock(id, memberId, true).softDelete(now());
+        Schedule s = lock(id, memberId, true);
+        s.softDelete(now());
+        changed(s, "SCHEDULE_DELETED");
+    }
+
+    private void changed(Schedule s, String type) {
+        events.publishEvent(new com.moeasy.moeasybe.domain.schedule.realtime.AvailabilityChanged(s.getGroup().getId(), s.getId(), type));
     }
 
     private Schedule lock(Long id, Long memberId, boolean ownerOnly) {

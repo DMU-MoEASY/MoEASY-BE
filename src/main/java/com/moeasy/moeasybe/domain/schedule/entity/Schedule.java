@@ -58,6 +58,9 @@ public class Schedule extends BaseEntity {
     @Column(nullable = false, length = 32)
     private ScheduleStatus status;
 
+    @Column(name = "time_revision", nullable = false)
+    private long timeRevision;
+
     @Builder
     private Schedule(Group group, String title, String description, LocalDateTime startsAt, LocalDateTime endsAt,
             String locationName, String locationAddress, BigDecimal latitude, BigDecimal longitude,
@@ -81,14 +84,19 @@ public class Schedule extends BaseEntity {
             PlaceProvider placeProvider, String placeId) {
         this.title = title;
         this.description = description;
-        this.startsAt = startsAt;
-        this.endsAt = endsAt;
+        reschedule(startsAt, endsAt);
         this.locationName = locationName;
         this.locationAddress = locationAddress;
         this.latitude = latitude;
         this.longitude = longitude;
         this.placeProvider = placeProvider;
         this.placeId = placeId;
+    }
+
+    public void reschedule(LocalDateTime start, LocalDateTime end) {
+        if (!java.util.Objects.equals(startsAt, start) || !java.util.Objects.equals(endsAt, end)) timeRevision++;
+        startsAt = start;
+        endsAt = end;
     }
 
     public void cancel() { this.status = ScheduleStatus.CANCELLED; }
