@@ -30,13 +30,13 @@
 | 납부 기록 취소 엔드포인트·Swagger | 구현됨 | JWT·CSRF 검증, 경로·DTO 검증, HTTP 200 취소 후 청구 현황과 400·401·403·404·409 응답 |
 | 납부 이력 조회 요청·응답 DTO·성공 코드 | 구현됨 | 페이지 기본값·범위 검증, 등록자·취소 감사 정보를 포함한 페이지 응답 |
 | 납부 이력 조회 Repository·Service·Converter | 구현됨 | 활성 회원 권한·모임/정산/청구 소속 검증, 취소 기록을 포함한 페이지 조회와 등록자·취소자 정보 로딩 |
-| 납부 이력 조회 엔드포인트·Swagger | 계약 정의됨·미구현 | [납부 기록 및 현황 관리](#납부-기록-및-현황-관리). 취소 기록을 포함한 청구별 납부 이력 |
+| 납부 이력 조회 엔드포인트·Swagger | 구현됨 | JWT 인증·경로/페이지 검증, HTTP 200 이력 페이지와 400·401·403·404 응답 |
 | 정산 목록·상세의 납부 현황 | 계약 정의됨·미구현 | 납부액·잔액·완납/미납 인원수와 상세 청구 버전 추가 |
 | 환불·영수증 관리·정산 수정·취소·마감 | 미구현 | [후속 기능](#후속-기능) 참고 |
 
 정산 생성·분할 미리보기·조회는 [Issue #20](https://github.com/DMU-MoEASY/MoEASY-BE/issues/20)의 범위다. 모임 회원 목록 조회는 프론트의 대상 선택 연동에 필요한 별도 API이며 `group` 도메인에서 제공한다. 정산 생성 API는 대상 ID로 직접 소속·상태를 검증하므로 회원 목록 조회 API의 구현에 의존하지 않는다. 미구현 API는 현재 호출할 수 없다.
 
-납부 기록 등록·취소·이력 조회와 기존 조회 응답의 납부 현황 확장은 [Issue #26](https://github.com/DMU-MoEASY/MoEASY-BE/issues/26)의 범위다. 납부 등록·취소 API는 호출할 수 있다. 이력 조회는 DTO·성공 코드·Repository·QueryService·Converter까지 구현되어 있으며 엔드포인트가 없어 아직 호출할 수 없다. 기존 목록·상세의 납부 현황 필드는 계약만 정의되어 아직 제공하지 않는다.
+납부 기록 등록·취소·이력 조회와 기존 조회 응답의 납부 현황 확장은 [Issue #26](https://github.com/DMU-MoEASY/MoEASY-BE/issues/26)의 범위다. 납부 등록·취소·이력 조회 API는 호출할 수 있다. 기존 목록·상세의 납부 현황 필드는 계약만 정의되어 아직 제공하지 않는다.
 
 ## 공통 계약
 
@@ -539,7 +539,7 @@ Swagger에서는 인증 쿠키가 있는 상태에서 목록의 `settlementId`�
 
 ## 납부 기록 및 현황 관리
 
-납부 저장 구조·등록/취소 DTO·성공/오류 코드와 등록/취소 Service·Repository·Converter는 구현되어 있다. 두 서비스는 청구 행 잠금·최신 납부 집계·납부 변경과 청구 상태/버전 변경을 하나의 트랜잭션으로 처리한다. 납부 등록·취소 엔드포인트와 Swagger도 구현되어 있다. 이력 조회는 QueryService·Repository·Converter까지 구현되어 있으며 엔드포인트·Swagger와 기존 조회 응답 확장이 남아 있다. 실제 송금은 수행하지 않으며 운영진이 확인한 입금을 기록한다. 기록 취소는 오등록 정정이며 실제 환불이나 송금 취소와 다르다.
+납부 저장 구조·등록/취소 DTO·성공/오류 코드와 등록/취소 Service·Repository·Converter는 구현되어 있다. 두 서비스는 청구 행 잠금·최신 납부 집계·납부 변경과 청구 상태/버전 변경을 하나의 트랜잭션으로 처리한다. 납부 등록·취소·이력 조회 엔드포인트와 Swagger도 구현되어 있다. 기존 정산 목록·상세의 납부 현황 응답 확장이 남아 있다. 실제 송금은 수행하지 않으며 운영진이 확인한 입금을 기록한다. 기록 취소는 오등록 정정이며 실제 환불이나 송금 취소와 다르다.
 
 ### 경로와 식별자
 
@@ -645,7 +645,7 @@ Swagger에서는 인증 쿠키가 있는 상태에서 목록의 `settlementId`�
 
 `SettlementController.registerPayment`가 경로 ID·본문과 JWT principal의 회원 ID를 서비스에 전달한다. 경로 ID의 `@Positive`와 본문의 `@Valid`는 `SettlementControllerDocs`에 선언하고, 바인딩 어노테이션은 실제 Controller에 둔다. 정상 응답의 HTTP 상태·코드·메시지는 `PAYMENT_REGISTERED`에서 가져온다. Swagger는 실제 `ApiResponse<PaymentRegistered>` 스키마, 요청 예시, CSRF 헤더와 201·400·401·403·404·409 응답을 제공한다.
 
-기존 상세 조회는 청구의 `version`·납부액·잔액을 아직 반환하지 않는다. 새로고침 후 최신 납부 현황을 읽는 연동은 아래 조회 응답 확장 구현 후 가능하며, 미구현 이력 경로를 현재 사용할 수 있는 API로 간주하지 않는다.
+기존 상세 조회는 청구의 `version`·납부액·잔액을 아직 반환하지 않는다. 납부 이력 API로 기록의 등록·취소 여부는 확인할 수 있지만, 새로고침 후 최신 청구 버전·누적 납부액·잔액을 읽는 연동은 아래 조회 응답 확장 구현 후 가능하다. 이력의 개수나 가장 최근 기록으로 청구 버전을 추정하지 않는다.
 
 ### 납부 등록 내부 흐름
 
@@ -750,9 +750,9 @@ MySQL 통합 테스트는 수동·은행 납부 취소와 실제 취소자, 폐�
 
 ### 청구별 납부 이력 조회 계약
 
-`SettlementReqDTO.PaymentSearch`와 `SettlementResDTO.PaymentPage`·`PaymentHistory`·`PaymentActor`, 성공 코드 `PAYMENT_HISTORY_FETCHED`, 조회 Repository·QueryService·Converter가 구현되어 있다. Controller·Swagger는 미구현이므로 아직 HTTP로 호출할 수 없다. 기존 모임·정산·청구 없음 및 인증·권한 오류 코드를 재사용한다.
+`SettlementReqDTO.PaymentSearch`와 `SettlementResDTO.PaymentPage`·`PaymentHistory`·`PaymentActor`, 성공 코드 `PAYMENT_HISTORY_FETCHED`, 조회 Repository·QueryService·Converter·Controller·Swagger가 구현되어 HTTP로 호출할 수 있다. 기존 모임·정산·청구 없음 및 인증·권한 오류 코드를 재사용한다.
 
-`PaymentSearch`는 쿼리 파라미터를 받는 DTO로, JSON 본문용 deserializer를 사용하지 않는다. null인 `page`·`size`에만 기본값을 적용하며, 잘못된 형식은 바인딩 오류, 범위를 벗어난 값은 필드 검증 오류로 처리한다. HTTP 바인딩과 DTO 검증은 후속 Controller에서 연결한다. QueryService는 기존 목록과 같이 offset이 `Integer.MAX_VALUE`를 넘으면 `COMMON400_1`로 거부한다.
+`PaymentSearch`는 쿼리 파라미터를 받는 DTO로, JSON 본문용 deserializer를 사용하지 않는다. null인 `page`·`size`에만 기본값을 적용하며, 잘못된 형식은 `COMMON400_1`, 범위를 벗어난 값은 `VALID400_1`과 필드별 메시지를 반환한다. QueryService는 기존 목록과 같이 offset이 `Integer.MAX_VALUE`를 넘으면 `COMMON400_1`로 거부한다.
 
 쿼리는 `page` 기본 0, `size` 기본 20을 사용하며 `page >= 0`, `1 <= size <= 100`을 검증한다. 기존 목록과 동일하게 조회 offset 범위도 검증한다. `createdAt DESC, paymentId DESC` 순으로 조회하며 취소된 기록도 포함한다. 실제 입금 시각의 순서와 등록 순서는 다를 수 있다.
 
@@ -781,6 +781,20 @@ HTTP 200 / `SETTLEMENT200_5`, 메시지 `납부 이력 조회에 성공했습니
 - 표시 이름은 기존 상세 조회처럼 연결된 회원에 저장된 현재 닉네임을 사용한다. 등록자·취소자가 탈퇴하거나 계정이 삭제되어도 기록을 제외하지 않는다.
 - 모든 활성 모임 회원에게 위 이력을 공개하되 은행 API 인증정보·계좌 비밀값·원본 은행 거래 응답은 반환하지 않는다.
 - 기존 데이터에서 입금 시각을 알 수 없으면 `occurredAt`은 null이며, 기존 취소 기록에 감사 정보가 없으면 취소 시각·취소자·사유도 null일 수 있다. 알려지지 않은 정보를 임의로 생성하지 않는다.
+
+#### 납부 이력 조회 호출 방법
+
+```http
+GET /api/v1/groups/1/settlements/31/items/101/payments?page=0&size=20
+```
+
+- 로그인으로 받은 `moeasy_access_token` 쿠키를 포함한다. 프론트에서는 `credentials: 'include'` 또는 Axios의 `withCredentials: true`를 적용한다.
+- `groupId`·`settlementId`·`settlementItemId`는 모두 양수다. 요청 본문은 없으며 `page`·`size`는 쿼리 파라미터로 전달한다. 생략하면 첫 페이지 20개를 조회한다.
+- GET 요청이므로 CSRF 발급·쿠키·헤더가 필요하지 않다. Swagger에서도 로그인 쿠키가 있는 상태로 경로·페이지 조건만 입력하여 실행한다.
+- HTTP 200 / `SETTLEMENT200_5`의 `result.items`와 페이지 정보를 사용한다. 존재하는 청구에 기록이 없으면 빈 페이지, 청구가 없거나 다른 정산에 속하면 404다.
+- 기록의 `status`는 `COMPLETED`·`CANCELLED` 등 납부 기록 상태다. 정산·청구 상태나 최신 청구 버전은 이 응답에 포함하지 않는다.
+
+`SettlementController.getPaymentHistory`는 세 경로 ID·`@ModelAttribute PaymentSearch`·JWT principal을 QueryService에 전달한다. `@Positive`·`@Valid`는 Docs 인터페이스에 선언하고 실제 Controller는 `@Validated`로 검증 계약을 상속한다. Swagger는 실제 `ApiResponse<SettlementResDTO.PaymentPage>` 스키마와 오류 예시를 제공한다. HTTP 통합 테스트로 실제 JWT 필터를 거친 CSRF 없는 일반 회원 조회, 페이지 기본값·취소 감사 응답, 대표 인증·권한·입력·청구 없음 오류와 생성된 명세를 확인한다.
 
 #### 조회 처리 흐름
 
@@ -868,7 +882,7 @@ HTTP 200 / `SETTLEMENT200_5`, 메시지 `납부 이력 조회에 성공했습니
 
 ## 현재 데이터 구조
 
-Flyway 초기 스키마에는 다음 테이블이 존재한다. `Settlement`, `SettlementItem` 엔티티와 분할 방식·상태 Enum, DTO·오류 코드, 금액 계산기, 정산 생성·미리보기·목록·상세 조회 API는 구현되어 있다. `SettlementPayment` 엔티티와 종류·상태·출처 Enum, 납부 등록·취소 API도 구현되어 호출할 수 있다. 납부 이력 조회는 서비스까지 구현되어 엔드포인트·Swagger가 남아 있으며, 영수증 엔티티는 미구현이다.
+Flyway 초기 스키마에는 다음 테이블이 존재한다. `Settlement`, `SettlementItem` 엔티티와 분할 방식·상태 Enum, DTO·오류 코드, 금액 계산기, 정산 생성·미리보기·목록·상세 조회 API는 구현되어 있다. `SettlementPayment` 엔티티와 종류·상태·출처 Enum, 납부 등록·취소·이력 조회 API도 구현되어 호출할 수 있다. 기존 조회의 납부 현황 응답 확장과 영수증 엔티티는 미구현이다.
 
 | 테이블 | 현재 저장 정보 |
 | --- | --- |
@@ -905,7 +919,7 @@ DB는 음수 버전과 양수 `Long` 범위를 벗어난 납부액을 거부한�
 
 아래 기능은 아직 구현되지 않았다. 구현할 때 API 계약과 상태·데이터 구조를 이 문서에 추가한다.
 
-- 납부 기록 등록·부분 납부·오등록 취소·이력·현황: [납부 계약](#납부-기록-및-현황-관리)에 따라 Issue #26에서 구현한다. 등록·취소 API는 구현되었으며 이력·현황 확장이 남아 있다.
+- 납부 기록 등록·부분 납부·오등록 취소·이력·현황: [납부 계약](#납부-기록-및-현황-관리)에 따라 Issue #26에서 구현한다. 등록·취소·이력 조회 API는 구현되었으며 기존 조회의 납부 현황 응답 확장이 남아 있다.
 - 실제 환불과 환불 금액의 집계·청구 상태 반영.
 - 정산 생성 요청의 중복 방지: 요청 식별 방식, 동시 요청·내용 변경·재시도 시 처리와 기존 결과 재응답 계약.
 - 영수증 이미지 업로드·등록·조회·삭제.

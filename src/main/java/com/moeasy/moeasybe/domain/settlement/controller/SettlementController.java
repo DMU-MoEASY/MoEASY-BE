@@ -29,6 +29,21 @@ public class SettlementController implements SettlementControllerDocs {
     private final SettlementQueryService settlementQueryService;
 
     @Override
+    @GetMapping("/groups/{groupId}/settlements/{settlementId}/items/{settlementItemId}/payments")
+    public ResponseEntity<ApiResponse<SettlementResDTO.PaymentPage>> getPaymentHistory(
+            @PathVariable Long groupId,
+            @PathVariable Long settlementId,
+            @PathVariable Long settlementItemId,
+            @ModelAttribute SettlementReqDTO.PaymentSearch request,
+            @AuthenticationPrincipal Long memberId
+    ) {
+        SettlementResDTO.PaymentPage result = settlementQueryService.getPaymentHistory(
+                groupId, settlementId, settlementItemId, request, memberId);
+        return ResponseEntity.status(SettlementSuccessCode.PAYMENT_HISTORY_FETCHED.getStatus())
+                .body(ApiResponse.onSuccess(SettlementSuccessCode.PAYMENT_HISTORY_FETCHED, result));
+    }
+
+    @Override
     @PostMapping("/groups/{groupId}/settlements/{settlementId}/items/{settlementItemId}/payments")
     public ResponseEntity<ApiResponse<SettlementResDTO.PaymentRegistered>> registerPayment(
             @PathVariable Long groupId,

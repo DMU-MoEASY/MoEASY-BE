@@ -511,6 +511,181 @@ class SettlementPaymentApiIntegrationTest {
         }
     }
 
+    @Test
+    @DisplayName("일반 회원은 CSRF 없이 JWT 쿠키로 취소 이력과 페이지 정보를 조회한다")
+    void getPaymentHistory_memberWithoutCsrf_returnsCancelledHistoryPage() throws Exception {
+        // given
+        Long paymentId = preparePayment();
+        SettlementPayment payment = entityManager.find(SettlementPayment.class, paymentId);
+        payment.cancel(owner, LocalDateTime.of(2000, 1, 1, 10, 0), "오등록 정정");
+        payment.getSettlementItem().cancelPayment(2L, 10000L, 4000L);
+        entityManager.createQuery("update SettlementPayment p set p.createdAt = :at where p.settlementItem.id = :itemId")
+                .setParameter("at", LocalDateTime.of(2000, 1, 1, 9, 5)).setParameter("itemId", item.getId())
+                .executeUpdate();
+        entityManager.flush();
+        entityManager.clear();
+        var request = get(path()).cookie(accessCookie(target)).param("page", "1").param("size", "1");
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isOk()).andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.code").value("SETTLEMENT200_5"))
+                .andExpect(jsonPath("$.message").value("납부 이력 조회에 성공했습니다."))
+                .andExpect(jsonPath("$.result.page").value(1))
+                .andExpect(jsonPath("$.result.size").value(1))
+                .andExpect(jsonPath("$.result.totalElements").value(2))
+                .andExpect(jsonPath("$.result.totalPages").value(2))
+                .andExpect(jsonPath("$.result.hasNext").value(false))
+                .andExpect(jsonPath("$.result.items.length()").value(1))
+                .andExpect(jsonPath("$.result.items[0].paymentId").value(paymentId))
+                .andExpect(jsonPath("$.result.items[0].settlementItemId").value(item.getId()))
+                .andExpect(jsonPath("$.result.items[0].paymentType").value("PAYMENT"))
+                .andExpect(jsonPath("$.result.items[0].source").value("MANUAL"))
+                .andExpect(jsonPath("$.result.items[0].status").value("CANCELLED"))
+                .andExpect(jsonPath("$.result.items[0].amount").value(4000))
+                .andExpect(jsonPath("$.result.items[0].occurredAt").value("2000-01-01T09:00:00"))
+                .andExpect(jsonPath("$.result.items[0].createdAt").value("2000-01-01T09:05:00"))
+                .andExpect(jsonPath("$.result.items[0].recordedBy.groupMemberId").value(owner.getId()))
+                .andExpect(jsonPath("$.result.items[0].cancelledBy.groupMemberId").value(owner.getId()))
+                .andExpect(jsonPath("$.result.items[0].cancelledAt").value("2000-01-01T10:00:00"))
+                .andExpect(jsonPath("$.result.items[0].cancelReason").value("오등록 정정"));
+        assertStored("PENDING", 3, 2);
+    }
+
+    @Test
+    @DisplayName("납부 기록이 없으면 생략한 페이지 기본값과 빈 이력을 반환한다")
+    void getPaymentHistory_noPayments_returnsEmptyDefaultPage() throws Exception {
+        // given
+        var request = get(path()).cookie(accessCookie(target));
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isOk()).andExpect(jsonPath("$.code").value("SETTLEMENT200_5"))
+                .andExpect(jsonPath("$.result.items").isEmpty())
+                .andExpect(jsonPath("$.result.page").value(0))
+                .andExpect(jsonPath("$.result.size").value(20))
+                .andExpect(jsonPath("$.result.totalElements").value(0))
+                .andExpect(jsonPath("$.result.totalPages").value(0))
+                .andExpect(jsonPath("$.result.hasNext").value(false));
+    }
+
+    @Test
+    @DisplayName("납부 이력도 JWT 쿠키가 없으면 401을 반환한다")
+    void getPaymentHistory_missingJwt_unauthorized() throws Exception {
+        // given
+        var request = get(path());
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("AUTH401_1"));
+    }
+
+    @Test
+    @DisplayName("탈퇴 회원의 이력 조회는 403으로 거부한다")
+    void getPaymentHistory_inactiveRequester_forbidden() throws Exception {
+        // given
+        jdbcTemplate.update("UPDATE group_member SET status = 'LEFT' WHERE id = ?", target.getId());
+        var request = get(path()).cookie(accessCookie(target));
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("AUTH403_1"));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"item,0,VALID400_1", "size,101,VALID400_1", "page,abc,COMMON400_1"})
+    @DisplayName("이력 조회 경로·쿼리에 양수·페이지 범위·타입 검증을 적용한다")
+    void getPaymentHistory_invalidParameter_badRequest(String field, String value, String code) throws Exception {
+        // given
+        String requestPath = field.equals("item")
+                ? path(group.getId().toString(), settlement.getId().toString(), value) : path();
+        var request = get(requestPath).cookie(accessCookie(target));
+        if (!field.equals("item")) {
+            request.param(field, value);
+        }
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(code));
+    }
+
+    @Test
+    @DisplayName("조회할 청구가 없으면 404와 청구 없음 코드를 반환한다")
+    void getPaymentHistory_missingItem_notFound() throws Exception {
+        // given
+        var request = get(path(group.getId().toString(), settlement.getId().toString(), Long.toString(Long.MAX_VALUE)))
+                .cookie(accessCookie(target));
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SETTLEMENT404_2"));
+    }
+
+    @Test
+    @DisplayName("Swagger 이력 조회는 경로·페이지 조건과 실제 페이지·감사 스키마를 제공하고 본문·CSRF는 없다")
+    void apiDocs_getPaymentHistory_matchesHttpContract() throws Exception {
+        // given
+        String operationPath = "/api/v1/groups/{groupId}/settlements/{settlementId}/items/{settlementItemId}/payments";
+
+        // when
+        var result = mockMvc.perform(get("/v3/api-docs"));
+
+        // then
+        result.andExpect(status().isOk());
+        JsonNode document = objectMapper.readTree(result.andReturn().getResponse().getContentAsString());
+        JsonNode operation = document.path("paths").path(operationPath).path("get");
+        JsonNode content = operation.path("responses").path("200").path("content").path("application/json");
+        JsonNode envelope = resolveSchema(document, content.path("schema"));
+        JsonNode page = resolveSchema(document, envelope.path("properties").path("result"));
+        JsonNode history = resolveSchema(document, page.path("properties").path("items").path("items"));
+        Map<String, JsonNode> parameters = new HashMap<>();
+        operation.path("parameters").forEach(parameter -> parameters.put(parameter.path("name").asText(), parameter));
+        assertEquals(Set.of("groupId", "settlementId", "settlementItemId", "page", "size"), parameters.keySet());
+        for (String name : Set.of("groupId", "settlementId", "settlementItemId")) {
+            assertEquals("path", parameters.get(name).path("in").asText());
+            assertTrue(parameters.get(name).path("required").asBoolean());
+        }
+        assertAll(
+                () -> assertFalse(operation.has("requestBody")),
+                () -> assertEquals("query", parameters.get("page").path("in").asText()),
+                () -> assertEquals("query", parameters.get("size").path("in").asText()),
+                () -> assertEquals(0, parameters.get("page").path("schema").path("default").asInt()),
+                () -> assertEquals(20, parameters.get("size").path("schema").path("default").asInt()),
+                () -> assertEquals(100, parameters.get("size").path("schema").path("maximum").asInt()),
+                () -> assertTrue(envelope.path("properties").has("isSuccess")),
+                () -> assertEquals("SETTLEMENT200_5", content.path("examples").path("취소 기록 포함")
+                        .path("value").path("code").asText()),
+                () -> assertFalse(operation.path("responses").has("201"))
+        );
+        for (String name : Set.of("items", "page", "size", "totalElements", "totalPages", "hasNext")) {
+            assertTrue(page.path("properties").has(name));
+        }
+        for (String name : Set.of("paymentId", "settlementItemId", "paymentType", "source", "status", "amount",
+                "occurredAt", "createdAt", "recordedBy", "cancelledAt", "cancelledBy", "cancelReason")) {
+            assertTrue(history.path("properties").has(name));
+        }
+        for (String actor : Set.of("recordedBy", "cancelledBy")) {
+            JsonNode schema = resolveSchema(document, history.path("properties").path(actor));
+            assertTrue(schema.path("properties").has("groupMemberId"));
+            assertTrue(schema.path("properties").has("nickname"));
+        }
+        for (String code : Set.of("400", "401", "403", "404")) {
+            assertTrue(operation.path("responses").has(code));
+        }
+    }
+
     private Long preparePayment() {
         SettlementItem stored = entityManager.find(SettlementItem.class, item.getId());
         LocalDateTime occurredAt = LocalDateTime.of(2000, 1, 1, 9, 0);
