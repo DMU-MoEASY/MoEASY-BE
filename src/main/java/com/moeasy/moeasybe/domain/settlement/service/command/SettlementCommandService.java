@@ -85,6 +85,35 @@ public class SettlementCommandService {
         return SettlementConverter.toPaymentRegistered(payment, item, paidAmount);
     }
 
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public SettlementResDTO.PaymentCancelled cancelPayment(
+            Long groupId, Long settlementId, Long settlementItemId, Long paymentId,
+            SettlementReqDTO.CancelPayment request, Long memberId) {
+        if (groupId == null || settlementId == null || settlementItemId == null || paymentId == null
+                || memberId == null || request == null || request.expectedVersion() == null || request.reason() == null) {
+            throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
+        }
+        groupRepository.findById(groupId)
+                .orElseThrow(() -> new GroupException(GroupErrorCode.GROUP_NOT_FOUND));
+        GroupMember canceller = requireOperator(groupId, memberId);
+        settlementRepository.findByIdAndGroupIdAndDeletedAtIsNull(settlementId, groupId)
+                .orElseThrow(() -> new SettlementException(SettlementErrorCode.SETTLEMENT_NOT_FOUND));
+        SettlementItem item = settlementItemRepository
+                .findByIdAndSettlementIdForUpdate(settlementItemId, settlementId)
+                .orElseThrow(() -> new SettlementException(SettlementErrorCode.ITEM_NOT_FOUND));
+        SettlementPayment payment = settlementPaymentRepository
+                .findByIdAndSettlementItemId(paymentId, item.getId())
+                .orElseThrow(() -> new SettlementException(SettlementErrorCode.PAYMENT_NOT_FOUND));
+
+        // 취소 전 합계를 읽는다. 취소 상태로 바꾼 뒤 집계하면 해당 금액이 두 번 차감된다.
+        long currentPaidAmount = settlementPaymentRepository.sumAmountByItemAndTypeAndStatus(
+                item.getId(), SettlementPaymentType.PAYMENT, SettlementPaymentStatus.COMPLETED);
+        LocalDateTime cancelledAt = LocalDateTime.ofInstant(clock.instant(), SEOUL);
+        payment.cancel(canceller, cancelledAt, request.reason());
+        long paidAmount = item.cancelPayment(request.expectedVersion(), currentPaidAmount, payment.getAmount());
+        return SettlementConverter.toPaymentCancelled(payment, item, paidAmount);
+    }
+
     @Transactional
     public SettlementResDTO.Created createSettlement(
             Long groupId, SettlementReqDTO.Create request, Long memberId) {

@@ -41,6 +41,18 @@ public final class SettlementConverter {
                 .build();
     }
 
+    public static SettlementResDTO.PaymentCancelled toPaymentCancelled(
+            SettlementPayment payment, SettlementItem item, long paidAmount) {
+        return SettlementResDTO.PaymentCancelled.builder()
+                .paymentId(payment.getId())
+                .settlementItemId(item.getId())
+                .status(item.getStatus())
+                .paidAmount(paidAmount)
+                .remainingAmount(item.getAmount() - paidAmount)
+                .version(item.getVersion())
+                .build();
+    }
+
     public static SettlementResDTO.Detail toDetail(Settlement settlement, List<SettlementItem> items) {
         return SettlementResDTO.Detail.builder()
                 .settlementId(settlement.getId())
