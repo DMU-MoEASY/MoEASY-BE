@@ -18,8 +18,10 @@ public enum SettlementErrorCode implements BaseErrorCode {
     INVALID_OCCURRED_AT(HttpStatus.BAD_REQUEST, "SETTLEMENT400_7", "실제 입금 시각은 현재 시각 이후일 수 없습니다."),
     SETTLEMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "SETTLEMENT404_1", "정산을 찾을 수 없습니다."),
     ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, "SETTLEMENT404_2", "청구 항목을 찾을 수 없습니다."),
+    PAYMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "SETTLEMENT404_3", "납부 기록을 찾을 수 없습니다."),
     ITEM_VERSION_CONFLICT(HttpStatus.CONFLICT, "SETTLEMENT409_1", "청구 버전이 올바르지 않습니다. 최신 정보를 확인해 주세요."),
-    PAYMENT_NOT_ALLOWED(HttpStatus.CONFLICT, "SETTLEMENT409_2", "현재 정산 또는 청구 상태에서는 납부 기록을 변경할 수 없습니다.");
+    PAYMENT_NOT_ALLOWED(HttpStatus.CONFLICT, "SETTLEMENT409_2", "현재 정산 또는 청구 상태에서는 납부 기록을 변경할 수 없습니다."),
+    PAYMENT_CANCELLATION_NOT_ALLOWED(HttpStatus.CONFLICT, "SETTLEMENT409_3", "취소할 수 없는 납부 기록입니다.");
 
     private final HttpStatus status;
     private final String code;

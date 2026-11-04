@@ -175,6 +175,68 @@ class SettlementPaymentReqDTOTest {
         assertTrue(exception.getMessage().contains("occurredAt"));
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {1, 255})
+    @DisplayName("취소 요청은 버전 0과 trim 후 1자·255자 사유를 허용한다")
+    void cancelPayment_reasonLengthBoundary_acceptsTrimmedReason(int length) {
+        // given
+        String reason = "가".repeat(length);
+        String json = "{\"expectedVersion\":0,\"reason\":%s}"
+                .formatted(objectMapper.writeValueAsString(" \t" + reason + "  "));
+
+        // when
+        var request = objectMapper.readValue(json, SettlementReqDTO.CancelPayment.class);
+        var violations = validator.validate(request);
+
+        // then
+        assertAll(
+                () -> assertTrue(violations.isEmpty()),
+                () -> assertEquals(0L, request.expectedVersion()),
+                () -> assertEquals(reason, request.reason())
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidCancellationConstraints")
+    @DisplayName("취소 요청은 필수 버전·사유와 음수 버전·공백 사유·길이 초과를 검증한다")
+    void cancelPayment_invalidField_reportsConstraintViolation(String json, String path) {
+        // given
+        var request = objectMapper.readValue(json, SettlementReqDTO.CancelPayment.class);
+
+        // when
+        var violations = validator.validate(request);
+
+        // then
+        assertTrue(violations.stream().anyMatch(v -> v.getPropertyPath().toString().equals(path)));
+    }
+
+    private static Stream<Arguments> invalidCancellationConstraints() {
+        return Stream.of(
+                Arguments.of("{\"reason\":\"오등록\"}", "expectedVersion"),
+                Arguments.of("{\"expectedVersion\":-1,\"reason\":\"오등록\"}", "expectedVersion"),
+                Arguments.of("{\"expectedVersion\":2}", "reason"),
+                Arguments.of("{\"expectedVersion\":2,\"reason\":\"\"}", "reason"),
+                Arguments.of("{\"expectedVersion\":2,\"reason\":\"  \\t\\n  \"}", "reason"),
+                Arguments.of("{\"expectedVersion\":2,\"reason\":\"%s\"}".formatted("가".repeat(256)), "reason")
+        );
+    }
+
+    @Test
+    @DisplayName("취소 버전에도 정수 전용 변환을 적용하여 숫자 문자열을 거부한다")
+    void cancelPayment_stringVersion_rejectsCoercion() {
+        // given
+        String json = """
+                {"expectedVersion":"2","reason":"오등록"}
+                """;
+
+        // when
+        JacksonException exception = assertThrows(JacksonException.class,
+                () -> objectMapper.readValue(json, SettlementReqDTO.CancelPayment.class));
+
+        // then
+        assertTrue(exception.getMessage().contains("expectedVersion"));
+    }
+
     private String withField(String field, String jsonValue) {
         ObjectNode body = (ObjectNode) objectMapper.readTree(PAYMENT_JSON);
         body.set(field, objectMapper.readTree(jsonValue));

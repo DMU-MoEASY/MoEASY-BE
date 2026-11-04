@@ -38,6 +38,29 @@ public final class SettlementResDTO {
     }
 
     @Builder
+    @Schema(name = "SettlementPaymentCancelledResponse", description = "납부 기록 취소 결과와 취소 후 청구 현황")
+    public record PaymentCancelled(
+            @Schema(description = "취소한 납부 기록 ID", example = "501")
+            Long paymentId,
+
+            @Schema(description = "납부 기록이 속한 청구 항목 ID", example = "101")
+            Long settlementItemId,
+
+            @Schema(description = "취소 후 청구 상태. 납부 기록 자체의 CANCELLED 상태와 구분", example = "PENDING")
+            SettlementItemStatus status,
+
+            @Schema(description = "취소한 기록을 제외한 청구의 유효한 누적 납부액", example = "6000")
+            Long paidAmount,
+
+            @Schema(description = "취소 후 청구의 미납 잔액", example = "4000")
+            Long remainingAmount,
+
+            @Schema(description = "취소 후 청구 버전. 다음 변경 요청의 expectedVersion에 사용", example = "3")
+            Long version
+    ) {
+    }
+
+    @Builder
     @Schema(name = "SettlementPageResponse", description = "정산 목록과 페이지 정보")
     public record Page(
             @Schema(description = "생성 시각 내림차순, 같은 시각에서는 ID 내림차순의 정산 목록")

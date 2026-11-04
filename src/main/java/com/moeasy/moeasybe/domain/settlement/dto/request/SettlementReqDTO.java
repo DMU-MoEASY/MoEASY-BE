@@ -144,6 +144,25 @@ public final class SettlementReqDTO {
     ) {
     }
 
+    @Schema(name = "SettlementCancelPaymentRequest", description = "모임장·운영진의 수동 납부 기록 취소 요청")
+    public record CancelPayment(
+            @NotNull(message = "청구 버전은 필수입니다.")
+            @Min(value = 0, message = "청구 버전은 0 이상이어야 합니다.")
+            @JsonDeserialize(using = SettlementLongDeserializer.class)
+            @Schema(description = "조회한 청구의 현재 버전. 오래된 버전이면 409", example = "2")
+            Long expectedVersion,
+
+            @NotBlank(message = "취소 사유는 필수입니다.")
+            @Size(max = 255, message = "취소 사유는 255자 이하여야 합니다.")
+            @Schema(description = "취소 사유 (앞뒤 공백 제거 후 1~255자)",
+                    example = "다른 회원의 입금을 잘못 등록했습니다.")
+            String reason
+    ) {
+        public CancelPayment {
+            reason = reason == null ? null : reason.trim();
+        }
+    }
+
     @Schema(name = "SettlementMemberAmount", description = "회원별 지정 청구액")
     public record MemberAmount(
             @NotNull(message = "모임 회원 ID는 필수입니다.")
