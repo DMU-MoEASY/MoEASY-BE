@@ -53,6 +53,10 @@ import tools.jackson.databind.ObjectMapper;
 @Transactional
 class SettlementPaymentApiIntegrationTest {
 
+    private static final String CANCEL_BODY = """
+            {"expectedVersion":2,"reason":"  오등록 정정  "}
+            """;
+
     @Autowired private MockMvc mockMvc;
     @Autowired private EntityManager entityManager;
     @Autowired private JdbcTemplate jdbcTemplate;
@@ -346,6 +350,184 @@ class SettlementPaymentApiIntegrationTest {
         for (String code : Set.of("400", "401", "403", "404", "409")) {
             assertTrue(operation.path("responses").has(code));
         }
+    }
+
+    @Test
+    @DisplayName("실제 JWT·CSRF로 납부를 취소하면 200과 취소 후 청구 현황·처리자를 기록한다")
+    void cancelPayment_operator_returnsUpdatedItem() throws Exception {
+        // given
+        Long paymentId = preparePayment();
+        var request = authenticatedRequest(owner, cancelPath(paymentId)).content(CANCEL_BODY);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isOk()).andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.code").value("SETTLEMENT200_4"))
+                .andExpect(jsonPath("$.message").value("납부 기록 취소에 성공했습니다."))
+                .andExpect(jsonPath("$.result.paymentId").value(paymentId))
+                .andExpect(jsonPath("$.result.settlementItemId").value(item.getId()))
+                .andExpect(jsonPath("$.result.status").value("PENDING"))
+                .andExpect(jsonPath("$.result.paidAmount").value(6000))
+                .andExpect(jsonPath("$.result.remainingAmount").value(4000))
+                .andExpect(jsonPath("$.result.version").value(3));
+        assertStored("PENDING", 3, 2);
+        SettlementPayment payment = entityManager.find(SettlementPayment.class, paymentId);
+        assertAll(
+                () -> assertEquals("CANCELLED", payment.getStatus().name()),
+                () -> assertEquals("오등록 정정", payment.getCancelReason()),
+                () -> assertEquals(owner.getId(), payment.getCancelledByGroupMember().getId()),
+                () -> assertNotNull(payment.getCancelledAt())
+        );
+    }
+
+    @ParameterizedTest
+    @CsvSource({"JWT,401,AUTH401_1", "CSRF,403,AUTH403_1"})
+    @DisplayName("취소 엔드포인트도 JWT와 CSRF가 모두 있어야 호출할 수 있다")
+    void cancelPayment_missingSecurity_rejected(String missing, int httpStatus, String code) throws Exception {
+        // given
+        Long paymentId = preparePayment();
+        var request = post(cancelPath(paymentId)).contentType(MediaType.APPLICATION_JSON).content(CANCEL_BODY);
+        if (missing.equals("JWT")) {
+            CsrfCredentials csrf = requestCsrf();
+            request.cookie(csrf.cookie()).header("X-XSRF-TOKEN", csrf.token());
+        } else {
+            request.cookie(accessCookie(owner));
+        }
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().is(httpStatus)).andExpect(jsonPath("$.code").value(code));
+        assertStored("PAID", 2, 2);
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "{\"expectedVersion\":2,\"reason\":\"  \"}|VALID400_1",
+            "{\"expectedVersion\":\"2\",\"reason\":\"오등록\"}|COMMON400_1"
+    })
+    @DisplayName("취소 요청에 DTO 검증과 엄격한 정수 변환을 적용한다")
+    void cancelPayment_invalidBody_badRequest(String body, String code) throws Exception {
+        // given
+        Long paymentId = preparePayment();
+        var request = authenticatedRequest(owner, cancelPath(paymentId)).content(body);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(code));
+        assertStored("PAID", 2, 2);
+    }
+
+    @Test
+    @DisplayName("취소 경로의 납부 기록 ID도 양수로 검증한다")
+    void cancelPayment_nonPositivePaymentId_badRequest() throws Exception {
+        // given
+        var request = authenticatedRequest(owner, cancelPath(0L)).content(CANCEL_BODY);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALID400_1"));
+    }
+
+    @Test
+    @DisplayName("취소할 납부가 없으면 404와 납부 기록 없음 코드를 반환한다")
+    void cancelPayment_missingPayment_notFound() throws Exception {
+        // given
+        var request = authenticatedRequest(owner, cancelPath(Long.MAX_VALUE)).content(CANCEL_BODY);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SETTLEMENT404_3"));
+    }
+
+    @Test
+    @DisplayName("취소 서비스의 버전 충돌을 HTTP 409 응답으로 변환한다")
+    void cancelPayment_staleVersion_conflict() throws Exception {
+        // given
+        Long paymentId = preparePayment();
+        var request = authenticatedRequest(owner, cancelPath(paymentId)).content("""
+                {"expectedVersion":1,"reason":"오등록"}
+                """);
+
+        // when
+        var result = mockMvc.perform(request);
+
+        // then
+        result.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SETTLEMENT409_1"));
+    }
+
+    @Test
+    @DisplayName("Swagger 취소는 네 경로 ID·CSRF 헤더와 실제 요청·200 응답 스키마를 제공한다")
+    void apiDocs_cancelPayment_matchesHttpContract() throws Exception {
+        // given
+        String operationPath = "/api/v1/groups/{groupId}/settlements/{settlementId}"
+                + "/items/{settlementItemId}/payments/{paymentId}/cancel";
+
+        // when
+        var result = mockMvc.perform(get("/v3/api-docs"));
+
+        // then
+        result.andExpect(status().isOk());
+        JsonNode document = objectMapper.readTree(result.andReturn().getResponse().getContentAsString());
+        JsonNode operation = document.path("paths").path(operationPath).path("post");
+        JsonNode requestContent = operation.path("requestBody").path("content").path("application/json");
+        JsonNode requestSchema = resolveSchema(document, requestContent.path("schema"));
+        JsonNode content = operation.path("responses").path("200").path("content").path("application/json");
+        JsonNode envelope = resolveSchema(document, content.path("schema"));
+        JsonNode responseSchema = resolveSchema(document, envelope.path("properties").path("result"));
+        Map<String, JsonNode> parameters = new HashMap<>();
+        operation.path("parameters").forEach(parameter -> parameters.put(parameter.path("name").asText(), parameter));
+        assertEquals(Set.of("groupId", "settlementId", "settlementItemId", "paymentId", "X-XSRF-TOKEN"),
+                parameters.keySet());
+        for (String name : parameters.keySet()) {
+            assertEquals(name.equals("X-XSRF-TOKEN") ? "header" : "path", parameters.get(name).path("in").asText());
+            assertTrue(parameters.get(name).path("required").asBoolean());
+        }
+        assertAll(
+                () -> assertTrue(operation.path("requestBody").path("required").asBoolean()),
+                () -> assertTrue(requestSchema.path("properties").has("expectedVersion")),
+                () -> assertTrue(requestSchema.path("properties").has("reason")),
+                () -> assertEquals(2, requestContent.path("examples").path("기록 취소")
+                        .path("value").path("expectedVersion").asInt()),
+                () -> assertTrue(envelope.path("properties").has("isSuccess")),
+                () -> assertEquals("SETTLEMENT200_4", content.path("examples").path("납부 취소")
+                        .path("value").path("code").asText()),
+                () -> assertFalse(operation.path("responses").has("201"))
+        );
+        for (String name : Set.of("paymentId", "settlementItemId", "status", "paidAmount", "remainingAmount", "version")) {
+            assertTrue(responseSchema.path("properties").has(name));
+        }
+        for (String code : Set.of("400", "401", "403", "404", "409")) {
+            assertTrue(operation.path("responses").has(code));
+        }
+    }
+
+    private Long preparePayment() {
+        SettlementItem stored = entityManager.find(SettlementItem.class, item.getId());
+        LocalDateTime occurredAt = LocalDateTime.of(2000, 1, 1, 9, 0);
+        long paidAmount = stored.applyPayment(0L, 0L, 4000L);
+        SettlementPayment first = SettlementPayment.builder().settlementItem(stored).amount(4000L)
+                .occurredAt(occurredAt).recordedByGroupMember(owner).build();
+        entityManager.persist(first);
+        stored.applyPayment(1L, paidAmount, 6000L);
+        entityManager.persist(SettlementPayment.builder().settlementItem(stored).amount(6000L)
+                .occurredAt(occurredAt).recordedByGroupMember(owner).build());
+        entityManager.flush();
+        entityManager.clear();
+        return first.getId();
+    }
+
+    private String cancelPath(Long paymentId) {
+        return path() + "/" + paymentId + "/cancel";
     }
 
     private GroupMember persistMembership(GroupMemberRole role) {

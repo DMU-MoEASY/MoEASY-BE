@@ -27,13 +27,14 @@
 | 납부 기록 취소 요청·응답 DTO·성공/오류 코드 | 구현됨 | 사유 trim·필수/길이·정수 버전 검증, 취소 후 청구 현황 응답 |
 | 납부 기록 취소·청구 반영 도메인 규칙 | 구현됨 | 수동·은행 완료 납부의 취소 감사 정보 보존, 차감 후 납부액·청구 상태·버전 갱신 |
 | 납부 기록 취소 Repository·Service·Converter | 구현됨 | 운영진 권한·소속 검증, 청구 행 잠금과 취소 전 합계 조회, 납부 취소·청구 상태·버전의 트랜잭션 저장 |
-| 납부 기록 취소 Controller·이력 조회 | 계약 정의됨·미구현 | [납부 기록 및 현황 관리](#납부-기록-및-현황-관리). 취소 HTTP 연결과 납부 이력 조회 |
+| 납부 기록 취소 엔드포인트·Swagger | 구현됨 | JWT·CSRF 검증, 경로·DTO 검증, HTTP 200 취소 후 청구 현황과 400·401·403·404·409 응답 |
+| 납부 이력 조회 | 계약 정의됨·미구현 | [납부 기록 및 현황 관리](#납부-기록-및-현황-관리). 취소 기록을 포함한 청구별 납부 이력 |
 | 정산 목록·상세의 납부 현황 | 계약 정의됨·미구현 | 납부액·잔액·완납/미납 인원수와 상세 청구 버전 추가 |
 | 환불·영수증 관리·정산 수정·취소·마감 | 미구현 | [후속 기능](#후속-기능) 참고 |
 
 정산 생성·분할 미리보기·조회는 [Issue #20](https://github.com/DMU-MoEASY/MoEASY-BE/issues/20)의 범위다. 모임 회원 목록 조회는 프론트의 대상 선택 연동에 필요한 별도 API이며 `group` 도메인에서 제공한다. 정산 생성 API는 대상 ID로 직접 소속·상태를 검증하므로 회원 목록 조회 API의 구현에 의존하지 않는다. 미구현 API는 현재 호출할 수 없다.
 
-납부 기록 등록·취소·이력 조회와 기존 조회 응답의 납부 현황 확장은 [Issue #26](https://github.com/DMU-MoEASY/MoEASY-BE/issues/26)의 범위다. 납부 등록 API는 호출할 수 있다. 취소는 서비스까지 구현되어 있으나 HTTP 엔드포인트는 아직 제공하지 않는다. 이력 조회와 기존 목록·상세의 납부 현황 필드는 계약만 정의되어 있으며 아직 제공하지 않는다.
+납부 기록 등록·취소·이력 조회와 기존 조회 응답의 납부 현황 확장은 [Issue #26](https://github.com/DMU-MoEASY/MoEASY-BE/issues/26)의 범위다. 납부 등록·취소 API는 호출할 수 있다. 이력 조회와 기존 목록·상세의 납부 현황 필드는 계약만 정의되어 있으며 아직 제공하지 않는다.
 
 ## 공통 계약
 
@@ -536,7 +537,7 @@ Swagger에서는 인증 쿠키가 있는 상태에서 목록의 `settlementId`�
 
 ## 납부 기록 및 현황 관리
 
-납부 저장 구조·등록/취소 DTO·성공/오류 코드와 등록/취소 Service·Repository·Converter는 구현되어 있다. 두 서비스는 청구 행 잠금·최신 납부 집계·납부 변경과 청구 상태/버전 변경을 하나의 트랜잭션으로 처리한다. 납부 등록 엔드포인트·Swagger도 구현되어 있으며 취소 엔드포인트·이력 조회·기존 조회 응답 확장은 미구현이다. 실제 송금은 수행하지 않으며 운영진이 확인한 입금을 기록한다. 기록 취소는 오등록 정정이며 실제 환불이나 송금 취소와 다르다.
+납부 저장 구조·등록/취소 DTO·성공/오류 코드와 등록/취소 Service·Repository·Converter는 구현되어 있다. 두 서비스는 청구 행 잠금·최신 납부 집계·납부 변경과 청구 상태/버전 변경을 하나의 트랜잭션으로 처리한다. 납부 등록·취소 엔드포인트와 Swagger도 구현되어 있으며 이력 조회·기존 조회 응답 확장은 미구현이다. 실제 송금은 수행하지 않으며 운영진이 확인한 입금을 기록한다. 기록 취소는 오등록 정정이며 실제 환불이나 송금 취소와 다르다.
 
 ### 경로와 식별자
 
@@ -642,7 +643,7 @@ Swagger에서는 인증 쿠키가 있는 상태에서 목록의 `settlementId`�
 
 `SettlementController.registerPayment`가 경로 ID·본문과 JWT principal의 회원 ID를 서비스에 전달한다. 경로 ID의 `@Positive`와 본문의 `@Valid`는 `SettlementControllerDocs`에 선언하고, 바인딩 어노테이션은 실제 Controller에 둔다. 정상 응답의 HTTP 상태·코드·메시지는 `PAYMENT_REGISTERED`에서 가져온다. Swagger는 실제 `ApiResponse<PaymentRegistered>` 스키마, 요청 예시, CSRF 헤더와 201·400·401·403·404·409 응답을 제공한다.
 
-기존 상세 조회는 청구의 `version`·납부액·잔액을 아직 반환하지 않는다. 새로고침 후 최신 납부 현황을 읽는 연동은 아래 조회 응답 확장 구현 후 가능하며, 미구현 취소·이력 경로를 현재 사용할 수 있는 API로 간주하지 않는다.
+기존 상세 조회는 청구의 `version`·납부액·잔액을 아직 반환하지 않는다. 새로고침 후 최신 납부 현황을 읽는 연동은 아래 조회 응답 확장 구현 후 가능하며, 미구현 이력 경로를 현재 사용할 수 있는 API로 간주하지 않는다.
 
 ### 납부 등록 내부 흐름
 
@@ -660,7 +661,7 @@ MySQL 통합 테스트는 운영진 권한, 소속·삭제·상태 검증, 부�
 
 ### 납부 기록 취소 계약
 
-요청은 `SettlementReqDTO.CancelPayment`, 응답은 `SettlementResDTO.PaymentCancelled`로 정의한다. 요청 DTO는 사유의 앞뒤 공백을 `trim()`으로 제거한 후 필수·255자 이하를 검증하고, 버전은 등록과 같은 JSON 정수 변환과 필수·0 이상 검증을 적용한다. 취소 DTO·성공/오류 코드·도메인 규칙·서비스는 구현되어 있으나 Controller·Swagger는 아직 연결되지 않아 취소 API를 호출할 수 없다.
+요청은 `SettlementReqDTO.CancelPayment`, 응답은 `SettlementResDTO.PaymentCancelled`로 정의한다. 요청 DTO는 사유의 앞뒤 공백을 `trim()`으로 제거한 후 필수·255자 이하를 검증하고, 버전은 등록과 같은 JSON 정수 변환과 필수·0 이상 검증을 적용한다. Controller·Swagger까지 구현되어 취소 API를 호출할 수 있다. 성공 시 HTTP 200 / `SETTLEMENT200_4`와 취소 후 청구 현황을 반환한다.
 
 | 요청 필드 | 타입 | 규칙 |
 | --- | --- | --- |
@@ -697,6 +698,24 @@ MySQL 통합 테스트는 운영진 권한, 소속·삭제·상태 검증, 부�
   }
 }
 ```
+
+### 납부 취소 호출 방법
+
+1. 로그인한 모임장·운영진의 Access Token 쿠키와 CSRF 쿠키를 유지한다. 상태 변경 요청에는 `GET /api/v1/auth/csrf` 응답 본문의 `result.token`을 `X-XSRF-TOKEN` 헤더로 전달한다.
+2. 취소할 **개별 납부 기록 ID**와 현재 청구 버전으로 아래 요청을 보낸다. `reason`은 필수이며 취소 금액은 보내지 않는다.
+
+   ```http
+   POST /api/v1/groups/{groupId}/settlements/{settlementId}/items/{settlementItemId}/payments/{paymentId}/cancel
+   Content-Type: application/json
+   X-XSRF-TOKEN: <CSRF 응답 본문의 token>
+
+   {"expectedVersion":2,"reason":"다른 회원의 입금을 잘못 등록했습니다."}
+   ```
+
+3. 프론트는 `credentials: 'include'` 또는 Axios `withCredentials: true`로 쿠키를 전송한다. 성공 응답의 청구 상태·납부액·잔액·버전으로 화면을 갱신하고, 다음 변경에는 새 버전을 사용한다. 409 또는 타임아웃이면 버전을 임의로 올려 자동 재시도하지 않고 반영 여부를 확인한다. 기존 상세 조회의 최신 현황 필드는 아직 미구현이다.
+4. Swagger에서는 같은 서버에 로그인하여 쿠키를 유지하고, 발급받은 CSRF 토큰을 `X-XSRF-TOKEN` 입력란에 넣는다. 요청 본문에는 `expectedVersion`과 `reason`만 입력한다.
+
+`SettlementController.cancelPayment`는 네 경로 ID·요청 본문·JWT principal을 서비스에 전달한다. 경로의 `@Positive`와 본문의 `@Valid`는 Docs 인터페이스에 선언하며, 실제 Controller는 검증 계약을 상속한다. Swagger는 실제 `ApiResponse<SettlementResDTO.PaymentCancelled>` 응답 스키마와 400·401·403·404·409 예시를 제공한다. HTTP 통합 테스트는 실제 JWT·CSRF 필터를 거쳐 정상 응답·대표 인증/검증/업무 오류와 생성된 명세를 확인한다.
 
 ### 납부 취소 도메인 구현
 
@@ -787,7 +806,7 @@ HTTP 200 / `SETTLEMENT200_5`, 메시지 `납부 이력 조회에 성공했습니
 
 ### 납부 오류 응답 계약
 
-기존 공개 코드는 유지한다. 등록용 `SETTLEMENT400_6`, `SETTLEMENT400_7`, `SETTLEMENT404_2`, `SETTLEMENT409_1`, `SETTLEMENT409_2`는 등록 서비스와 엔티티에 발생 조건이 연결되어 있다. 취소용 `PAYMENT_CANCELLED`(200 / `SETTLEMENT200_4`), `PAYMENT_NOT_FOUND`(404 / `SETTLEMENT404_3`), `PAYMENT_CANCELLATION_NOT_ALLOWED`(409 / `SETTLEMENT409_3`)도 정의되어 있다. 취소 불가 기록의 `SETTLEMENT409_3`과 청구 소속 납부 조회의 `SETTLEMENT404_3`은 취소 서비스에 연결되어 있으며 HTTP 응답 연결은 아직 미구현이다.
+기존 공개 코드는 유지한다. 등록용 `SETTLEMENT400_6`, `SETTLEMENT400_7`, `SETTLEMENT404_2`, `SETTLEMENT409_1`, `SETTLEMENT409_2`는 등록 서비스와 엔티티에 발생 조건이 연결되어 있다. 취소용 `PAYMENT_CANCELLED`(200 / `SETTLEMENT200_4`), `PAYMENT_NOT_FOUND`(404 / `SETTLEMENT404_3`), `PAYMENT_CANCELLATION_NOT_ALLOWED`(409 / `SETTLEMENT409_3`)도 취소 서비스·Controller·Swagger에 연결되어 있다.
 
 | 상황 | HTTP | 코드 |
 | --- | --- | --- |
@@ -829,7 +848,7 @@ HTTP 200 / `SETTLEMENT200_5`, 메시지 `납부 이력 조회에 성공했습니
 
 ## 현재 데이터 구조
 
-Flyway 초기 스키마에는 다음 테이블이 존재한다. `Settlement`, `SettlementItem` 엔티티와 분할 방식·상태 Enum, DTO·오류 코드, 금액 계산기, 정산 생성·미리보기·목록·상세 조회 API는 구현되어 있다. `SettlementPayment` 엔티티와 종류·상태·출처 Enum, 납부 등록·취소 서비스도 구현되어 있다. 납부 등록 API는 호출할 수 있으며 취소 엔드포인트·납부 이력 조회와 영수증 엔티티는 미구현이다.
+Flyway 초기 스키마에는 다음 테이블이 존재한다. `Settlement`, `SettlementItem` 엔티티와 분할 방식·상태 Enum, DTO·오류 코드, 금액 계산기, 정산 생성·미리보기·목록·상세 조회 API는 구현되어 있다. `SettlementPayment` 엔티티와 종류·상태·출처 Enum, 납부 등록·취소 API도 구현되어 호출할 수 있다. 납부 이력 조회와 영수증 엔티티는 미구현이다.
 
 | 테이블 | 현재 저장 정보 |
 | --- | --- |
@@ -846,7 +865,7 @@ Flyway 초기 스키마에는 다음 테이블이 존재한다. `Settlement`, `S
 
 `SettlementPayment`도 삭제 시각 없이 생성·수정 시각을 감사 필드로 매핑한다. 빌더는 수동 납부용으로 `PAYMENT / COMPLETED / MANUAL`을 설정한다. 등록 서비스는 청구 반영 검증과 납부 기록 생성을 같은 트랜잭션으로 연결하고 권한·입금 시각을 검증한다. 청구·등록자·취소자는 지연 로딩 연관 관계이며, 은행 거래는 아직 엔티티가 없어 `accountTransactionId`와 기존 DB 외래키를 유지한다.
 
-납부 마이그레이션은 기존 청구의 버전을 0으로 초기화한다. `version`은 `@Version` 자동 증가 필드가 아닌 업무 버전이며 `applyPayment`·`cancelPayment`에서 명시적으로 증가시킨다. 등록·취소 서비스의 행 잠금·변경 트랜잭션과 등록 API의 HTTP 연결은 구현되어 있다. 기존 납부의 출처는 `account_transaction_id`가 있으면 `BANK`, 없으면 `MANUAL`로 이관한다. 알 수 없는 기존 등록자·취소 감사 정보는 null로 보존한다.
+납부 마이그레이션은 기존 청구의 버전을 0으로 초기화한다. `version`은 `@Version` 자동 증가 필드가 아닌 업무 버전이며 `applyPayment`·`cancelPayment`에서 명시적으로 증가시킨다. 등록·취소 서비스의 행 잠금·변경 트랜잭션과 두 API의 HTTP 연결은 구현되어 있다. 기존 납부의 출처는 `account_transaction_id`가 있으면 `BANK`, 없으면 `MANUAL`로 이관한다. 알 수 없는 기존 등록자·취소 감사 정보는 null로 보존한다.
 
 DB는 음수 버전과 양수 `Long` 범위를 벗어난 납부액을 거부한다. 기존 범위 초과 납부액이 있으면 마이그레이션이 실패하므로 적용 전 별도 정정이 필요하며 금액을 임의로 자르지 않는다. 등록자·취소자 외래키는 기존 정책과 동일하게 `RESTRICT`다. 취소 감사 정보는 세 필드를 모두 비우거나 `CANCELLED` 상태에서 취소자·시각·공백이 아닌 사유를 함께 기록해야 한다. 과거 취소 기록의 감사 정보 부재는 허용하며 신규 취소에서는 서비스가 입력을 보장한다. 청구별 이력 조회를 위해 `(settlement_item_id, created_at, id)` 인덱스를 추가했다.
 
@@ -866,7 +885,7 @@ DB는 음수 버전과 양수 `Long` 범위를 벗어난 납부액을 거부한�
 
 아래 기능은 아직 구현되지 않았다. 구현할 때 API 계약과 상태·데이터 구조를 이 문서에 추가한다.
 
-- 납부 기록 등록·부분 납부·오등록 취소·이력·현황: [납부 계약](#납부-기록-및-현황-관리)에 따라 Issue #26에서 구현한다. 등록 API는 구현되었으며 취소·이력·현황 확장이 남아 있다.
+- 납부 기록 등록·부분 납부·오등록 취소·이력·현황: [납부 계약](#납부-기록-및-현황-관리)에 따라 Issue #26에서 구현한다. 등록·취소 API는 구현되었으며 이력·현황 확장이 남아 있다.
 - 실제 환불과 환불 금액의 집계·청구 상태 반영.
 - 정산 생성 요청의 중복 방지: 요청 식별 방식, 동시 요청·내용 변경·재시도 시 처리와 기존 결과 재응답 계약.
 - 영수증 이미지 업로드·등록·조회·삭제.

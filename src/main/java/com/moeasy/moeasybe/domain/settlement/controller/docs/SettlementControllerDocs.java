@@ -19,6 +19,93 @@ import org.springdoc.core.annotations.ParameterObject;
 @Tag(name = "Settlement", description = "회비·정산 API")
 public interface SettlementControllerDocs {
 
+    @Operation(summary = "납부 기록 취소",
+            description = "활성 OWNER 또는 MANAGER가 잘못 등록·매칭된 개별 납부 기록 전체를 취소합니다. "
+                    + "실제 환불이나 은행 거래 취소를 수행하지 않으며 원본 금액·입금 시각·등록자·출처·은행 거래 연결은 보존합니다. "
+                    + "MANUAL·BANK 출처 모두 PAYMENT / COMPLETED 기록이면 취소할 수 있습니다. "
+                    + "이미 취소한 기록과 환불·미완료 기록은 취소할 수 없습니다. "
+                    + "폐쇄 모임과 탈퇴·강퇴·계정 삭제된 대상의 기존 청구도 허용합니다. "
+                    + "정산은 경로 모임에 속한 미삭제 OPEN 상태, 청구는 해당 정산의 PENDING 또는 PAID 상태여야 합니다. "
+                    + "paymentId는 해당 청구에 속한 개별 납부 기록 ID이며 정산 ID나 대상 회원 ID와 다릅니다. "
+                    + "expectedVersion은 현재 청구 버전, reason은 trim 후 공백이 아닌 1~255자입니다. "
+                    + "취소 금액은 별도로 받지 않습니다. 취소자·시각은 JWT 요청자와 서버 시각으로 기록합니다. "
+                    + "응답 status는 취소 후 청구 상태 PENDING이고, paidAmount는 취소한 금액이 아닌 남은 유효 납부 합계입니다. "
+                    + "응답 version을 다음 변경 요청에 사용하고, 409·타임아웃에는 자동 재시도하지 말고 반영 여부를 확인하세요. "
+                    + "moeasy_access_token 쿠키와 XSRF-TOKEN 쿠키, X-XSRF-TOKEN 헤더가 필요합니다.",
+            parameters = @Parameter(name = "X-XSRF-TOKEN", in = ParameterIn.HEADER, required = true,
+                    description = "GET /api/v1/auth/csrf 응답의 result.token", schema = @Schema(type = "string")))
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200", useReturnTypeSchema = true, description = "납부 기록 취소 성공",
+                    content = @Content(mediaType = "application/json", examples = @ExampleObject(name = "납부 취소", value = """
+                            {"isSuccess":true,"code":"SETTLEMENT200_4","message":"납부 기록 취소에 성공했습니다.",
+                             "result":{"paymentId":501,"settlementItemId":101,"status":"PENDING",
+                             "paidAmount":6000,"remainingAmount":4000,"version":3}}
+                            """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400", description = "경로 양수·필수 버전·사유 검증 또는 JSON·정수 형식 오류",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = {
+                                    @ExampleObject(name = "필드 검증", value = """
+                                            {"isSuccess":false,"code":"VALID400_1","message":"검증에 실패했습니다.",
+                                             "result":{"reason":["취소 사유는 필수입니다."]}}
+                                            """),
+                                    @ExampleObject(name = "JSON·정수 형식", value = """
+                                            {"isSuccess":false,"code":"COMMON400_1","message":"잘못된 요청입니다.","result":null}
+                                            """)
+                            })),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401", description = "인증 쿠키 누락·만료 또는 유효하지 않은 Access Token",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {"isSuccess":false,"code":"AUTH401_1","message":"인증이 필요합니다.","result":null}
+                                    """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403", description = "활성 운영진이 아님 또는 CSRF 검증 실패",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {"isSuccess":false,"code":"AUTH403_1","message":"요청이 거부되었습니다.","result":null}
+                                    """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404", description = "모임·정산·청구·납부 없음 또는 상위 경로와 소속 불일치. "
+                            + "GROUP404_1, SETTLEMENT404_1, SETTLEMENT404_2, SETTLEMENT404_3",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {"isSuccess":false,"code":"SETTLEMENT404_3","message":"납부 기록을 찾을 수 없습니다.","result":null}
+                                    """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409", description = "청구 버전 충돌·증가 범위 초과, 정산·청구 상태 제한 또는 취소 불가 납부",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = {
+                                    @ExampleObject(name = "버전 충돌", value = """
+                                            {"isSuccess":false,"code":"SETTLEMENT409_1","message":"청구 버전이 올바르지 않습니다. 최신 정보를 확인해 주세요.","result":null}
+                                            """),
+                                    @ExampleObject(name = "정산·청구 상태 제한", value = """
+                                            {"isSuccess":false,"code":"SETTLEMENT409_2","message":"현재 정산 또는 청구 상태에서는 납부 기록을 변경할 수 없습니다.","result":null}
+                                            """),
+                                    @ExampleObject(name = "취소 불가 납부", value = """
+                                            {"isSuccess":false,"code":"SETTLEMENT409_3","message":"취소할 수 없는 납부 기록입니다.","result":null}
+                                            """)
+                            }))
+    })
+    ResponseEntity<ApiResponse<SettlementResDTO.PaymentCancelled>> cancelPayment(
+            @Positive(message = "모임 ID는 양수여야 합니다.")
+            @Parameter(description = "청구가 속한 모임 ID", required = true) Long groupId,
+            @Positive(message = "정산 ID는 양수여야 합니다.")
+            @Parameter(description = "청구가 속한 정산 ID", required = true) Long settlementId,
+            @Positive(message = "청구 ID는 양수여야 합니다.")
+            @Parameter(description = "납부 기록이 속한 청구 ID", required = true) Long settlementItemId,
+            @Positive(message = "납부 기록 ID는 양수여야 합니다.")
+            @Parameter(description = "취소할 납부 기록 ID (settlement_payment.id)", required = true) Long paymentId,
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(required = true,
+                    content = @Content(mediaType = "application/json",
+                            schema = @Schema(implementation = SettlementReqDTO.CancelPayment.class),
+                            examples = @ExampleObject(name = "기록 취소", value = """
+                                    {"expectedVersion":2,"reason":"다른 회원의 입금을 잘못 등록했습니다."}
+                                    """)))
+            @Valid SettlementReqDTO.CancelPayment request,
+            @Parameter(hidden = true) Long memberId);
+
     @Operation(summary = "납부 기록 등록",
             description = "활성 OWNER 또는 MANAGER가 확인한 입금을 청구에 수동 등록합니다. 실제 송금을 수행하지 않습니다. "
                     + "폐쇄된 모임과 탈퇴·강퇴·계정 삭제된 대상의 기존 청구도 허용합니다. "

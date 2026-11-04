@@ -44,6 +44,22 @@ public class SettlementController implements SettlementControllerDocs {
     }
 
     @Override
+    @PostMapping("/groups/{groupId}/settlements/{settlementId}/items/{settlementItemId}/payments/{paymentId}/cancel")
+    public ResponseEntity<ApiResponse<SettlementResDTO.PaymentCancelled>> cancelPayment(
+            @PathVariable Long groupId,
+            @PathVariable Long settlementId,
+            @PathVariable Long settlementItemId,
+            @PathVariable Long paymentId,
+            @RequestBody SettlementReqDTO.CancelPayment request,
+            @AuthenticationPrincipal Long memberId
+    ) {
+        SettlementResDTO.PaymentCancelled result = settlementCommandService.cancelPayment(
+                groupId, settlementId, settlementItemId, paymentId, request, memberId);
+        return ResponseEntity.status(SettlementSuccessCode.PAYMENT_CANCELLED.getStatus())
+                .body(ApiResponse.onSuccess(SettlementSuccessCode.PAYMENT_CANCELLED, result));
+    }
+
+    @Override
     @GetMapping("/groups/{groupId}/settlements/{settlementId}")
     public ResponseEntity<ApiResponse<SettlementResDTO.Detail>> getSettlement(
             @PathVariable Long groupId,
