@@ -11,7 +11,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class P0SchemaMigrationIntegrationTest {
 
     private static final int P0_TABLE_COUNT = 32;
-    private static final int SCHEMA_FOREIGN_KEY_COUNT = 56;
+    private static final int SCHEMA_FOREIGN_KEY_COUNT = 58;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;

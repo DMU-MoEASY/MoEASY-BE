@@ -67,3 +67,8 @@ ai:
   review:
     pending:
       enabled: false
+
+# 자동 작업은 개별 테스트에서 명시적으로 호출한다. 공용 Clock mock 초기화와 경합하지 않는다.
+availability:
+  close-delay-ms: 3600000
+  socket-check-ms: 3600000

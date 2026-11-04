@@ -39,6 +39,7 @@ public class GroupJoinRequestCommandService {
     private final MemberRepository memberRepository;
     private final GroupAccessValidator accessValidator;
     private final Clock clock;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
     @Transactional
     public GroupJoinRequestResDTO.Created create(Long groupId, GroupJoinRequestReqDTO.Create request, Long memberId) {
@@ -93,6 +94,7 @@ public class GroupJoinRequestCommandService {
             existing.rejoin(approvedAt);
         }
         request.approve(processor, approvedAt);
+        events.publishEvent(new com.moeasy.moeasybe.domain.schedule.realtime.AvailabilityChanged(groupId, null, "ROSTER_CHANGED"));
     }
 
     @Transactional
