@@ -29,6 +29,21 @@ public class SettlementController implements SettlementControllerDocs {
     private final SettlementQueryService settlementQueryService;
 
     @Override
+    @PostMapping("/groups/{groupId}/settlements/{settlementId}/items/{settlementItemId}/payments")
+    public ResponseEntity<ApiResponse<SettlementResDTO.PaymentRegistered>> registerPayment(
+            @PathVariable Long groupId,
+            @PathVariable Long settlementId,
+            @PathVariable Long settlementItemId,
+            @RequestBody SettlementReqDTO.RegisterPayment request,
+            @AuthenticationPrincipal Long memberId
+    ) {
+        SettlementResDTO.PaymentRegistered result = settlementCommandService.registerPayment(
+                groupId, settlementId, settlementItemId, request, memberId);
+        return ResponseEntity.status(SettlementSuccessCode.PAYMENT_REGISTERED.getStatus())
+                .body(ApiResponse.onSuccess(SettlementSuccessCode.PAYMENT_REGISTERED, result));
+    }
+
+    @Override
     @GetMapping("/groups/{groupId}/settlements/{settlementId}")
     public ResponseEntity<ApiResponse<SettlementResDTO.Detail>> getSettlement(
             @PathVariable Long groupId,

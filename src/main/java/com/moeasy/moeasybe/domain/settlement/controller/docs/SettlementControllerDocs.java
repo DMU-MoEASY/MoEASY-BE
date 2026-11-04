@@ -19,6 +19,111 @@ import org.springdoc.core.annotations.ParameterObject;
 @Tag(name = "Settlement", description = "회비·정산 API")
 public interface SettlementControllerDocs {
 
+    @Operation(summary = "납부 기록 등록",
+            description = "활성 OWNER 또는 MANAGER가 확인한 입금을 청구에 수동 등록합니다. 실제 송금을 수행하지 않습니다. "
+                    + "폐쇄된 모임과 탈퇴·강퇴·계정 삭제된 대상의 기존 청구도 허용합니다. "
+                    + "정산은 경로의 모임에 속한 미삭제 OPEN 상태, 청구는 해당 정산의 PENDING 또는 PAID 상태여야 합니다. "
+                    + "amount는 양의 Long 정수이며 현재 잔액 이하여야 합니다. 부분 납부는 PENDING, 완납은 PAID가 됩니다. "
+                    + "expectedVersion은 현재 청구 버전이며 성공 응답의 version으로 갱신합니다. "
+                    + "같은 버전의 동시 요청은 하나만 성공합니다. 409·타임아웃 발생 시 자동 재등록하지 말고 실제 반영 여부를 확인하세요. "
+                    + "occurredAt은 한국 시간의 yyyy-MM-dd'T'HH:mm:ss 형식, 연도 1000~9999이며 미래는 거부합니다. "
+                    + "생략·null이면 서버 현재 시각을 사용합니다. 납부 기한이 지나도 등록할 수 있습니다. "
+                    + "새 납부는 MANUAL / PAYMENT / COMPLETED이며 등록자는 JWT 요청자로 기록합니다. "
+                    + "응답 status는 납부 기록이 아닌 청구 상태이고 paidAmount는 등록 후 누적 납부액입니다. "
+                    + "moeasy_access_token 쿠키와 XSRF-TOKEN 쿠키, X-XSRF-TOKEN 헤더가 필요합니다.",
+            parameters = @Parameter(name = "X-XSRF-TOKEN", in = ParameterIn.HEADER, required = true,
+                    description = "GET /api/v1/auth/csrf 응답의 result.token", schema = @Schema(type = "string")))
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "201", useReturnTypeSchema = true, description = "납부 기록 등록 성공",
+                    content = @Content(mediaType = "application/json", examples = {
+                            @ExampleObject(name = "첫 부분 납부", value = """
+                                    {"isSuccess":true,"code":"SETTLEMENT201_2","message":"납부 기록 등록에 성공했습니다.",
+                                     "result":{"paymentId":501,"settlementItemId":101,"status":"PENDING",
+                                     "paidAmount":4000,"remainingAmount":6000,"version":1}}
+                                    """),
+                            @ExampleObject(name = "나머지 완납", value = """
+                                    {"isSuccess":true,"code":"SETTLEMENT201_2","message":"납부 기록 등록에 성공했습니다.",
+                                     "result":{"paymentId":502,"settlementItemId":101,"status":"PAID",
+                                     "paidAmount":10000,"remainingAmount":0,"version":2}}
+                                    """)
+                    })),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400", description = "경로·필드 검증, JSON 형식, 잔액 초과 또는 미래 입금 시각",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = {
+                                    @ExampleObject(name = "필드 검증", value = """
+                                            {"isSuccess":false,"code":"VALID400_1","message":"검증에 실패했습니다.",
+                                             "result":{"amount":["납부 금액은 양수여야 합니다."]}}
+                                            """),
+                                    @ExampleObject(name = "JSON·숫자·날짜 형식", value = """
+                                            {"isSuccess":false,"code":"COMMON400_1","message":"잘못된 요청입니다.","result":null}
+                                            """),
+                                    @ExampleObject(name = "잔액 초과", value = """
+                                            {"isSuccess":false,"code":"SETTLEMENT400_6","message":"납부 금액은 남은 청구액을 초과할 수 없습니다.","result":null}
+                                            """),
+                                    @ExampleObject(name = "미래 입금 시각", value = """
+                                            {"isSuccess":false,"code":"SETTLEMENT400_7","message":"실제 입금 시각은 현재 시각 이후일 수 없습니다.","result":null}
+                                            """)
+                            })),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401", description = "인증 쿠키 누락·만료 또는 유효하지 않은 Access Token",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {"isSuccess":false,"code":"AUTH401_1","message":"인증이 필요합니다.","result":null}
+                                    """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403", description = "활성 운영진이 아님 또는 CSRF 검증 실패",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {"isSuccess":false,"code":"AUTH403_1","message":"요청이 거부되었습니다.","result":null}
+                                    """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404", description = "모임 없음, 정산 없음·삭제·다른 모임 소속, 청구 없음·다른 정산 소속",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = {
+                                    @ExampleObject(name = "모임 없음", value = """
+                                            {"isSuccess":false,"code":"GROUP404_1","message":"모임을 찾을 수 없습니다.","result":null}
+                                            """),
+                                    @ExampleObject(name = "정산 없음", value = """
+                                            {"isSuccess":false,"code":"SETTLEMENT404_1","message":"정산을 찾을 수 없습니다.","result":null}
+                                            """),
+                                    @ExampleObject(name = "청구 없음", value = """
+                                            {"isSuccess":false,"code":"SETTLEMENT404_2","message":"청구 항목을 찾을 수 없습니다.","result":null}
+                                            """)
+                            })),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409", description = "버전 불일치·증가 범위 초과 또는 변경 불가능한 정산·청구 상태",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ApiResponse.class),
+                            examples = {
+                                    @ExampleObject(name = "버전 충돌", value = """
+                                            {"isSuccess":false,"code":"SETTLEMENT409_1","message":"청구 버전이 올바르지 않습니다. 최신 정보를 확인해 주세요.","result":null}
+                                            """),
+                                    @ExampleObject(name = "상태 제한", value = """
+                                            {"isSuccess":false,"code":"SETTLEMENT409_2","message":"현재 정산 또는 청구 상태에서는 납부 기록을 변경할 수 없습니다.","result":null}
+                                            """)
+                            }))
+    })
+    ResponseEntity<ApiResponse<SettlementResDTO.PaymentRegistered>> registerPayment(
+            @Positive(message = "모임 ID는 양수여야 합니다.")
+            @Parameter(description = "청구가 속한 모임 ID (member_group.id)", required = true) Long groupId,
+            @Positive(message = "정산 ID는 양수여야 합니다.")
+            @Parameter(description = "청구가 속한 정산 ID", required = true) Long settlementId,
+            @Positive(message = "청구 ID는 양수여야 합니다.")
+            @Parameter(description = "납부 대상 청구 ID (settlement_item.id)", required = true) Long settlementItemId,
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(required = true,
+                    content = @Content(mediaType = "application/json",
+                            schema = @Schema(implementation = SettlementReqDTO.RegisterPayment.class), examples = {
+                                    @ExampleObject(name = "현재 시각으로 첫 부분 납부", value = """
+                                            {"amount":4000,"expectedVersion":0}
+                                            """),
+                                    @ExampleObject(name = "입금 시각 지정·나머지 완납", value = """
+                                            {"amount":6000,"expectedVersion":1,"occurredAt":"2026-10-29T14:00:00"}
+                                            """)
+                            })) @Valid SettlementReqDTO.RegisterPayment request,
+            @Parameter(hidden = true) Long memberId
+    );
+
     @Operation(summary = "정산 상세 조회",
             description = "모임의 활성 OWNER·MANAGER·MEMBER가 정산 정보와 전체 회원별 청구 내역을 조회합니다. "
                     + "정산 대상이 아니어도 조회할 수 있으며 폐쇄된 모임도 허용합니다. 삭제된 정산은 조회할 수 없습니다. "
