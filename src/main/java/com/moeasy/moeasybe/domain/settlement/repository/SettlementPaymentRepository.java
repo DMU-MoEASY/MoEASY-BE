@@ -3,6 +3,8 @@ package com.moeasy.moeasybe.domain.settlement.repository;
 import com.moeasy.moeasybe.domain.settlement.entity.SettlementPayment;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementPaymentStatus;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementPaymentType;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -19,6 +21,30 @@ public interface SettlementPaymentRepository extends JpaRepository<SettlementPay
     Optional<SettlementPayment> findByIdAndSettlementItemId(Long paymentId, Long settlementItemId);
 
     @Query("""
+            select p.settlementItem.settlement.id as settlementId, sum(p.amount) as paidAmount
+            from SettlementPayment p
+            where p.settlementItem.settlement.id in :settlementIds
+              and p.paymentType = :paymentType and p.status = :status
+            group by p.settlementItem.settlement.id
+            """)
+    List<SettlementPaidAmount> sumAmountsBySettlementIdsAndTypeAndStatus(
+            @Param("settlementIds") Collection<Long> settlementIds,
+            @Param("paymentType") SettlementPaymentType paymentType,
+            @Param("status") SettlementPaymentStatus status);
+
+    @Query("""
+            select p.settlementItem.id as itemId, sum(p.amount) as paidAmount
+            from SettlementPayment p
+            where p.settlementItem.settlement.id = :settlementId
+              and p.paymentType = :paymentType and p.status = :status
+            group by p.settlementItem.id
+            """)
+    List<ItemPaidAmount> sumAmountsBySettlementIdAndTypeAndStatus(
+            @Param("settlementId") Long settlementId,
+            @Param("paymentType") SettlementPaymentType paymentType,
+            @Param("status") SettlementPaymentStatus status);
+
+    @Query("""
             select coalesce(sum(p.amount), 0) from SettlementPayment p
             where p.settlementItem.id = :itemId and p.paymentType = :paymentType and p.status = :status
             """)
@@ -26,4 +52,16 @@ public interface SettlementPaymentRepository extends JpaRepository<SettlementPay
             @Param("itemId") Long itemId,
             @Param("paymentType") SettlementPaymentType paymentType,
             @Param("status") SettlementPaymentStatus status);
+
+    interface SettlementPaidAmount {
+        Long getSettlementId();
+
+        long getPaidAmount();
+    }
+
+    interface ItemPaidAmount {
+        Long getItemId();
+
+        long getPaidAmount();
+    }
 }

@@ -1,6 +1,7 @@
 package com.moeasy.moeasybe.domain.settlement.repository;
 
 import com.moeasy.moeasybe.domain.settlement.entity.SettlementItem;
+import com.moeasy.moeasybe.domain.settlement.enums.SettlementItemStatus;
 import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
@@ -24,16 +25,28 @@ public interface SettlementItemRepository extends JpaRepository<SettlementItem, 
     List<SettlementItem> findAllBySettlementIdOrderByGroupMemberIdAsc(Long settlementId);
 
     @Query("""
-            select i.settlement.id as settlementId, count(i) as targetCount
+            select i.settlement.id as settlementId, count(i) as targetCount,
+                   sum(i.amount) as chargedAmount,
+                   sum(case when i.status = :paidStatus then 1 else 0 end) as paidCount,
+                   sum(case when i.status = :pendingStatus then 1 else 0 end) as pendingCount
             from SettlementItem i
             where i.settlement.id in :settlementIds
             group by i.settlement.id
             """)
-    List<TargetCount> countTargetsBySettlementIds(@Param("settlementIds") Collection<Long> settlementIds);
+    List<Summary> summarizeBySettlementIds(
+            @Param("settlementIds") Collection<Long> settlementIds,
+            @Param("paidStatus") SettlementItemStatus paidStatus,
+            @Param("pendingStatus") SettlementItemStatus pendingStatus);
 
-    interface TargetCount {
+    interface Summary {
         Long getSettlementId();
 
         long getTargetCount();
+
+        long getChargedAmount();
+
+        long getPaidCount();
+
+        long getPendingCount();
     }
 }

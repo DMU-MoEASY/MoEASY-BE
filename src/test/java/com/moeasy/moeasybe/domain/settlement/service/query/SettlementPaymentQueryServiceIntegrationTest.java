@@ -36,6 +36,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.PageRequest;
@@ -246,6 +247,126 @@ class SettlementPaymentQueryServiceIntegrationTest {
         assertEquals(expectedCode, exception.getCode().getCode());
     }
 
+    @Test
+    @DisplayName("목록·상세 현황은 여러 납부의 중복 합산을 피하고 취소·실패·대기·환불을 제외한다")
+    void getSettlementReads_mixedPayments_returnsConsistentHistoricalSummary() {
+        // given
+        SettlementItem paidItem = persistItem(settlement, manager);
+        persistItem(settlement, requester);
+        item.applyPayment(0L, 0L, 4000L);
+        SettlementPayment cancelled = persistPayment(item, OCCURRED_AT, owner, CREATED_AT);
+        item.applyPayment(1L, 4000L, 6000L);
+        SettlementPayment bank = persistPayment(item, 6000L, OCCURRED_AT, owner, CREATED_AT);
+        changePaymentKind(bank, SettlementPaymentSource.BANK,
+                SettlementPaymentType.PAYMENT, SettlementPaymentStatus.COMPLETED);
+        cancelled.cancel(manager, CANCELLED_AT, "오등록 정정");
+        item.cancelPayment(2L, 10000L, 4000L);
+        paidItem.applyPayment(0L, 0L, 2000L);
+        persistPayment(paidItem, 2000L, OCCURRED_AT, owner, CREATED_AT);
+        paidItem.applyPayment(1L, 2000L, 8000L);
+        SettlementPayment paidBank = persistPayment(paidItem, 8000L, OCCURRED_AT, owner, CREATED_AT);
+        changePaymentKind(paidBank, SettlementPaymentSource.BANK,
+                SettlementPaymentType.PAYMENT, SettlementPaymentStatus.COMPLETED);
+        for (SettlementPaymentStatus status : List.of(SettlementPaymentStatus.PENDING, SettlementPaymentStatus.FAILED)) {
+            changePaymentKind(persistPayment(item, OCCURRED_AT, owner, CREATED_AT),
+                    SettlementPaymentSource.BANK, SettlementPaymentType.PAYMENT, status);
+        }
+        changePaymentKind(persistPayment(item, OCCURRED_AT, owner, CREATED_AT),
+                SettlementPaymentSource.MANUAL, SettlementPaymentType.REFUND, SettlementPaymentStatus.COMPLETED);
+        Group outside = persistGroup();
+        GroupMember outsider = persistMember(outside, GroupMemberRole.OWNER);
+        persistPayment(persistItem(persistSettlement(outside, outsider), outsider), OCCURRED_AT, outsider, CREATED_AT);
+        entityManager.createQuery("update Settlement s set s.totalAmount = 30000 where s.id = :id")
+                .setParameter("id", settlement.getId()).executeUpdate();
+        entityManager.createQuery("update Group g set g.status = 'CLOSED', g.deletedAt = :at where g.id = :id")
+                .setParameter("at", CANCELLED_AT).setParameter("id", group.getId()).executeUpdate();
+        entityManager.createQuery("update GroupMember gm set gm.status = 'LEFT', gm.deletedAt = :at where gm.id = :id")
+                .setParameter("at", CANCELLED_AT).setParameter("id", manager.getId()).executeUpdate();
+        entityManager.createQuery("update Member m set m.deletedAt = :at where m.id = :id")
+                .setParameter("at", CANCELLED_AT).setParameter("id", owner.getMember().getId()).executeUpdate();
+        entityManager.flush();
+        entityManager.clear();
+
+        // when
+        var page = service.getSettlements(group.getId(), new SettlementReqDTO.Search(null, null, null, null),
+                requester.getMember().getId());
+        var detail = service.getSettlement(group.getId(), settlement.getId(), requester.getMember().getId());
+
+        // then
+        var summary = page.items().getFirst();
+        var partial = detail.items().getFirst();
+        var paid = detail.items().get(1);
+        var unpaid = detail.items().get(2);
+        entityManager.flush();
+        entityManager.clear();
+        assertAll(
+                () -> assertEquals(1, page.items().size()),
+                () -> assertEquals(30000L, summary.totalAmount()),
+                () -> assertEquals(16000L, summary.paidAmount()),
+                () -> assertEquals(14000L, summary.remainingAmount()),
+                () -> assertEquals(1, summary.paidCount()),
+                () -> assertEquals(2, summary.pendingCount()),
+                () -> assertEquals(3, summary.targetCount()),
+                () -> assertEquals(summary.paidAmount(), detail.paidAmount()),
+                () -> assertEquals(summary.remainingAmount(), detail.remainingAmount()),
+                () -> assertEquals(summary.paidCount(), detail.paidCount()),
+                () -> assertEquals(summary.pendingCount(), detail.pendingCount()),
+                () -> assertEquals(summary.targetCount(), detail.targetCount()),
+                () -> assertEquals(6000L, partial.paidAmount()),
+                () -> assertEquals(4000L, partial.remainingAmount()),
+                () -> assertEquals(3L, partial.version()),
+                () -> assertEquals(SettlementItemStatus.PENDING, partial.status()),
+                () -> assertEquals(10000L, paid.paidAmount()),
+                () -> assertEquals(0L, paid.remainingAmount()),
+                () -> assertEquals(2L, paid.version()),
+                () -> assertEquals(SettlementItemStatus.PAID, paid.status()),
+                () -> assertEquals(0L, unpaid.paidAmount()),
+                () -> assertEquals(10000L, unpaid.remainingAmount()),
+                () -> assertEquals(0L, unpaid.version()),
+                () -> assertEquals(3L, entityManager.find(SettlementItem.class, item.getId()).getVersion()),
+                () -> assertEquals(2L, entityManager.find(SettlementItem.class, paidItem.getId()).getVersion()),
+                () -> assertEquals(SettlementPaymentStatus.CANCELLED,
+                        entityManager.find(SettlementPayment.class, cancelled.getId()).getStatus())
+        );
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {0L, Long.MAX_VALUE})
+    @DisplayName("현황 집계는 납부 이력이 없는 0과 Long 최대 완납액을 정확히 반환한다")
+    void getSettlementReads_amountBoundary_preservesLongAndZero(long amount) {
+        // given
+        entityManager.createQuery("update Settlement s set s.totalAmount = :amount where s.id = :id")
+                .setParameter("amount", Long.MAX_VALUE).setParameter("id", settlement.getId()).executeUpdate();
+        entityManager.createQuery("update SettlementItem i set i.amount = :amount where i.id = :id")
+                .setParameter("amount", Long.MAX_VALUE).setParameter("id", item.getId()).executeUpdate();
+        entityManager.refresh(item);
+        if (amount > 0) {
+            item.applyPayment(0L, 0L, amount);
+            persistPayment(item, amount, OCCURRED_AT, owner, CREATED_AT);
+        }
+        entityManager.flush();
+        entityManager.clear();
+
+        // when
+        var summary = service.getSettlements(group.getId(), new SettlementReqDTO.Search(null, null, null, null),
+                requester.getMember().getId()).items().getFirst();
+        var detail = service.getSettlement(group.getId(), settlement.getId(), requester.getMember().getId());
+
+        // then
+        var target = detail.items().getFirst();
+        assertAll(
+                () -> assertEquals(amount, summary.paidAmount()),
+                () -> assertEquals(Long.MAX_VALUE - amount, summary.remainingAmount()),
+                () -> assertEquals(amount == 0 ? 0 : 1, summary.paidCount()),
+                () -> assertEquals(amount == 0 ? 1 : 0, summary.pendingCount()),
+                () -> assertEquals(summary.paidAmount(), detail.paidAmount()),
+                () -> assertEquals(summary.remainingAmount(), detail.remainingAmount()),
+                () -> assertEquals(amount, target.paidAmount()),
+                () -> assertEquals(Long.MAX_VALUE - amount, target.remainingAmount()),
+                () -> assertEquals(amount == 0 ? 0L : 1L, target.version())
+        );
+    }
+
     private Group persistGroup() {
         Category category = entityManager.createQuery("select c from Category c where c.code = 'RUNNING'", Category.class)
                 .getSingleResult();
@@ -281,8 +402,13 @@ class SettlementPaymentQueryServiceIntegrationTest {
 
     private SettlementPayment persistPayment(SettlementItem targetItem, LocalDateTime occurredAt,
             GroupMember recorder, LocalDateTime createdAt) {
+        return persistPayment(targetItem, 4000L, occurredAt, recorder, createdAt);
+    }
+
+    private SettlementPayment persistPayment(SettlementItem targetItem, long amount, LocalDateTime occurredAt,
+            GroupMember recorder, LocalDateTime createdAt) {
         SettlementPayment payment = SettlementPayment.builder().settlementItem(targetItem)
-                .amount(4000L).occurredAt(occurredAt).recordedByGroupMember(recorder).build();
+                .amount(amount).occurredAt(occurredAt).recordedByGroupMember(recorder).build();
         entityManager.persist(payment);
         entityManager.flush();
         entityManager.createQuery("update SettlementPayment p set p.createdAt = :at where p.id = :id")

@@ -8,6 +8,7 @@ import com.moeasy.moeasybe.domain.settlement.entity.Settlement;
 import com.moeasy.moeasybe.domain.settlement.entity.SettlementItem;
 import com.moeasy.moeasybe.domain.settlement.entity.SettlementPayment;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
+import com.moeasy.moeasybe.domain.settlement.service.result.SettlementPaymentSummary;
 import com.moeasy.moeasybe.domain.settlement.util.SettlementSplitCalculator.Allocation;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -91,7 +92,8 @@ public final class SettlementConverter {
                 .build();
     }
 
-    public static SettlementResDTO.Detail toDetail(Settlement settlement, List<SettlementItem> items) {
+    public static SettlementResDTO.Detail toDetail(Settlement settlement, List<SettlementItem> items,
+            SettlementPaymentSummary summary, Map<Long, Long> paidAmounts) {
         return SettlementResDTO.Detail.builder()
                 .settlementId(settlement.getId())
                 .groupId(settlement.getGroup().getId())
@@ -101,11 +103,15 @@ public final class SettlementConverter {
                 .status(settlement.getStatus())
                 .splitMode(settlement.getSplitMode())
                 .totalAmount(settlement.getTotalAmount())
-                .targetCount(items.size())
+                .paidAmount(summary.paidAmount())
+                .remainingAmount(summary.remainingAmount())
+                .paidCount(summary.paidCount())
+                .pendingCount(summary.pendingCount())
+                .targetCount(summary.targetCount())
                 .dueAt(settlement.getDueAt())
                 .createdAt(settlement.getCreatedAt())
                 .createdBy(toCreator(settlement.getCreatedByGroupMember()))
-                .items(items.stream().map(SettlementConverter::toItem).toList())
+                .items(items.stream().map(item -> toItem(item, paidAmounts.getOrDefault(item.getId(), 0L))).toList())
                 .build();
     }
 
@@ -116,19 +122,23 @@ public final class SettlementConverter {
                 .build();
     }
 
-    public static SettlementResDTO.Item toItem(SettlementItem item) {
+    public static SettlementResDTO.Item toItem(SettlementItem item, long paidAmount) {
         return SettlementResDTO.Item.builder()
                 .settlementItemId(item.getId())
                 .groupMemberId(item.getGroupMember().getId())
                 .nickname(item.getGroupMember().getMember().getNickname())
                 .amount(item.getAmount())
                 .status(item.getStatus())
+                .paidAmount(paidAmount)
+                .remainingAmount(item.getAmount() - paidAmount)
+                .version(item.getVersion())
                 .build();
     }
 
-    public static SettlementResDTO.Page toPage(Page<Settlement> settlements, Map<Long, Integer> targetCounts) {
+    public static SettlementResDTO.Page toPage(Page<Settlement> settlements,
+            Map<Long, SettlementPaymentSummary> summaries) {
         List<SettlementResDTO.Summary> items = settlements.getContent().stream()
-                .map(settlement -> toSummary(settlement, targetCounts.getOrDefault(settlement.getId(), 0)))
+                .map(settlement -> toSummary(settlement, summaries.get(settlement.getId())))
                 .toList();
         return SettlementResDTO.Page.builder()
                 .items(items)
@@ -140,7 +150,7 @@ public final class SettlementConverter {
                 .build();
     }
 
-    public static SettlementResDTO.Summary toSummary(Settlement settlement, int targetCount) {
+    public static SettlementResDTO.Summary toSummary(Settlement settlement, SettlementPaymentSummary summary) {
         return SettlementResDTO.Summary.builder()
                 .settlementId(settlement.getId())
                 .title(settlement.getTitle())
@@ -148,7 +158,11 @@ public final class SettlementConverter {
                 .status(settlement.getStatus())
                 .splitMode(settlement.getSplitMode())
                 .totalAmount(settlement.getTotalAmount())
-                .targetCount(targetCount)
+                .paidAmount(summary.paidAmount())
+                .remainingAmount(summary.remainingAmount())
+                .paidCount(summary.paidCount())
+                .pendingCount(summary.pendingCount())
+                .targetCount(summary.targetCount())
                 .dueAt(settlement.getDueAt())
                 .createdAt(settlement.getCreatedAt())
                 .build();
