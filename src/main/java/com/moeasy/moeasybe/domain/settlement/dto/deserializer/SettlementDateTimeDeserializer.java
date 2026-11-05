@@ -9,7 +9,8 @@ import tools.jackson.core.JsonToken;
 import tools.jackson.databind.DeserializationContext;
 import tools.jackson.databind.ValueDeserializer;
 
-public class SettlementDueAtDeserializer extends ValueDeserializer<LocalDateTime> {
+/** DB에 저장 가능한 초 단위의 정산 일시를 읽는다. 현재 시각과의 비교는 서비스에서 처리한다. */
+public class SettlementDateTimeDeserializer extends ValueDeserializer<LocalDateTime> {
 
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter
             .ofPattern("uuuu-MM-dd'T'HH:mm:ss").withResolverStyle(ResolverStyle.STRICT);
@@ -21,15 +22,15 @@ public class SettlementDueAtDeserializer extends ValueDeserializer<LocalDateTime
         }
         String value = parser.getString();
         try {
-            LocalDateTime dueAt = LocalDateTime.parse(value, FORMATTER);
-            if (dueAt.getYear() < 1000 || dueAt.getYear() > 9999) {
+            LocalDateTime dateTime = LocalDateTime.parse(value, FORMATTER);
+            if (dateTime.getYear() < 1000 || dateTime.getYear() > 9999) {
                 return (LocalDateTime) context.handleWeirdStringValue(
-                        LocalDateTime.class, value, "납부 기한의 연도는 1000~9999 범위여야 합니다.");
+                        LocalDateTime.class, value, "일시의 연도는 1000~9999 범위여야 합니다.");
             }
-            return dueAt;
+            return dateTime;
         } catch (DateTimeParseException exception) {
             return (LocalDateTime) context.handleWeirdStringValue(
-                    LocalDateTime.class, value, "납부 기한은 yyyy-MM-dd'T'HH:mm:ss 형식의 유효한 날짜여야 합니다.");
+                    LocalDateTime.class, value, "일시는 yyyy-MM-dd'T'HH:mm:ss 형식의 유효한 날짜여야 합니다.");
         }
     }
 }

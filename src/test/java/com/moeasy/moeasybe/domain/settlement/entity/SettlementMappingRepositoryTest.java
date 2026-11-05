@@ -18,6 +18,8 @@ import com.moeasy.moeasybe.domain.member.enums.SocialType;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementItemStatus;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementStatus;
+import com.moeasy.moeasybe.domain.settlement.exception.SettlementException;
+import com.moeasy.moeasybe.domain.settlement.exception.code.SettlementErrorCode;
 import jakarta.persistence.EntityManager;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
@@ -173,6 +175,100 @@ class SettlementMappingRepositoryTest {
         assertAll(
                 () -> assertEquals(3819, ((SQLException) exception.getMostSpecificCause()).getErrorCode()),
                 () -> assertTrue(exception.getMostSpecificCause().getMessage().contains(constraint))
+        );
+    }
+
+    @Test
+    @DisplayName("부분 납부로 PENDING이 유지되어도 증가한 청구 버전이 DB에 저장된다")
+    void applyPayment_partialPayment_persistsVersionDespiteUnchangedStatus() {
+        // given
+        SettlementItem item = persistSettlementItem();
+
+        // when
+        long paidAmount = item.applyPayment(0L, 0L, 400L);
+        entityManager.flush();
+        entityManager.clear();
+        SettlementItem reloaded = entityManager.find(SettlementItem.class, item.getId());
+
+        // then
+        assertAll(
+                () -> assertEquals(400L, paidAmount),
+                () -> assertEquals(SettlementItemStatus.PENDING, reloaded.getStatus()),
+                () -> assertEquals(1L, reloaded.getVersion()),
+                () -> assertEquals(1000L, reloaded.getAmount())
+        );
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = SettlementStatus.class, names = {"CLOSED", "CANCELLED"})
+    @DisplayName("저장된 정산이 마감·취소 상태이면 청구와 버전을 변경하지 않는다")
+    void applyPayment_nonOpenSettlement_rejectsWithoutMutation(SettlementStatus status) {
+        // given
+        SettlementItem item = persistSettlementItem();
+        entityManager.createQuery("update Settlement s set s.status = :status where s.id = :id")
+                .setParameter("status", status).setParameter("id", item.getSettlement().getId()).executeUpdate();
+        entityManager.clear();
+        SettlementItem reloaded = entityManager.find(SettlementItem.class, item.getId());
+
+        // when
+        SettlementException exception = assertThrows(SettlementException.class,
+                () -> reloaded.applyPayment(0L, 0L, 400L));
+
+        // then
+        assertAll(
+                () -> assertEquals(SettlementErrorCode.PAYMENT_NOT_ALLOWED, exception.getCode()),
+                () -> assertEquals(SettlementItemStatus.PENDING, reloaded.getStatus()),
+                () -> assertEquals(0L, reloaded.getVersion()),
+                () -> assertEquals(status, reloaded.getSettlement().getStatus())
+        );
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = SettlementItemStatus.class, names = {"REFUNDED", "CANCELLED"})
+    @DisplayName("저장된 청구가 환불·취소 상태이면 상태와 버전을 변경하지 않는다")
+    void applyPayment_refundedOrCancelledItem_rejectsWithoutMutation(SettlementItemStatus status) {
+        // given
+        SettlementItem item = persistSettlementItem();
+        entityManager.createQuery("update SettlementItem i set i.status = :status where i.id = :id")
+                .setParameter("status", status).setParameter("id", item.getId()).executeUpdate();
+        entityManager.clear();
+        SettlementItem reloaded = entityManager.find(SettlementItem.class, item.getId());
+
+        // when
+        SettlementException exception = assertThrows(SettlementException.class,
+                () -> reloaded.applyPayment(0L, 0L, 400L));
+
+        // then
+        assertAll(
+                () -> assertEquals(SettlementErrorCode.PAYMENT_NOT_ALLOWED, exception.getCode()),
+                () -> assertEquals(status, reloaded.getStatus()),
+                () -> assertEquals(0L, reloaded.getVersion())
+        );
+    }
+
+    @Test
+    @DisplayName("마지막 유효 버전 증가는 저장되고 이후 증가는 상태 변경 전에 거부된다")
+    void applyPayment_versionAtLongBoundary_rejectsOverflowWithoutMutation() {
+        // given
+        SettlementItem item = persistSettlementItem();
+        jdbcTemplate.update("UPDATE settlement_item SET version = ? WHERE id = ?",
+                Long.MAX_VALUE - 1, item.getId());
+        entityManager.clear();
+        SettlementItem reloaded = entityManager.find(SettlementItem.class, item.getId());
+        long paidAmount = reloaded.applyPayment(Long.MAX_VALUE - 1, 0L, 400L);
+        entityManager.flush();
+        entityManager.clear();
+        SettlementItem lastVersion = entityManager.find(SettlementItem.class, item.getId());
+
+        // when
+        SettlementException exception = assertThrows(SettlementException.class,
+                () -> lastVersion.applyPayment(Long.MAX_VALUE, paidAmount, 600L));
+
+        // then
+        assertAll(
+                () -> assertEquals(SettlementErrorCode.ITEM_VERSION_CONFLICT, exception.getCode()),
+                () -> assertEquals(SettlementItemStatus.PENDING, lastVersion.getStatus()),
+                () -> assertEquals(Long.MAX_VALUE, lastVersion.getVersion())
         );
     }
 

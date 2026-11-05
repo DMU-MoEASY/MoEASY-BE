@@ -31,6 +31,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -201,6 +202,7 @@ class SettlementApiIntegrationTest {
         JsonNode detail = resolveSchema(document, envelope.path("properties").path("result"));
         JsonNode creator = resolveSchema(document, detail.path("properties").path("createdBy"));
         JsonNode item = resolveSchema(document, detail.path("properties").path("items").path("items"));
+        JsonNode example = content.path("example").path("result");
         Map<String, JsonNode> parameters = new HashMap<>();
         operation.path("parameters").forEach(parameter -> parameters.put(parameter.path("name").asText(), parameter));
         assertAll(
@@ -229,6 +231,30 @@ class SettlementApiIntegrationTest {
                 () -> assertTrue(operation.path("responses").has("403")),
                 () -> assertTrue(operation.path("responses").has("404"))
         );
+        for (String field : Set.of("paidAmount", "remainingAmount", "paidCount", "pendingCount")) {
+            assertTrue(detail.path("properties").has(field), field);
+            assertTrue(example.path(field).isNumber(), field);
+        }
+        long paidAmount = 0;
+        long remainingAmount = 0;
+        int paidCount = 0;
+        int pendingCount = 0;
+        for (JsonNode charge : example.path("items")) {
+            for (String field : Set.of("paidAmount", "remainingAmount", "version")) {
+                assertTrue(item.path("properties").has(field), field);
+                assertTrue(charge.path(field).isNumber(), field);
+            }
+            assertEquals(charge.path("amount").asLong(),
+                    charge.path("paidAmount").asLong() + charge.path("remainingAmount").asLong());
+            paidAmount += charge.path("paidAmount").asLong();
+            remainingAmount += charge.path("remainingAmount").asLong();
+            paidCount += charge.path("status").asText().equals("PAID") ? 1 : 0;
+            pendingCount += charge.path("status").asText().equals("PENDING") ? 1 : 0;
+        }
+        assertEquals(paidAmount, example.path("paidAmount").asLong());
+        assertEquals(remainingAmount, example.path("remainingAmount").asLong());
+        assertEquals(paidCount, example.path("paidCount").asInt());
+        assertEquals(pendingCount, example.path("pendingCount").asInt());
     }
 
     @ParameterizedTest
@@ -474,12 +500,24 @@ class SettlementApiIntegrationTest {
                 () -> assertTrue(item.path("properties").has("targetCount")),
                 () -> assertTrue(item.path("properties").has("createdAt")),
                 () -> assertFalse(item.path("properties").has("myItem")),
+                () -> assertTrue(item.path("properties").has("paidAmount")),
+                () -> assertTrue(item.path("properties").has("remainingAmount")),
+                () -> assertTrue(item.path("properties").has("paidCount")),
+                () -> assertTrue(item.path("properties").has("pendingCount")),
                 () -> assertTrue(content.path("examples").has("정산 목록")),
                 () -> assertTrue(content.path("examples").has("빈 목록")),
                 () -> assertTrue(operation.path("responses").has("400")),
                 () -> assertTrue(operation.path("responses").has("401")),
                 () -> assertTrue(operation.path("responses").has("403")),
                 () -> assertTrue(operation.path("responses").has("404"))
+        );
+        JsonNode example = content.path("examples").path("정산 목록").path("value")
+                .path("result").path("items").get(0);
+        assertAll(
+                () -> assertEquals(4333, example.path("paidAmount").asLong()),
+                () -> assertEquals(5667, example.path("remainingAmount").asLong()),
+                () -> assertEquals(1, example.path("paidCount").asInt()),
+                () -> assertEquals(2, example.path("pendingCount").asInt())
         );
     }
 
