@@ -188,6 +188,18 @@ public final class SettlementResDTO {
             @Schema(description = "원 단위 정산 총액", example = "10000")
             Long totalAmount,
 
+            @Schema(description = "정산에 속한 유효 납부액 합계 (PAYMENT / COMPLETED, 취소 기록 제외)", example = "4000")
+            Long paidAmount,
+
+            @Schema(description = "정산에 속한 청구별 미납 잔액 합계", example = "6000")
+            Long remainingAmount,
+
+            @Schema(description = "저장된 청구 상태가 PAID인 인원수 (탈퇴·삭제 대상 포함)", example = "1")
+            Integer paidCount,
+
+            @Schema(description = "저장된 청구 상태가 PENDING인 인원수 (부분 납부·탈퇴·삭제 대상 포함)", example = "2")
+            Integer pendingCount,
+
             @Schema(description = "저장된 청구 항목 수 (탈퇴·삭제된 대상 포함)", example = "3")
             int targetCount,
 
@@ -229,6 +241,18 @@ public final class SettlementResDTO {
 
             @Schema(description = "원 단위 정산 총액", example = "10000")
             Long totalAmount,
+
+            @Schema(description = "정산에 속한 유효 납부액 합계 (PAYMENT / COMPLETED, 취소 기록 제외)", example = "4000")
+            Long paidAmount,
+
+            @Schema(description = "정산에 속한 청구별 미납 잔액 합계", example = "6000")
+            Long remainingAmount,
+
+            @Schema(description = "저장된 청구 상태가 PAID인 인원수 (탈퇴·삭제 대상 포함)", example = "1")
+            Integer paidCount,
+
+            @Schema(description = "저장된 청구 상태가 PENDING인 인원수 (부분 납부·탈퇴·삭제 대상 포함)", example = "2")
+            Integer pendingCount,
 
             @Schema(description = "저장된 청구 항목 수 (items 길이와 같음)", example = "3")
             int targetCount,
@@ -278,7 +302,16 @@ public final class SettlementResDTO {
             Long amount,
 
             @Schema(description = "저장된 청구 상태", example = "PENDING")
-            SettlementItemStatus status
+            SettlementItemStatus status,
+
+            @Schema(description = "해당 청구의 유효 누적 납부액 (PAYMENT / COMPLETED, 취소 기록 제외)", example = "1000")
+            Long paidAmount,
+
+            @Schema(description = "해당 청구의 미납 잔액", example = "2334")
+            Long remainingAmount,
+
+            @Schema(description = "현재 청구 버전. 납부 등록·취소 요청의 expectedVersion에 사용", example = "1")
+            Long version
     ) {
     }
 
