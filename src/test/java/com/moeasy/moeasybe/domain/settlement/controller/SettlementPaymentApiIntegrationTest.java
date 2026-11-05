@@ -147,6 +147,38 @@ class SettlementPaymentApiIntegrationTest {
         assertStored("PAID", 2, 2);
     }
 
+    @Test
+    @DisplayName("납부·완납·취소 후 일반 회원의 목록·상세 조회는 최신 현황과 다음 요청에 쓸 버전을 반환한다")
+    void getSettlements_paymentChanges_returnsCurrentSummaryAndVersion() throws Exception {
+        // given
+        var firstRequest = authenticatedRequest(owner).content(validBody());
+
+        // when
+        var firstResponse = mockMvc.perform(firstRequest).andExpect(status().isCreated()).andReturn().getResponse();
+
+        // then
+        long paymentId = objectMapper.readTree(firstResponse.getContentAsString())
+                .path("result").path("paymentId").asLong();
+        long version = assertPaymentSummaryThroughHttp(4000, 6000, "PENDING", 1);
+
+        // when: 상세 조회에서 받은 버전으로 나머지 금액을 등록한다.
+        var fullPayment = mockMvc.perform(authenticatedRequest(owner).content(
+                "{\"amount\":6000,\"expectedVersion\":%d}".formatted(version)));
+
+        // then
+        fullPayment.andExpect(status().isCreated());
+        version = assertPaymentSummaryThroughHttp(10000, 0, "PAID", 2);
+
+        // when: 최초 4,000원 기록만 취소한다.
+        var cancellation = mockMvc.perform(authenticatedRequest(owner, cancelPath(paymentId)).content(
+                "{\"expectedVersion\":%d,\"reason\":\"오등록 정정\"}".formatted(version)));
+
+        // then
+        cancellation.andExpect(status().isOk());
+        assertPaymentSummaryThroughHttp(6000, 4000, "PENDING", 3);
+        assertStored("PENDING", 3, 2);
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"MISSING", "INVALID", "REFRESH"})
     @DisplayName("납부 등록은 유효한 Access Token이 없으면 401을 반환한다")
@@ -684,6 +716,43 @@ class SettlementPaymentApiIntegrationTest {
         for (String code : Set.of("400", "401", "403", "404")) {
             assertTrue(operation.path("responses").has(code));
         }
+    }
+
+    private long assertPaymentSummaryThroughHttp(long paidAmount, long remainingAmount,
+                                               String itemStatus, long version) throws Exception {
+        entityManager.flush();
+        entityManager.clear();
+        String listPath = "/api/v1/groups/" + group.getId() + "/settlements";
+        int paidCount = itemStatus.equals("PAID") ? 1 : 0;
+        int pendingCount = itemStatus.equals("PENDING") ? 1 : 0;
+        var detail = mockMvc.perform(get(listPath + "/" + settlement.getId()).cookie(accessCookie(target)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SETTLEMENT200_3"))
+                .andExpect(jsonPath("$.result.status").value("OPEN"))
+                .andExpect(jsonPath("$.result.targetCount").value(1))
+                .andExpect(jsonPath("$.result.paidAmount").value(paidAmount))
+                .andExpect(jsonPath("$.result.remainingAmount").value(remainingAmount))
+                .andExpect(jsonPath("$.result.paidCount").value(paidCount))
+                .andExpect(jsonPath("$.result.pendingCount").value(pendingCount))
+                .andExpect(jsonPath("$.result.items[0].settlementItemId").value(item.getId()))
+                .andExpect(jsonPath("$.result.items[0].status").value(itemStatus))
+                .andExpect(jsonPath("$.result.items[0].paidAmount").value(paidAmount))
+                .andExpect(jsonPath("$.result.items[0].remainingAmount").value(remainingAmount))
+                .andExpect(jsonPath("$.result.items[0].version").value(version))
+                .andReturn().getResponse();
+        mockMvc.perform(get(listPath).cookie(accessCookie(target)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SETTLEMENT200_2"))
+                .andExpect(jsonPath("$.result.items.length()").value(1))
+                .andExpect(jsonPath("$.result.items[0].settlementId").value(settlement.getId()))
+                .andExpect(jsonPath("$.result.items[0].status").value("OPEN"))
+                .andExpect(jsonPath("$.result.items[0].targetCount").value(1))
+                .andExpect(jsonPath("$.result.items[0].paidAmount").value(paidAmount))
+                .andExpect(jsonPath("$.result.items[0].remainingAmount").value(remainingAmount))
+                .andExpect(jsonPath("$.result.items[0].paidCount").value(paidCount))
+                .andExpect(jsonPath("$.result.items[0].pendingCount").value(pendingCount));
+        return objectMapper.readTree(detail.getContentAsString()).path("result").path("items").get(0)
+                .path("version").asLong();
     }
 
     private Long preparePayment() {

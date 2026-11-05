@@ -108,7 +108,7 @@ public interface SettlementControllerDocs {
                     + "expectedVersion은 현재 청구 버전, reason은 trim 후 공백이 아닌 1~255자입니다. "
                     + "취소 금액은 별도로 받지 않습니다. 취소자·시각은 JWT 요청자와 서버 시각으로 기록합니다. "
                     + "응답 status는 취소 후 청구 상태 PENDING이고, paidAmount는 취소한 금액이 아닌 남은 유효 납부 합계입니다. "
-                    + "응답 version을 다음 변경 요청에 사용하고, 409·타임아웃에는 자동 재시도하지 말고 반영 여부를 확인하세요. "
+                    + "응답 version을 다음 변경 요청에 사용하고, 409·타임아웃에는 자동 재시도하지 말고 상세 조회로 최신 현황·청구 버전을 확인하세요. "
                     + "moeasy_access_token 쿠키와 XSRF-TOKEN 쿠키, X-XSRF-TOKEN 헤더가 필요합니다.",
             parameters = @Parameter(name = "X-XSRF-TOKEN", in = ParameterIn.HEADER, required = true,
                     description = "GET /api/v1/auth/csrf 응답의 result.token", schema = @Schema(type = "string")))
@@ -190,7 +190,7 @@ public interface SettlementControllerDocs {
                     + "정산은 경로의 모임에 속한 미삭제 OPEN 상태, 청구는 해당 정산의 PENDING 또는 PAID 상태여야 합니다. "
                     + "amount는 양의 Long 정수이며 현재 잔액 이하여야 합니다. 부분 납부는 PENDING, 완납은 PAID가 됩니다. "
                     + "expectedVersion은 현재 청구 버전이며 성공 응답의 version으로 갱신합니다. "
-                    + "같은 버전의 동시 요청은 하나만 성공합니다. 409·타임아웃 발생 시 자동 재등록하지 말고 실제 반영 여부를 확인하세요. "
+                    + "같은 버전의 동시 요청은 하나만 성공합니다. 409·타임아웃 발생 시 자동 재등록하지 말고 상세 조회로 최신 현황·청구 버전을 확인하세요. "
                     + "occurredAt은 한국 시간의 yyyy-MM-dd'T'HH:mm:ss 형식, 연도 1000~9999이며 미래는 거부합니다. "
                     + "생략·null이면 서버 현재 시각을 사용합니다. 납부 기한이 지나도 등록할 수 있습니다. "
                     + "새 납부는 MANUAL / PAYMENT / COMPLETED이며 등록자는 JWT 요청자로 기록합니다. "
@@ -296,6 +296,10 @@ public interface SettlementControllerDocs {
                     + "청구 항목은 groupMemberId 오름차순이며 탈퇴·강퇴·삭제된 대상도 포함합니다. "
                     + "생성자·대상자의 계정이 삭제되어도 저장된 닉네임을 그대로 표시합니다. "
                     + "amount는 저장된 최종 청구액이며 조회 시 재분할하지 않습니다. "
+                    + "paidAmount는 MANUAL·BANK 출처의 PAYMENT / COMPLETED 합계이며 취소·대기·실패·환불 기록은 제외합니다. "
+                    + "remainingAmount는 청구별 잔액 합계, paidCount·pendingCount는 저장된 PAID·PENDING 청구 수입니다. "
+                    + "각 청구에도 납부액·잔액과 현재 version을 반환합니다. 등록·취소 요청의 expectedVersion에는 이 값을 사용합니다. "
+                    + "유효 납부가 없으면 납부액은 0이며 조회는 상태·버전을 변경하지 않습니다. "
                     + "moeasy_access_token 쿠키가 필요하며 GET 요청이므로 CSRF 헤더는 필요하지 않습니다.")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -304,11 +308,15 @@ public interface SettlementControllerDocs {
                             {"isSuccess":true,"code":"SETTLEMENT200_3","message":"정산 상세 조회에 성공했습니다.",
                              "result":{"settlementId":31,"groupId":1,"scheduleId":7,"title":"러닝 후 식사비",
                              "description":"식사비 정산입니다.","status":"OPEN","splitMode":"EQUAL","totalAmount":10000,
-                             "targetCount":3,"dueAt":"2026-11-01T23:59:59","createdAt":"2026-10-20T14:00:00",
+                             "targetCount":3,"paidAmount":4333,"remainingAmount":5667,"paidCount":1,"pendingCount":2,
+                             "dueAt":"2026-11-01T23:59:59","createdAt":"2026-10-20T14:00:00",
                              "createdBy":{"groupMemberId":11,"nickname":"정규"},
-                             "items":[{"settlementItemId":101,"groupMemberId":11,"nickname":"정규","amount":3334,"status":"PENDING"},
-                                      {"settlementItemId":102,"groupMemberId":12,"nickname":"민지","amount":3333,"status":"PENDING"},
-                                      {"settlementItemId":103,"groupMemberId":13,"nickname":"도윤","amount":3333,"status":"PENDING"}]}}
+                             "items":[{"settlementItemId":101,"groupMemberId":11,"nickname":"정규","amount":3334,"status":"PENDING",
+                                       "paidAmount":1000,"remainingAmount":2334,"version":1},
+                                      {"settlementItemId":102,"groupMemberId":12,"nickname":"민지","amount":3333,"status":"PAID",
+                                       "paidAmount":3333,"remainingAmount":0,"version":1},
+                                      {"settlementItemId":103,"groupMemberId":13,"nickname":"도윤","amount":3333,"status":"PENDING",
+                                       "paidAmount":0,"remainingAmount":3333,"version":0}]}}
                             """))),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400", description = "경로 ID의 양수 검증 또는 숫자 변환 실패",
@@ -364,6 +372,9 @@ public interface SettlementControllerDocs {
                     + "삭제된 일정에 연결된 기존 정산은 조회합니다. "
                     + "생성 시각 내림차순, 같은 시각에서는 정산 ID 내림차순입니다. "
                     + "targetCount는 탈퇴·삭제 대상도 포함한 저장된 청구 항목 수입니다. "
+                    + "paidAmount는 MANUAL·BANK 출처의 PAYMENT / COMPLETED 합계이며 취소·대기·실패·환불 기록은 제외합니다. "
+                    + "remainingAmount는 청구별 잔액 합계, paidCount·pendingCount는 저장된 PAID·PENDING 청구 수입니다. "
+                    + "유효 납부가 없으면 납부액은 0이며 조회는 상태·버전을 변경하지 않습니다. "
                     + "moeasy_access_token 쿠키가 필요하며 GET 요청이므로 CSRF 헤더는 필요하지 않습니다.")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -373,6 +384,7 @@ public interface SettlementControllerDocs {
                                     {"isSuccess":true,"code":"SETTLEMENT200_2","message":"정산 목록 조회에 성공했습니다.",
                                      "result":{"items":[{"settlementId":31,"title":"러닝 후 식사비","scheduleId":7,
                                      "status":"OPEN","splitMode":"EQUAL","totalAmount":10000,"targetCount":3,
+                                     "paidAmount":4333,"remainingAmount":5667,"paidCount":1,"pendingCount":2,
                                      "dueAt":"2026-11-01T23:59:59","createdAt":"2026-10-20T14:00:00"}],
                                      "page":0,"size":20,"totalElements":1,"totalPages":1,"hasNext":false}}
                                     """),
