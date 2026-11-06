@@ -137,3 +137,35 @@ ScheduleMigrationIntegrationTest는 MySQL 기존 행 상태 이행과 CHECK 제�
 ## 가용시간 투표
 
 기존 일정에 연결하는 투표 9개 API·추천·확정·복원·실시간 계약과 API별 코드 읽기 순서는 [availability.md](availability.md)를 참고한다.
+
+## 참석 신청과 운영진 수동 출석 (#32)
+
+아래 경로는 모두 `/api/v1/schedules/{scheduleId}` 뒤에 붙인다. 성공은 HTTP 200이다.
+시간은 한국 시간이며 쓰기에는 기존 CSRF 쿠키·헤더를 함께 보낸다.
+
+| 메서드와 경로 | 요청 본문 | result |
+|---|---|---|
+| GET `/rsvp` | 없음 | 현재 활성 명단 `members[{groupMemberId,status}]`, `counts`, `myStatus`, `canRespond`, `scheduleId`, `startsAt`, `endsAt` |
+| PUT `/rsvp/me` | `{"status":"ATTENDING"}` | `{"status":"ATTENDING"}` |
+| DELETE `/rsvp/me` | 없음 | null |
+| GET `/attendance` | 없음 | 출석 상세 |
+| PUT `/attendance` | `{"version":0,"entries":[{"groupMemberId":3,"status":"LATE"}]}` | 변경된 출석 상세 |
+| POST `/attendance/complete` | `{"version":1}` | 변경된 출석 상세 |
+| POST `/attendance/reopen` | `{"version":2}` | 변경된 출석 상세 |
+
+활성 구성원은 시작 전까지 로그인한 본인의 응답을 ATTENDING, NOT_ATTENDING, UNDECIDED 중 하나로 저장한다.
+철회·미응답은 UNDECIDED로 표시한다. 재가입자는 다시 응답한다.
+
+출석 상세는 `scheduleId, collectionStatus, version, canEdit, canComplete, canReopen, rosterFixed, recoverable, members`를 반환한다.
+활성 OWNER·MANAGER만 접근할 수 있다. 화면은 서버의 작업 가능 플래그를 따르고, 수정 시 마지막 조회 버전을 보낸다.
+각 멤버의 `status`는 PRESENT, LATE, ABSENT, UNRECORDED 중 하나다. 입력에는 앞의 세 값만 허용한다.
+`preRegistered`는 시작 전 신청 여부, `credited`는 사전 신청과 출석·지각을 모두 충족하는지 나타낸다.
+`rosterFixed=false`이면 현재 명단 기준 잠정값이다. 종료 후에는 고정 명단을 표시한다.
+`recoverable=false`이면 해당 일정은 티어 참여율 평가에서 제외한다.
+
+PUT은 전체 교체다. 생략한 사람은 UNRECORDED로 돌아가며 빈 배열은 기록을 모두 지운다.
+종료 후 완료하면 미기록은 ABSENT가 된다. COMPLETED에서 정정하려면 재개방한 뒤 교체·완료한다.
+최신 버전으로 동일 상태를 다시 요청하면 같은 상세를 돌려준다. PENDING 일정은 평가를 보류한다.
+
+400은 잘못된 ID·상태·중복 또는 명단 밖 항목, 401은 미인증, 403은 권한·CSRF 오류,
+404는 없는 일정이나 폐쇄·삭제 자원이다. 409는 버전 또는 상태·시간 충돌이므로 화면에서 다시 조회한다.

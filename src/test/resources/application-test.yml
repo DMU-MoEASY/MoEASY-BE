@@ -72,3 +72,8 @@ ai:
 availability:
   close-delay-ms: 3600000
   socket-check-ms: 3600000
+
+# 통합 테스트는 준비한 모임의 회차만 직접 실행한다.
+group:
+  tier:
+    recovery-cron: "-"

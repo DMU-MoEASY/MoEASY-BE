@@ -1,5 +1,6 @@
 package com.moeasy.moeasybe.domain.group.service.command;
 
+import java.time.ZoneId;
 import com.moeasy.moeasybe.domain.group.converter.GroupConverter;
 import com.moeasy.moeasybe.domain.group.dto.request.GroupReqDTO;
 import com.moeasy.moeasybe.domain.group.dto.response.GroupResDTO;
@@ -43,7 +44,9 @@ public class GroupWriteService {
         Category category = findCategory(request.categoryId());
         Member member = findMember(memberId);
         Group group = groupRepository.save(GroupConverter.toEntity(request, category));
-        groupMemberRepository.save(GroupConverter.toOwner(group, member, LocalDateTime.now(clock)));
+        var joinedAt = LocalDateTime.now(clock.withZone(ZoneId.of("Asia/Seoul")));
+        var owner = groupMemberRepository.save(GroupConverter.toOwner(group, member, joinedAt));
+        groupMemberRepository.openPeriod(owner.getId(), joinedAt);
         return GroupConverter.toCreated(group);
     }
 

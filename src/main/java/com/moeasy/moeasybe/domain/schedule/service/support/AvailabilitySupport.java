@@ -14,6 +14,7 @@ import com.moeasy.moeasybe.global.apiPayload.exception.GeneralException;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.time.*;
+import com.moeasy.moeasybe.domain.schedule.service.support.ScheduleAccess.Access;
 import java.util.*;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -21,8 +22,7 @@ import org.springframework.stereotype.Component;
 
 @Component @RequiredArgsConstructor
 public class AvailabilitySupport {
-    private final ScheduleRepository schedules;
-    private final GroupRepository groups;
+    private final ScheduleAccess scheduleAccess;
     private final GroupMemberRepository members;
     private final AvailabilityPollRepository polls;
     private final AvailabilitySlotRepository slots;
@@ -30,31 +30,13 @@ public class AvailabilitySupport {
     private final AvailabilityVoteRepository votes;
     private final Clock clock;
 
-    public record Access(Schedule schedule, Group group, GroupMember actor) { }
     public record Snapshot(Access access, AvailabilityPoll poll, List<AvailabilitySlot> slots,
             Set<Long> responders, Map<LocalDateTime, Set<Long>> attendees, int targetCount,
             String token, List<AvailabilityRecommendation.Window> recommendations, LocalDateTime now) { }
 
     public LocalDateTime now() { return LocalDateTime.now(clock.withZone(ZoneId.of("Asia/Seoul"))); }
     public Access access(Long scheduleId, Long memberId, boolean write, boolean manager, boolean owner) {
-        if (scheduleId == null || memberId == null) throw new GeneralException(GeneralErrorCode.BAD_REQUEST);
-        Long groupId = schedules.findGroupId(scheduleId)
-                .orElseThrow(() -> new ScheduleException(ScheduleErrorCode.SCHEDULE_NOT_FOUND));
-        Group group = (write ? groups.findByIdForUpdate(groupId) : groups.findById(groupId))
-                .filter(g -> g.getDeletedAt() == null && g.getStatus() != GroupStatus.CLOSED)
-                .orElseThrow(() -> new ScheduleException(ScheduleErrorCode.GROUP_NOT_FOUND));
-        GroupMember actor = members.findByGroupIdAndMemberIdAndStatusAndDeletedAtIsNullAndMemberDeletedAtIsNull(
-                groupId, memberId, GroupMemberStatus.ACTIVE)
-                .filter(m -> m.getMember().getStatus() == MemberStatus.ACTIVE)
-                .orElseThrow(() -> new GeneralException(GeneralErrorCode.FORBIDDEN));
-        if (owner && actor.getRole() != GroupMemberRole.OWNER
-                || manager && actor.getRole() != GroupMemberRole.OWNER && actor.getRole() != GroupMemberRole.MANAGER) {
-            throw new GeneralException(GeneralErrorCode.FORBIDDEN);
-        }
-        if (write && group.getStatus() == GroupStatus.ARCHIVED) throw new ScheduleException(ScheduleErrorCode.GROUP_ARCHIVED);
-        Schedule schedule = (write ? schedules.findByIdForUpdate(scheduleId) : schedules.findByIdAndDeletedAtIsNull(scheduleId))
-                .orElseThrow(() -> new ScheduleException(ScheduleErrorCode.SCHEDULE_NOT_FOUND));
-        return new Access(schedule, group, actor);
+        return scheduleAccess.access(scheduleId, memberId, write, manager, owner);
     }
     public void requireEditable(Schedule s) {
         if (s.getStatus() != ScheduleStatus.SCHEDULED || !s.getStartsAt().isAfter(now()))

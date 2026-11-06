@@ -93,6 +93,7 @@ public final class GroupConverter {
                 .maxMembers(group.getMaxMembers())
                 .joinPolicy(group.getJoinPolicy())
                 .status(group.getStatus())
+                .tier(group.getTier())
                 .coverImageUrl(coverImageUrl)
                 .build();
     }

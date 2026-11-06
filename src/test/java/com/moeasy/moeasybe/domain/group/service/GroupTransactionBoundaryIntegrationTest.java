@@ -55,6 +55,7 @@ class GroupTransactionBoundaryIntegrationTest {
     void cleanUp() {
         for (Long groupId : groupIds) {
             jdbcTemplate.update("DELETE FROM group_deletion_history WHERE group_id = ?", groupId);
+            jdbcTemplate.update("DELETE p FROM membership_period p JOIN group_member gm ON gm.id=p.group_member_id WHERE gm.group_id=?", groupId);
             jdbcTemplate.update("DELETE FROM group_member WHERE group_id = ?", groupId);
             jdbcTemplate.update("DELETE FROM member_group WHERE id = ?", groupId);
         }

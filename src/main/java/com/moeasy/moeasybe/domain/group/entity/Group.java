@@ -69,6 +69,9 @@ public class Group extends BaseEntity {
     @Column(nullable = false, length = 32)
     private GroupStatus status;
 
+    @Column(nullable = false, length = 8, insertable = false, updatable = false)
+    private String tier = "bronze";
+
     @Builder
     private Group(Category category, String name, String coverImageKey, String description,
             String regionCode, String placeName, String address, BigDecimal latitude,
