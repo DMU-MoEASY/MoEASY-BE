@@ -3,12 +3,17 @@ package com.moeasy.moeasybe.domain.group.service.query;
 import com.moeasy.moeasybe.domain.group.converter.GroupConverter;
 import com.moeasy.moeasybe.domain.group.dto.response.GroupResDTO;
 import com.moeasy.moeasybe.domain.group.entity.Group;
+import com.moeasy.moeasybe.domain.group.enums.GroupMemberStatus;
 import com.moeasy.moeasybe.domain.group.enums.GroupStatus;
 import com.moeasy.moeasybe.domain.group.exception.GroupException;
 import com.moeasy.moeasybe.domain.group.exception.code.GroupErrorCode;
+import com.moeasy.moeasybe.domain.group.repository.GroupMemberRepository;
 import com.moeasy.moeasybe.domain.group.repository.GroupRepository;
 import com.moeasy.moeasybe.domain.group.service.GroupCoverImageService;
+import com.moeasy.moeasybe.domain.group.validate.GroupAccessValidator;
 import com.moeasy.moeasybe.domain.group.validate.GroupRequestValidator;
+import com.moeasy.moeasybe.global.apiPayload.code.GeneralErrorCode;
+import com.moeasy.moeasybe.global.apiPayload.exception.GeneralException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +23,22 @@ import org.springframework.transaction.annotation.Transactional;
 public class GroupQueryService {
     private final GroupRepository groupRepository;
     private final GroupCoverImageService coverImageService;
+
+    private final GroupMemberRepository groupMemberRepository;
+    private final GroupAccessValidator accessValidator;
+
+    @Transactional(readOnly = true)
+    public GroupResDTO.Members getMembers(Long groupId, Long memberId) {
+        groupRepository.findByIdAndStatusNotAndDeletedAtIsNull(groupId, GroupStatus.CLOSED)
+                .orElseThrow(() -> new GroupException(GroupErrorCode.GROUP_NOT_FOUND));
+        accessValidator.requireNoDeletionHistory(groupId);
+        groupMemberRepository.findByGroupIdAndMemberIdAndStatusAndDeletedAtIsNullAndMemberDeletedAtIsNull(
+                groupId, memberId, GroupMemberStatus.ACTIVE)
+                .orElseThrow(() -> new GeneralException(GeneralErrorCode.FORBIDDEN));
+        return GroupConverter.toMembers(groupMemberRepository
+                .findAllByGroupIdAndStatusAndDeletedAtIsNullAndMemberDeletedAtIsNullOrderByIdAsc(
+                        groupId, GroupMemberStatus.ACTIVE));
+    }
 
     @Transactional(readOnly = true)
     public GroupResDTO.Detail getGroup(Long groupId, Long memberId) {
