@@ -16,15 +16,15 @@ public interface SettlementRepository extends JpaRepository<Settlement, Long> {
     Optional<Settlement> findByIdAndGroupIdAndDeletedAtIsNull(Long id, Long groupId);
 
     @Query(value = """
-            select s from Settlement s
+            select s from Settlement s left join s.schedule schedule
             where s.group.id = :groupId and s.deletedAt is null
               and (:status is null or s.status = :status)
-              and (:scheduleId is null or s.scheduleId = :scheduleId)
+              and (:scheduleId is null or schedule.id = :scheduleId)
             """, countQuery = """
-            select count(s) from Settlement s
+            select count(s) from Settlement s left join s.schedule schedule
             where s.group.id = :groupId and s.deletedAt is null
               and (:status is null or s.status = :status)
-              and (:scheduleId is null or s.scheduleId = :scheduleId)
+              and (:scheduleId is null or schedule.id = :scheduleId)
             """)
     Page<Settlement> findPageByGroup(
             @Param("groupId") Long groupId,

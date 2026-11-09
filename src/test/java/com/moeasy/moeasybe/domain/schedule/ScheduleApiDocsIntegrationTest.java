@@ -122,6 +122,18 @@ class ScheduleApiDocsIntegrationTest {
                 () -> assertEquals(write ? Set.of(success, "400", "401", "403", "404", "409")
                         : Set.of(success, "400", "401", "403", "404"), codes),
                 () -> assertFalse(parameters.contains("memberId")),
+                () -> assertEquals(write, parameters.contains("X-XSRF-TOKEN")),
+                () -> {
+                    if (write) {
+                        JsonNode csrf = operation.path("parameters").valueStream()
+                                .filter(parameter -> parameter.path("name").asText().equals("X-XSRF-TOKEN"))
+                                .findFirst().orElseThrow();
+                        assertAll(
+                                () -> assertEquals("header", csrf.path("in").asText()),
+                                () -> assertTrue(csrf.path("required").asBoolean()),
+                                () -> assertEquals("string", csrf.path("schema").path("type").asText()));
+                    }
+                },
                 () -> assertTrue(operation.path("responses").path(success).path("content").has("application/json"))
         );
     }

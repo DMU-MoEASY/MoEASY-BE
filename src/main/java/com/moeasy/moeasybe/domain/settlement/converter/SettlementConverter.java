@@ -2,6 +2,7 @@ package com.moeasy.moeasybe.domain.settlement.converter;
 
 import com.moeasy.moeasybe.domain.group.entity.Group;
 import com.moeasy.moeasybe.domain.group.entity.GroupMember;
+import com.moeasy.moeasybe.domain.schedule.entity.Schedule;
 import com.moeasy.moeasybe.domain.settlement.dto.request.SettlementReqDTO;
 import com.moeasy.moeasybe.domain.settlement.dto.response.SettlementResDTO;
 import com.moeasy.moeasybe.domain.settlement.entity.Settlement;
@@ -21,7 +22,7 @@ public final class SettlementConverter {
         return SettlementResDTO.Detail.builder()
                 .settlementId(settlement.getId())
                 .groupId(settlement.getGroup().getId())
-                .scheduleId(settlement.getScheduleId())
+                .scheduleId(settlement.getSchedule() == null ? null : settlement.getSchedule().getId())
                 .title(settlement.getTitle())
                 .description(settlement.getDescription())
                 .status(settlement.getStatus())
@@ -70,7 +71,7 @@ public final class SettlementConverter {
         return SettlementResDTO.Summary.builder()
                 .settlementId(settlement.getId())
                 .title(settlement.getTitle())
-                .scheduleId(settlement.getScheduleId())
+                .scheduleId(settlement.getSchedule() == null ? null : settlement.getSchedule().getId())
                 .status(settlement.getStatus())
                 .splitMode(settlement.getSplitMode())
                 .totalAmount(settlement.getTotalAmount())
@@ -80,11 +81,12 @@ public final class SettlementConverter {
                 .build();
     }
 
-    public static Settlement toEntity(SettlementReqDTO.Create request, Group group, GroupMember creator) {
+    public static Settlement toEntity(
+            SettlementReqDTO.Create request, Group group, GroupMember creator, Schedule schedule) {
         return Settlement.builder()
                 .group(group)
                 .createdByGroupMember(creator)
-                .scheduleId(request.scheduleId())
+                .schedule(schedule)
                 .title(request.title())
                 .description(request.description())
                 .dueAt(request.dueAt())

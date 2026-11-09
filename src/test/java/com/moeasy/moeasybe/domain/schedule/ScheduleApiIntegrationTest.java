@@ -241,7 +241,7 @@ class ScheduleApiIntegrationTest {
         GroupMember membership = em.createQuery("select m from GroupMember m where m.member.id=:id", GroupMember.class)
                 .setParameter("id", owner).getSingleResult();
         var settlement = com.moeasy.moeasybe.domain.settlement.entity.Settlement.builder()
-                .group(group).scheduleId(id).createdByGroupMember(membership).title("연결 정산")
+                .group(group).schedule(em.getReference(com.moeasy.moeasybe.domain.schedule.entity.Schedule.class, id)).createdByGroupMember(membership).title("연결 정산")
                 .totalAmount(100L).splitMode(com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode.EQUAL).build();
         em.persist(settlement);
         em.flush();
@@ -259,6 +259,13 @@ class ScheduleApiIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"from=2026-11-01T00:00:00", "from=2026-11-02T00:00:00&to=2026-11-01T00:00:00",
+            "from=2026-11-01T00:00&to=2026-12-01T00:00",
+            "from=2026-11-01T00:00:00&to=2026-12-01T00:00",
+            "from=2026-11-01T00:00:00.000&to=2026-12-01T00:00:00",
+            "from=2026-11-01T00:00:00&to=2026-12-01T00:00:00Z",
+            "from=2026-11-01T00:00:00Z&to=2026-12-01T00:00:00",
+            "from=2026-02-29T00:00:00&to=2026-03-01T00:00:00",
+            "from=0999-11-01T00:00:00&to=2026-12-01T00:00:00",
             "size=0", "size=101", "cursor=bad", "from=2026-02-30T00:00:00&to=2026-03-01T00:00:00"})
     @DisplayName("잘못된 목록 조회 조건을 HTTP 400으로 거부한다")
     void list_invalidQuery_returns400(String params) throws Exception {
@@ -284,6 +291,92 @@ class ScheduleApiIntegrationTest {
         var result = mvc.perform(auth(request, owner));
         // then
         result.andExpect(status().isBadRequest());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "1", "-1", "0.0", "true", "[]", "{}", "\"0\"", "\"UNKNOWN\""})
+    @DisplayName("생성과 PATCH는 숫자·숫자 문자열·잘못된 타입의 장소 제공자를 거부한다")
+    void write_invalidPlaceProvider_returns400(String provider) throws Exception {
+        // given
+        Long id = create();
+        String fields = "{\"placeProvider\":" + provider + ",\"placeId\":\"123\"}";
+        var body = (tools.jackson.databind.node.ObjectNode) mapper.readTree(BODY);
+        mapper.readTree(fields).properties().forEach(entry -> body.set(entry.getKey(), entry.getValue()));
+
+        // when
+        var result = mvc.perform(auth(post(listPath()).contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(body)), owner));
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+        mvc.perform(auth(patch(path(id)).contentType(MediaType.APPLICATION_JSON).content(fields), owner))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"KAKAO", "GOOGLE"})
+    @DisplayName("문자열 장소 제공자는 생성·PATCH에 허용하고 선택 필드 쌍은 null로 제거한다")
+    void write_stringPlaceProvider_supportsCreateUpdateAndClear(String provider) throws Exception {
+        // given
+        var body = (tools.jackson.databind.node.ObjectNode) mapper.readTree(BODY);
+        body.put("placeProvider", provider);
+        body.put("placeId", "123");
+
+        // when
+        String response = mvc.perform(auth(post(listPath()).contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(body)), owner))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        Long id = mapper.readTree(response).path("result").path("scheduleId").longValue();
+
+        // then
+        mvc.perform(auth(get(path(id)), owner)).andExpect(jsonPath("$.result.placeProvider").value(provider));
+        mvc.perform(auth(patch(path(id)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"placeProvider\":\"" + provider + "\",\"placeId\":\"456\"}"), owner))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.placeId").value("456"));
+        mvc.perform(auth(patch(path(id)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"placeProvider\":null,\"placeId\":null}"), owner))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.placeProvider").isEmpty())
+                .andExpect(jsonPath("$.result.placeId").isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {999, 10000})
+    @DisplayName("DB 날짜 범위 밖의 커서는 HTTP 400으로 응답한다")
+    void list_cursorDateOutsideDatabaseRange_returns400(int year) throws Exception {
+        // given
+        String cursor = new com.moeasy.moeasybe.domain.schedule.service.support.ScheduleCursor(group.getId(),
+                NOW.withDayOfMonth(1), NOW.plusMonths(1).withDayOfMonth(1), NOW.withYear(year), 1L).encode();
+
+        // when
+        var result = mvc.perform(auth(get(listPath()).param("cursor", cursor), owner));
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+    }
+
+    @Test
+    @DisplayName("초까지 지정한 기간과 마이크로초 커서는 HTTP 후속 조회에서도 유지된다")
+    void list_strictTimesAndCursor_preservesInitialWindow() throws Exception {
+        // given
+        create();
+        create();
+        jdbc.update("update schedule set created_at='2026-10-01 12:00:00.123456' where group_id=?", group.getId());
+        em.flush();
+        em.clear();
+
+        // when
+        String response = mvc.perform(auth(get(listPath()).param("from", "2026-11-01T00:00:00")
+                        .param("to", "2026-12-01T00:00:00").param("size", "1"), owner))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.hasNext").value(true))
+                .andReturn().getResponse().getContentAsString();
+        String cursor = mapper.readTree(response).path("result").path("nextCursor").asText();
+
+        // then
+        mvc.perform(auth(get(listPath()).param("cursor", cursor).param("size", "1"), owner))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.from").value("2026-11-01T00:00:00"))
+                .andExpect(jsonPath("$.result.to").value("2026-12-01T00:00:00"))
+                .andExpect(jsonPath("$.result.items.length()").value(1))
+                .andExpect(jsonPath("$.result.hasNext").value(false));
     }
 
     private Long create() {
