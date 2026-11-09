@@ -2,6 +2,7 @@ package com.moeasy.moeasybe.domain.settlement.entity;
 
 import com.moeasy.moeasybe.domain.group.entity.Group;
 import com.moeasy.moeasybe.domain.group.entity.GroupMember;
+import com.moeasy.moeasybe.domain.schedule.entity.Schedule;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementStatus;
 import com.moeasy.moeasybe.global.entity.BaseEntity;
@@ -36,9 +37,9 @@ public class Settlement extends BaseEntity {
     @JoinColumn(name = "group_id", nullable = false)
     private Group group;
 
-    // 일정·회비 규칙 도메인이 구현되기 전까지 ID로 연결하고 DB 외래키를 유지한다.
-    @Column(name = "schedule_id")
-    private Long scheduleId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "schedule_id")
+    private Schedule schedule;
 
     @Column(name = "fee_rule_id")
     private Long feeRuleId;
@@ -68,11 +69,11 @@ public class Settlement extends BaseEntity {
     private SettlementStatus status;
 
     @Builder
-    private Settlement(Group group, Long scheduleId, Long feeRuleId, GroupMember createdByGroupMember,
+    private Settlement(Group group, Schedule schedule, Long feeRuleId, GroupMember createdByGroupMember,
             String title, String description, LocalDateTime dueAt, Long totalAmount,
             SettlementSplitMode splitMode) {
         this.group = group;
-        this.scheduleId = scheduleId;
+        this.schedule = schedule;
         this.feeRuleId = feeRuleId;
         this.createdByGroupMember = createdByGroupMember;
         this.title = title;

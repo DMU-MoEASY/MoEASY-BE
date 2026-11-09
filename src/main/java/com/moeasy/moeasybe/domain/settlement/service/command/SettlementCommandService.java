@@ -9,6 +9,7 @@ import com.moeasy.moeasybe.domain.group.exception.GroupException;
 import com.moeasy.moeasybe.domain.group.exception.code.GroupErrorCode;
 import com.moeasy.moeasybe.domain.group.repository.GroupMemberRepository;
 import com.moeasy.moeasybe.domain.group.repository.GroupRepository;
+import com.moeasy.moeasybe.domain.schedule.entity.Schedule;
 import com.moeasy.moeasybe.domain.schedule.repository.ScheduleRepository;
 import com.moeasy.moeasybe.domain.settlement.converter.SettlementConverter;
 import com.moeasy.moeasybe.domain.settlement.dto.request.SettlementReqDTO;
@@ -19,8 +20,8 @@ import com.moeasy.moeasybe.domain.settlement.exception.code.SettlementErrorCode;
 import com.moeasy.moeasybe.domain.settlement.repository.SettlementItemRepository;
 import com.moeasy.moeasybe.domain.settlement.repository.SettlementRepository;
 import com.moeasy.moeasybe.domain.settlement.service.support.SettlementTargetFinder;
-import com.moeasy.moeasybe.domain.settlement.util.SettlementSplitCalculator;
 import com.moeasy.moeasybe.domain.settlement.util.SettlementSplitCalculator.Allocation;
+import com.moeasy.moeasybe.domain.settlement.util.SettlementSplitCalculator;
 import com.moeasy.moeasybe.global.apiPayload.code.GeneralErrorCode;
 import com.moeasy.moeasybe.global.apiPayload.exception.GeneralException;
 import java.time.Clock;
@@ -56,13 +57,13 @@ public class SettlementCommandService {
         Group group = groupRepository.findByIdAndStatusNotAndDeletedAtIsNull(groupId, GroupStatus.CLOSED)
                 .orElseThrow(() -> new GroupException(GroupErrorCode.GROUP_NOT_FOUND));
         GroupMember creator = requireCreator(groupId, memberId);
-        validateSchedule(groupId, request.scheduleId());
+        Schedule schedule = findSchedule(groupId, request.scheduleId());
         List<Allocation> allocations = splitCalculator.calculate(
                 request.splitMode(), request.totalAmount(), request.groupMemberIds(), request.memberAmounts());
         Map<Long, GroupMember> targets = targetFinder.findTargets(groupId, allocations);
         validateDueAt(request.dueAt());
 
-        Settlement settlement = settlementRepository.save(SettlementConverter.toEntity(request, group, creator));
+        Settlement settlement = settlementRepository.save(SettlementConverter.toEntity(request, group, creator, schedule));
         settlementItemRepository.saveAll(SettlementConverter.toItems(settlement, allocations, targets));
         return SettlementConverter.toCreated(settlement);
     }
@@ -78,11 +79,12 @@ public class SettlementCommandService {
         return creator;
     }
 
-    private void validateSchedule(Long groupId, Long scheduleId) {
-        if (scheduleId != null && !scheduleRepository
-                .existsByIdAndGroupIdAndDeletedAtIsNull(scheduleId, groupId)) {
-            throw new SettlementException(SettlementErrorCode.INVALID_SCHEDULE);
+    private Schedule findSchedule(Long groupId, Long scheduleId) {
+        if (scheduleId == null) {
+            return null;
         }
+        return scheduleRepository.findByIdAndGroupIdAndDeletedAtIsNull(scheduleId, groupId)
+                .orElseThrow(() -> new SettlementException(SettlementErrorCode.INVALID_SCHEDULE));
     }
 
     private void validateDueAt(LocalDateTime dueAt) {
