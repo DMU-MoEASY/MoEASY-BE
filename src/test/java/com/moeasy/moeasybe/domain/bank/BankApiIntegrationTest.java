@@ -6,8 +6,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.moeasy.moeasybe.domain.auth.config.AuthCookieNames;
 import com.moeasy.moeasybe.domain.bank.config.BankProperties;
+import com.moeasy.moeasybe.domain.bank.dto.request.BankReqDTO;
 import com.moeasy.moeasybe.domain.bank.exception.BankException;
 import com.moeasy.moeasybe.domain.bank.infra.BankSyncRateLimiter;
+import com.moeasy.moeasybe.domain.bank.service.support.BankSyncStore;
 import com.moeasy.moeasybe.domain.group.dto.request.GroupReqDTO;
 import com.moeasy.moeasybe.domain.group.enums.GroupJoinPolicy;
 import com.moeasy.moeasybe.domain.group.service.command.GroupCommandService;
@@ -33,6 +35,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -47,6 +50,7 @@ class BankApiIntegrationTest {
     private static final AtomicInteger CALLS = new AtomicInteger();
     private static volatile CountDownLatch entered;
     private static volatile CountDownLatch release;
+    @Autowired private BankSyncStore syncStore;
     @Autowired private BankSyncRateLimiter limits;
     @Autowired private BankProperties settings;
     @Autowired private StringRedisTemplate redis;
@@ -244,11 +248,18 @@ class BankApiIntegrationTest {
                 .andExpect(status().isCreated());
         // when
         var duplicate = mvc.perform(auth(post(path(second)), owner).content(connectBody("NH")));
-        jdbc.update(
-                "UPDATE group_bank_account SET"
-                        + " sync_token='in-progress',sync_lease_until=DATE_ADD(NOW(), INTERVAL 1"
-                        + " MINUTE) WHERE group_id=?",
-                first);
+        // 실제 동기화 준비 경로의 Clock·JPA를 사용해 DB 세션 시간대에 의존하지 않는다.
+        syncStore.claim(
+                first,
+                owner,
+                new BankReqDTO.Sync(
+                        LocalDate.of(2026, 1, 10),
+                        LocalDate.of(2026, 1, 10),
+                        "1111",
+                        "800101",
+                        "personal",
+                        null,
+                        null));
         var inProgress = mvc.perform(auth(delete(path(first)), owner));
         // then
         duplicate.andExpect(status().isConflict());
