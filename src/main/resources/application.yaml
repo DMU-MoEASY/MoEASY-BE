@@ -244,6 +244,10 @@ rate-limit:
       limit: ${RATE_LIMIT_MEDIA_PRESIGN_PROFILE_LIMIT:5}
       window: ${RATE_LIMIT_MEDIA_PRESIGN_PROFILE_WINDOW:PT10M}
 
+bank-api:
+  encryption-key: ${BANK_API_ENCRYPTION_KEY:}
+  base-url: ${BANK_API_BASE_URL:https://api.bankapi.co.kr}
+
 ---
 # 로컬 개발 전용 오버라이드.
 # 이 블록이 application-local.yaml이 아니라 여기 있는 이유: application-local.yaml은
