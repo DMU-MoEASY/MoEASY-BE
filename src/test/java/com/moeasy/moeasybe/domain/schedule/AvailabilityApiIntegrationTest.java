@@ -123,6 +123,68 @@ class AvailabilityApiIntegrationTest {
         command.configure(scheduleId, config(12, 14), manager);
         assertAll(() -> assertTrue(query.getMe(scheduleId, member).responded()), () -> assertTrue(query.getMe(scheduleId, member).slots().isEmpty()));
     }
+    @ParameterizedTest
+    @ValueSource(strings = {"SHRINK", "UNCHANGED", "DELETE"})
+    @DisplayName("후보 변경과 투표 삭제는 대상 투표만 변경하고 다른 투표의 선택을 보존한다")
+    void changePoll_anotherPollExists_preservesOtherPoll(String operation) {
+        // given
+        createPoll();
+        command.submit(scheduleId, new AvailabilityReqDTO.Submit(List.of(SLOT, SLOT.plusHours(2))), member);
+        Long otherScheduleId = schedules.createSchedule(group.getId(), new ScheduleReqDTO.Create("다른 모임", "설명", START,
+                START.plusMinutes(45), "장소", "주소", null, null, null, null), owner).scheduleId();
+        command.create(otherScheduleId, config(9, 12), owner);
+        command.submit(otherScheduleId, new AvailabilityReqDTO.Submit(List.of(SLOT)), member);
+        em.flush();
+        em.clear();
+
+        // when
+        switch (operation) {
+            case "SHRINK" -> command.configure(scheduleId, config(10, 12), manager);
+            case "UNCHANGED" -> command.configure(scheduleId, config(9, 12), manager);
+            case "DELETE" -> command.delete(scheduleId, owner);
+            default -> throw new IllegalArgumentException("Unknown operation: " + operation);
+        }
+        em.flush();
+        em.clear();
+
+        // then
+        AvailabilityResDTO.Me otherResponse = query.getMe(otherScheduleId, member);
+        assertAll(() -> assertTrue(otherResponse.responded()),
+                () -> assertEquals(List.of(SLOT), otherResponse.slots()));
+        if (operation.equals("DELETE")) {
+            assertEquals(0, jdbc.queryForObject("select count(*) from availability_poll where schedule_id=?",
+                    Integer.class, scheduleId));
+        } else {
+            AvailabilityResDTO.Me response = query.getMe(scheduleId, member);
+            List<LocalDateTime> expectedSlots = operation.equals("SHRINK")
+                    ? List.of(SLOT.plusHours(2)) : List.of(SLOT, SLOT.plusHours(2));
+            assertAll(() -> assertTrue(response.responded()),
+                    () -> assertEquals(expectedSlots, response.slots()));
+        }
+    }
+
+    @Test
+    @DisplayName("후보 축소로 투표를 삭제해도 확정 이전 일정 시간 복원이 DB에 보존된다")
+    void configure_confirmedPollWithRemovedSlots_persistsRestoredSchedule() {
+        // given
+        confirm();
+        em.flush();
+        em.clear();
+
+        // when
+        command.configure(scheduleId, config(10, 12), owner);
+        em.flush();
+        em.clear();
+
+        // then
+        Schedule schedule = em.find(Schedule.class, scheduleId);
+        assertAll(() -> assertEquals(START, schedule.getStartsAt()),
+                () -> assertEquals(START.plusMinutes(45), schedule.getEndsAt()),
+                () -> assertFalse(query.getPoll(scheduleId, owner).confirmed()),
+                () -> assertTrue(query.getMe(scheduleId, member).responded()),
+                () -> assertTrue(query.getMe(scheduleId, member).slots().isEmpty()));
+    }
+
     @Test @DisplayName("탈퇴자는 집계에서 제외하고 재가입자는 다시 제출해야 한다")
     void roster_leaveAndRejoin_requiresResubmission() {
         // given

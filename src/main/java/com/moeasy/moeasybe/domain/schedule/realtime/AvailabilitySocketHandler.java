@@ -1,60 +1,113 @@
 package com.moeasy.moeasybe.domain.schedule.realtime;
 
-import java.time.*;
-import java.util.concurrent.*;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.web.socket.*;
-import org.springframework.web.socket.handler.*;
+import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorator;
+import org.springframework.web.socket.handler.TextWebSocketHandler;
 
-@Component @RequiredArgsConstructor
+@Component
+@RequiredArgsConstructor
 public class AvailabilitySocketHandler extends TextWebSocketHandler {
     private final AvailabilitySubscriptionAccess access;
     private final Clock clock;
     private final ConcurrentMap<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
-    @Override public void afterConnectionEstablished(WebSocketSession session) {
+
+    private record Subscription(Long scheduleId, Long memberId) { }
+
+    @Override
+    public void afterConnectionEstablished(WebSocketSession session) {
         sessions.put(session.getId(), new ConcurrentWebSocketSessionDecorator(session, 3000, 8192));
-        send(session.getId(), "CONNECTED");
+        send(session.getId(), "CONNECTED", new HashMap<>());
     }
-    @Override public void afterConnectionClosed(WebSocketSession session, CloseStatus status) { sessions.remove(session.getId()); }
-    @Override protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+
+    @Override
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        sessions.remove(session.getId());
+    }
+
+    @Override
+    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
         session.close(CloseStatus.POLICY_VIOLATION); // REST is the only command channel.
     }
-    @Override public void handleTransportError(WebSocketSession session, Throwable error) { close(session); }
+
+    @Override
+    public void handleTransportError(WebSocketSession session, Throwable error) {
+        close(session);
+    }
+
     public void invalidate(AvailabilityChanged event) {
-        sessions.forEach((id, s) -> {
-            Long groupId = (Long) s.getAttributes().get("groupId");
-            Long scheduleId = (Long) s.getAttributes().get("scheduleId");
-            if (groupId.equals(event.groupId()) && (event.scheduleId() == null || scheduleId.equals(event.scheduleId())))
-                send(id, event.type());
+        Map<Subscription, Boolean> authorization = new HashMap<>();
+        sessions.forEach((id, session) -> {
+            Long groupId = (Long) session.getAttributes().get("groupId");
+            Long scheduleId = (Long) session.getAttributes().get("scheduleId");
+            if (groupId.equals(event.groupId()) && (event.scheduleId() == null || scheduleId.equals(event.scheduleId()))) {
+                send(id, event.type(), authorization);
+            }
         });
     }
-    @Scheduled(fixedDelayString = "${availability.socket-check-ms:1000}", initialDelayString = "${availability.socket-check-ms:1000}")
+
+    @Scheduled(scheduler = "availabilitySocketScheduler",
+            fixedDelayString = "${availability.socket-check-ms:1000}",
+            initialDelayString = "${availability.socket-check-ms:1000}")
     public void revalidate() {
-        sessions.forEach((id, s) -> {
-            if (!authorized(s)) close(s);
+        Map<Subscription, Boolean> authorization = new HashMap<>();
+        sessions.forEach((id, session) -> {
+            if (!authorized(session, authorization)) {
+                close(session);
+            }
         });
     }
-    private boolean authorized(WebSocketSession s) {
+
+    private boolean authorized(WebSocketSession session, Map<Subscription, Boolean> authorization) {
+        Instant expiry = (Instant) session.getAttributes().get("expiresAt");
+        if (expiry == null || !expiry.isAfter(clock.instant())) {
+            return false;
+        }
+        Subscription subscription = new Subscription((Long) session.getAttributes().get("scheduleId"),
+                (Long) session.getAttributes().get("memberId"));
+        return authorization.computeIfAbsent(subscription, this::hasAccess);
+    }
+
+    private boolean hasAccess(Subscription subscription) {
         try {
-            Instant expiry = (Instant) s.getAttributes().get("expiresAt");
-            if (expiry == null || !expiry.isAfter(clock.instant())) return false;
-            access.require((Long) s.getAttributes().get("scheduleId"), (Long) s.getAttributes().get("memberId"));
+            access.require(subscription.scheduleId(), subscription.memberId());
             return true;
-        } catch (RuntimeException e) { return false; }
+        } catch (RuntimeException exception) {
+            return false;
+        }
     }
-    private void send(String id, String type) {
-        WebSocketSession s = sessions.get(id);
-        if (s == null) return;
-        if (!authorized(s)) { close(s); return; }
+
+    private void send(String id, String type, Map<Subscription, Boolean> authorization) {
+        WebSocketSession session = sessions.get(id);
+        if (session == null) {
+            return;
+        }
+        if (!authorized(session, authorization)) {
+            close(session);
+            return;
+        }
         try {
-            s.sendMessage(new TextMessage("{\"type\":\"" + type + "\",\"scheduleId\":"
-                    + s.getAttributes().get("scheduleId") + "}"));
-        } catch (Exception e) { close(s); }
+            session.sendMessage(new TextMessage("{\"type\":\"" + type + "\",\"scheduleId\":"
+                    + session.getAttributes().get("scheduleId") + "}"));
+        } catch (Exception exception) {
+            close(session);
+        }
     }
-    private void close(WebSocketSession s) {
-        sessions.remove(s.getId());
-        try { s.close(CloseStatus.POLICY_VIOLATION); } catch (Exception ignored) { }
+
+    private void close(WebSocketSession session) {
+        sessions.remove(session.getId());
+        try {
+            session.close(CloseStatus.POLICY_VIOLATION);
+        } catch (Exception ignored) { }
     }
 }

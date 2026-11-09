@@ -19,7 +19,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.*;
 
-@Service @RequiredArgsConstructor
+@Service
+@RequiredArgsConstructor
 public class AvailabilityCommandService {
     private final AvailabilitySupport support;
     private final AvailabilityPollRepository polls;
@@ -31,106 +32,113 @@ public class AvailabilityCommandService {
     private final ApplicationEventPublisher events;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public AvailabilityResDTO.Poll create(Long scheduleId, AvailabilityReqDTO.Configure r, Long memberId) {
-        var a = support.access(scheduleId, memberId, true, true, false);
-        support.requireEditable(a.schedule());
-        AvailabilityInput.validate(r, support.now());
+    public AvailabilityResDTO.Poll create(Long scheduleId, AvailabilityReqDTO.Configure request, Long memberId) {
+        var access = support.access(scheduleId, memberId, true, true, false);
+        support.requireEditable(access.schedule());
+        AvailabilityInput.validate(request, support.now());
         if (polls.findByScheduleId(scheduleId).isPresent()) fail(AvailabilityErrorCode.DUPLICATE_POLL);
-        AvailabilityPoll p = polls.save(AvailabilityConverter.toEntity(scheduleId, r));
-        slots.saveAll(AvailabilityInput.slots(p).stream().map(at -> AvailabilityConverter.toSlot(p.getId(), at)).toList());
-        changed(a, "CREATED");
-        return AvailabilityConverter.toPoll(support.snapshot(a));
+        AvailabilityPoll poll = polls.save(AvailabilityConverter.toEntity(scheduleId, request));
+        slots.saveAll(AvailabilityInput.slots(poll).stream().map(at -> AvailabilityConverter.toSlot(poll.getId(), at)).toList());
+        changed(access, "CREATED");
+        return AvailabilityConverter.toPoll(support.snapshot(access));
     }
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public AvailabilityResDTO.Poll configure(Long scheduleId, AvailabilityReqDTO.Configure r, Long memberId) {
-        var a = support.access(scheduleId, memberId, true, true, false);
-        support.requireEditable(a.schedule());
-        AvailabilityInput.validate(r, support.now());
-        AvailabilityPoll p = support.poll(scheduleId);
-        if (p.getStatus() == AvailabilityStatus.CONFIRMED) {
-            if (!Objects.equals(p.getConfirmedTimeRevision(), a.schedule().getTimeRevision())
-                    || p.getOriginalStartAt() == null || !p.getOriginalStartAt().isAfter(support.now()))
+    public AvailabilityResDTO.Poll configure(Long scheduleId, AvailabilityReqDTO.Configure request, Long memberId) {
+        var access = support.access(scheduleId, memberId, true, true, false);
+        support.requireEditable(access.schedule());
+        AvailabilityInput.validate(request, support.now());
+        AvailabilityPoll poll = support.poll(scheduleId);
+        if (poll.getStatus() == AvailabilityStatus.CONFIRMED) {
+            if (!Objects.equals(poll.getConfirmedTimeRevision(), access.schedule().getTimeRevision())
+                    || poll.getOriginalStartAt() == null || !poll.getOriginalStartAt().isAfter(support.now()))
                 fail(AvailabilityErrorCode.RESTORE_CONFLICT);
-            a.schedule().reschedule(p.getOriginalStartAt(), p.getOriginalEndAt());
+            access.schedule().reschedule(poll.getOriginalStartAt(), poll.getOriginalEndAt());
         }
-        p.configure(r.startDate(), r.dayCount(), r.startHour(), r.endHour(), r.voteDeadlineAt());
-        Set<LocalDateTime> desired = new HashSet<>(AvailabilityInput.slots(p));
-        List<AvailabilitySlot> existing = slots.findAllByAvailabilityPollIdOrderBySlotAt(p.getId());
-        Set<Long> removed = existing.stream().filter(s -> !desired.contains(s.getSlotAt()))
+        poll.configure(request.startDate(), request.dayCount(), request.startHour(), request.endHour(), request.voteDeadlineAt());
+        Set<LocalDateTime> desired = new HashSet<>(AvailabilityInput.slots(poll));
+        List<AvailabilitySlot> existing = slots.findAllByAvailabilityPollIdOrderBySlotAt(poll.getId());
+        Set<Long> removed = existing.stream().filter(slot -> !desired.contains(slot.getSlotAt()))
                 .map(AvailabilitySlot::getId).collect(Collectors.toSet());
-        votes.deleteAllInBatch(votes.findForPoll(p.getId()).stream().filter(v -> removed.contains(v.getAvailabilitySlotId())).toList());
-        slots.deleteAllInBatch(existing.stream().filter(s -> removed.contains(s.getId())).toList());
-        existing.forEach(s -> desired.remove(s.getSlotAt()));
-        slots.saveAll(desired.stream().map(at -> AvailabilityConverter.toSlot(p.getId(), at)).toList());
-        changed(a, "REOPENED");
-        return AvailabilityConverter.toPoll(support.snapshot(a));
+        if (!removed.isEmpty()) {
+            votes.deleteAllByAvailabilitySlotIdIn(removed);
+        }
+        slots.deleteAllInBatch(existing.stream().filter(slot -> removed.contains(slot.getId())).toList());
+        existing.forEach(slot -> desired.remove(slot.getSlotAt()));
+        slots.saveAll(desired.stream().map(at -> AvailabilityConverter.toSlot(poll.getId(), at)).toList());
+        changed(access, "REOPENED");
+        return AvailabilityConverter.toPoll(support.snapshot(access));
     }
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public void submit(Long scheduleId, AvailabilityReqDTO.Submit r, Long memberId) {
-        var a = support.access(scheduleId, memberId, true, false, false);
-        support.requireEditable(a.schedule());
-        AvailabilityPoll p = support.poll(scheduleId);
-        requireOpen(p);
-        if (r == null || r.slots() == null || r.slots().stream().anyMatch(Objects::isNull)) AvailabilityInput.invalid();
-        Map<LocalDateTime, Long> candidates = slots.findAllByAvailabilityPollIdOrderBySlotAt(p.getId()).stream()
+    public void submit(Long scheduleId, AvailabilityReqDTO.Submit request, Long memberId) {
+        var access = support.access(scheduleId, memberId, true, false, false);
+        support.requireEditable(access.schedule());
+        AvailabilityPoll poll = support.poll(scheduleId);
+        requireOpen(poll);
+        if (request == null || request.slots() == null || request.slots().stream().anyMatch(Objects::isNull)) AvailabilityInput.invalid();
+        Map<LocalDateTime, Long> candidates = slots.findAllByAvailabilityPollIdOrderBySlotAt(poll.getId()).stream()
                 .collect(Collectors.toMap(AvailabilitySlot::getSlotAt, AvailabilitySlot::getId));
-        Set<LocalDateTime> selected = new HashSet<>(r.slots());
-        if (selected.size() != r.slots().size() || !candidates.keySet().containsAll(selected)) AvailabilityInput.invalid();
-        Long actor = a.actor().getId();
-        var prior = responses.findByAvailabilityPollIdAndGroupMemberId(p.getId(), actor);
-        List<AvailabilityVote> oldVotes = votes.findForPoll(p.getId()).stream().filter(v -> v.getGroupMemberId().equals(actor)).toList();
+        Set<LocalDateTime> selected = new HashSet<>(request.slots());
+        if (selected.size() != request.slots().size() || !candidates.keySet().containsAll(selected)) AvailabilityInput.invalid();
+        Long actor = access.actor().getId();
+        var prior = responses.findByAvailabilityPollIdAndGroupMemberId(poll.getId(), actor);
+        List<AvailabilityVote> oldVotes = votes.findForPoll(poll.getId()).stream().filter(vote -> vote.getGroupMemberId().equals(actor)).toList();
         Set<Long> desired = selected.stream().map(candidates::get).collect(Collectors.toSet());
-        if (prior.isPresent() && prior.get().getMembershipJoinedAt().equals(a.actor().getJoinedAt())
+        if (prior.isPresent() && prior.get().getMembershipJoinedAt().equals(access.actor().getJoinedAt())
                 && oldVotes.stream().allMatch(AvailabilityVote::isAvailable)
                 && oldVotes.stream().map(AvailabilityVote::getAvailabilitySlotId).collect(Collectors.toSet()).equals(desired)) return;
-        AvailabilityResponse response = prior.orElseGet(() -> responses.save(AvailabilityConverter.toResponse(p.getId(), actor, a.actor().getJoinedAt())));
-        response.submit(a.actor().getJoinedAt());
+        AvailabilityResponse response = prior.orElseGet(() -> responses.save(AvailabilityConverter.toResponse(poll.getId(), actor, access.actor().getJoinedAt())));
+        response.submit(access.actor().getJoinedAt());
         votes.deleteAllInBatch(oldVotes);
         votes.saveAll(desired.stream().map(id -> AvailabilityConverter.toVote(id, actor)).toList());
-        p.touch(); changed(a, "RESPONSE_CHANGED");
+        poll.touch();
+        changed(access, "RESPONSE_CHANGED");
     }
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void withdraw(Long scheduleId, Long memberId) {
-        var a = support.access(scheduleId, memberId, true, false, false);
-        support.requireEditable(a.schedule());
-        AvailabilityPoll p = support.poll(scheduleId);
-        requireOpen(p);
-        var response = responses.findByAvailabilityPollIdAndGroupMemberId(p.getId(), a.actor().getId());
+        var access = support.access(scheduleId, memberId, true, false, false);
+        support.requireEditable(access.schedule());
+        AvailabilityPoll poll = support.poll(scheduleId);
+        requireOpen(poll);
+        var response = responses.findByAvailabilityPollIdAndGroupMemberId(poll.getId(), access.actor().getId());
         if (response.isEmpty()) return;
-        votes.deleteAllInBatch(votes.findForPoll(p.getId()).stream().filter(v -> v.getGroupMemberId().equals(a.actor().getId())).toList());
-        responses.delete(response.get()); p.touch(); changed(a, "RESPONSE_WITHDRAWN");
+        votes.deleteAllInBatch(votes.findForPoll(poll.getId()).stream().filter(vote -> vote.getGroupMemberId().equals(access.actor().getId())).toList());
+        responses.delete(response.get());
+        poll.touch();
+        changed(access, "RESPONSE_WITHDRAWN");
     }
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public AvailabilityResDTO.Poll confirm(Long scheduleId, AvailabilityReqDTO.Confirm r, Long memberId) {
-        var a = support.access(scheduleId, memberId, true, true, false);
-        AvailabilityPoll p = support.poll(scheduleId);
-        if (r == null || r.startsAt() == null || r.token() == null) AvailabilityInput.invalid();
-        support.requireEditable(a.schedule());
-        if (p.getStatus() == AvailabilityStatus.CONFIRMED) {
-            if (r.startsAt().equals(p.getConfirmedStartAt()) && r.token().equals(p.getConfirmationToken())
-                    && Objects.equals(p.getConfirmedTimeRevision(), a.schedule().getTimeRevision()))
-                return AvailabilityConverter.toPoll(support.snapshot(a));
+    public AvailabilityResDTO.Poll confirm(Long scheduleId, AvailabilityReqDTO.Confirm request, Long memberId) {
+        var access = support.access(scheduleId, memberId, true, true, false);
+        AvailabilityPoll poll = support.poll(scheduleId);
+        if (request == null || request.startsAt() == null || request.token() == null) AvailabilityInput.invalid();
+        support.requireEditable(access.schedule());
+        if (poll.getStatus() == AvailabilityStatus.CONFIRMED) {
+            if (request.startsAt().equals(poll.getConfirmedStartAt()) && request.token().equals(poll.getConfirmationToken())
+                    && Objects.equals(poll.getConfirmedTimeRevision(), access.schedule().getTimeRevision()))
+                return AvailabilityConverter.toPoll(support.snapshot(access));
             fail(AvailabilityErrorCode.STALE_RESULT);
         }
-        var snapshot = support.snapshot(a);
-        if (!snapshot.token().equals(r.token())) fail(AvailabilityErrorCode.STALE_RESULT);
-        var window = snapshot.recommendations().stream().filter(w -> w.startsAt().equals(r.startsAt()))
+        var snapshot = support.snapshot(access);
+        if (!snapshot.token().equals(request.token())) fail(AvailabilityErrorCode.STALE_RESULT);
+        var window = snapshot.recommendations().stream().filter(candidateWindow -> candidateWindow.startsAt().equals(request.startsAt()))
                 .findFirst().orElseThrow(() -> new AvailabilityException(AvailabilityErrorCode.STALE_RESULT));
-        Schedule s = a.schedule();
-        LocalDateTime originalStart = s.getStartsAt(), originalEnd = s.getEndsAt();
-        s.reschedule(window.startsAt(), window.endsAt());
-        p.confirm(window.startsAt(), window.endsAt(), originalStart, originalEnd, s.getTimeRevision(), r.token());
-        changed(a, "CONFIRMED");
-        return AvailabilityConverter.toPoll(support.snapshot(a));
+        Schedule schedule = access.schedule();
+        LocalDateTime originalStart = schedule.getStartsAt();
+        LocalDateTime originalEnd = schedule.getEndsAt();
+        schedule.reschedule(window.startsAt(), window.endsAt());
+        poll.confirm(window.startsAt(), window.endsAt(), originalStart, originalEnd, schedule.getTimeRevision(), request.token());
+        changed(access, "CONFIRMED");
+        return AvailabilityConverter.toPoll(support.snapshot(access));
     }
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void delete(Long scheduleId, Long memberId) {
-        var a = support.access(scheduleId, memberId, true, false, true);
-        AvailabilityPoll p = support.poll(scheduleId);
-        votes.deleteAllInBatch(votes.findForPoll(p.getId()));
-        responses.deleteAllInBatch(responses.findAllByAvailabilityPollId(p.getId()));
-        slots.deleteAllInBatch(slots.findAllByAvailabilityPollIdOrderBySlotAt(p.getId()));
-        polls.delete(p); changed(a, "DELETED");
+        var access = support.access(scheduleId, memberId, true, false, true);
+        AvailabilityPoll poll = support.poll(scheduleId);
+        votes.deleteAllByPollId(poll.getId());
+        responses.deleteAllInBatch(responses.findAllByAvailabilityPollId(poll.getId()));
+        slots.deleteAllInBatch(slots.findAllByAvailabilityPollIdOrderBySlotAt(poll.getId()));
+        polls.delete(poll);
+        changed(access, "DELETED");
     }
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void closeDue(Long scheduleId) {
@@ -140,18 +148,20 @@ public class AvailabilityCommandService {
         Long groupId = initial.get().getGroup().getId();
         groups.findByIdForUpdate(groupId).orElseThrow();
         schedules.findByIdForUpdate(scheduleId);
-        polls.findByScheduleId(scheduleId).ifPresent(p -> {
-            if (p.getStatus() == AvailabilityStatus.OPEN && !p.getVoteDeadlineAt().isAfter(support.now())) {
-                p.closeIfDue(support.now());
+        polls.findByScheduleId(scheduleId).ifPresent(poll -> {
+            if (poll.getStatus() == AvailabilityStatus.OPEN && !poll.getVoteDeadlineAt().isAfter(support.now())) {
+                poll.closeIfDue(support.now());
                 events.publishEvent(new AvailabilityChanged(groupId, scheduleId, "CLOSED"));
             }
         });
     }
-    private void requireOpen(AvailabilityPoll p) {
-        if (p.effectiveStatus(support.now()) != AvailabilityStatus.OPEN) fail(AvailabilityErrorCode.NOT_OPEN);
+    private void requireOpen(AvailabilityPoll poll) {
+        if (poll.effectiveStatus(support.now()) != AvailabilityStatus.OPEN) fail(AvailabilityErrorCode.NOT_OPEN);
     }
-    private void changed(AvailabilitySupport.Access a, String type) {
-        events.publishEvent(new AvailabilityChanged(a.group().getId(), a.schedule().getId(), type));
+    private void changed(AvailabilitySupport.Access access, String type) {
+        events.publishEvent(new AvailabilityChanged(access.group().getId(), access.schedule().getId(), type));
     }
-    private void fail(AvailabilityErrorCode code) { throw new AvailabilityException(code); }
+    private void fail(AvailabilityErrorCode code) {
+        throw new AvailabilityException(code);
+    }
 }

@@ -32,6 +32,7 @@ class AvailabilityRealtimeIntegrationTest {
     @Autowired com.moeasy.moeasybe.global.config.CorsProperties cors;
     @Autowired org.springframework.context.ApplicationEventPublisher events;
     @Autowired org.springframework.data.redis.connection.RedisConnectionFactory connection;
+    @Autowired com.moeasy.moeasybe.domain.schedule.realtime.AvailabilitySocketHandler handler;
     private Long groupId, memberId, scheduleId;
     private final java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
     private static final LocalDateTime SLOT = LocalDateTime.of(2099,1,10,9,0);
@@ -92,6 +93,34 @@ class AvailabilityRealtimeIntegrationTest {
             assertTrue(listener.messages.isEmpty());
         } finally { socket.abort(); }
     }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"MEMBERSHIP", "ACCOUNT"})
+    @DisplayName("변경 이벤트가 없어도 주기 점검은 탈퇴·계정 정지된 소켓을 종료한다")
+    void revalidate_revokedWithoutEvent_closesSocket(String revocation) throws Exception {
+        // given
+        Listener listener = new Listener();
+        var socket = connect(listener);
+        String connected = listener.messages.poll(5, TimeUnit.SECONDS);
+        assertNotNull(connected);
+        assertTrue(connected.contains("CONNECTED"));
+        try {
+            if (revocation.equals("MEMBERSHIP")) {
+                jdbc.update("update group_member set status='LEFT' where member_id=?", memberId);
+            } else {
+                jdbc.update("update member set status='BANNED' where id=?", memberId);
+            }
+
+            // when
+            handler.revalidate();
+
+            // then
+            assertAll(() -> assertEquals(1008, listener.closed.get(5, TimeUnit.SECONDS)),
+                    () -> assertTrue(listener.messages.isEmpty()));
+        } finally {
+            socket.abort();
+        }
+    }
+
     @Test @DisplayName("동일 Redis 채널의 두 노드가 커밋된 변경을 모두 수신한다")
     void relay_twoRedisListeners_deliversToBothNodes() throws Exception {
         // given

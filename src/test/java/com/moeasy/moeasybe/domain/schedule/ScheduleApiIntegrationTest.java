@@ -23,6 +23,7 @@ import java.util.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -188,6 +189,44 @@ class ScheduleApiIntegrationTest {
         // then
         result.andExpect(status().isForbidden());
         mvc.perform(auth(get(listPath()), requester)).andExpect(status().isForbidden());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "BANNED, MEMBER, DETAIL", "BANNED, MEMBER, LIST",
+            "BANNED, OWNER, CREATE", "BANNED, OWNER, UPDATE",
+            "BANNED, OWNER, CANCEL", "BANNED, OWNER, DELETE", "BANNED, MANAGER, UPDATE",
+            "DELETED, MEMBER, DETAIL", "DELETED, MEMBER, LIST",
+            "DELETED, OWNER, CREATE", "DELETED, OWNER, UPDATE",
+            "DELETED, OWNER, CANCEL", "DELETED, OWNER, DELETE", "DELETED, MANAGER, UPDATE"
+    })
+    @DisplayName("활성 멤버십이 남아 있어도 정지·삭제 상태의 계정은 일정에 접근할 수 없다")
+    void access_inactiveAccount_returns403(String accountStatus, GroupMemberRole role, String operation) throws Exception {
+        // given
+        Long scheduleId = create();
+        Long requester = switch (role) {
+            case OWNER -> owner;
+            case MANAGER -> manager;
+            case MEMBER -> member;
+        };
+        em.flush();
+        jdbc.update("update member set status=? where id=?", accountStatus, requester);
+        em.clear();
+        var request = switch (operation) {
+            case "DETAIL" -> get(path(scheduleId));
+            case "LIST" -> get(listPath());
+            case "CREATE" -> post(listPath()).contentType(MediaType.APPLICATION_JSON).content(BODY);
+            case "UPDATE" -> patch(path(scheduleId)).contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"수정\"}");
+            case "CANCEL" -> post(path(scheduleId) + "/cancel");
+            case "DELETE" -> delete(path(scheduleId));
+            default -> throw new IllegalArgumentException("Unknown operation: " + operation);
+        };
+
+        // when
+        var result = mvc.perform(auth(request, requester));
+
+        // then
+        result.andExpect(status().isForbidden());
     }
 
     @Test
