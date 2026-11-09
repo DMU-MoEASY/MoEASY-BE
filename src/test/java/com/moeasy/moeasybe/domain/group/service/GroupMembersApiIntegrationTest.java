@@ -27,6 +27,7 @@ class GroupMembersApiIntegrationTest extends JoinRequestIntegrationSupport {
         // given
         Long owner = member();
         Long group = group(owner, 20);
+        Long ownerMembership = jdbc.queryForObject("SELECT id FROM group_member WHERE group_id=? AND member_id=?", Long.class, group, owner);
         Long manager = membership(group, member(), "MANAGER", "ACTIVE", false);
         Long viewer = member();
         Long viewerMembership = membership(group, viewer, "MEMBER", "ACTIVE", false);
@@ -44,6 +45,11 @@ class GroupMembersApiIntegrationTest extends JoinRequestIntegrationSupport {
         result.andExpect(status().isOk()).andExpect(jsonPath("$.code").value("GROUP200_9"))
                 .andExpect(jsonPath("$.result.members.length()").value(3))
                 .andExpect(jsonPath("$.result.members[0].memberId").value(owner))
+                .andExpect(jsonPath("$.result.members[0].groupMemberId").value(ownerMembership))
+                .andExpect(jsonPath("$.result.members[0].role").value("OWNER"))
+                .andExpect(jsonPath("$.result.members[1].role").value("MANAGER"))
+                .andExpect(jsonPath("$.result.members[2].role").value("MEMBER"))
+                .andExpect(jsonPath("$.result.members[2].nickname").isNotEmpty())
                 .andExpect(jsonPath("$.result.members[1].groupMemberId").value(manager))
                 .andExpect(jsonPath("$.result.members[2].groupMemberId").value(viewerMembership));
     }
@@ -88,8 +94,8 @@ class GroupMembersApiIntegrationTest extends JoinRequestIntegrationSupport {
         var anonymous = mvc.perform(get(path(1L)));
         var invalid = mvc.perform(get(path(-1L)).cookie(token(actor)));
         // then
-        anonymous.andExpect(status().isUnauthorized());
-        invalid.andExpect(status().isBadRequest());
+        anonymous.andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("AUTH401_1"));
+        invalid.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALID400_1"));
     }
 
     private Cookie token(Long member) {
