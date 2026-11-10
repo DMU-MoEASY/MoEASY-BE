@@ -22,6 +22,7 @@ import com.moeasy.moeasybe.domain.group.enums.GroupStatus;
 import com.moeasy.moeasybe.domain.member.entity.Member;
 import com.moeasy.moeasybe.domain.member.enums.SocialType;
 import com.moeasy.moeasybe.domain.settlement.entity.Settlement;
+import com.moeasy.moeasybe.domain.schedule.entity.Schedule;
 import com.moeasy.moeasybe.domain.settlement.entity.SettlementItem;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
 import com.moeasy.moeasybe.global.security.jwt.JwtTokenProvider;
@@ -940,6 +941,56 @@ class SettlementApiIntegrationTest {
                 .status(GroupMemberStatus.ACTIVE).joinedAt(LocalDateTime.of(2026, 1, 1, 0, 0)).build();
         entityManager.persist(membership);
         return membership;
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"SCHEDULED", "CANCELLED", "DELETED"})
+    @DisplayName("일정 연관관계는 취소·소프트 삭제 후에도 정산 상세·목록·필터와 전체 건수를 보존한다")
+    void settlement_scheduleAssociation_preservesHistoricalHttpContract(String condition) throws Exception {
+        // given
+        Schedule schedule = Schedule.builder().group(group).title("연결 일정").description("설명")
+                .startsAt(LocalDateTime.of(2026, 10, 20, 9, 0))
+                .endsAt(LocalDateTime.of(2026, 10, 20, 10, 0))
+                .locationName("장소").locationAddress("주소").build();
+        if (condition.equals("CANCELLED")) schedule.cancel();
+        entityManager.persist(schedule);
+        entityManager.flush();
+        Long scheduleId = schedule.getId();
+        String body = validBody().replace("\"title\":", "\"scheduleId\":" + scheduleId + ",\"title\":");
+        CsrfCredentials csrf = requestCsrfCredentials();
+        String response = mockMvc.perform(authenticatedRequest(owner, csrf).content(body))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        Long settlementId = objectMapper.readTree(response).path("result").path("settlementId").longValue();
+        persistListSettlement("일정 없는 회비", List.of(target));
+        if (condition.equals("DELETED")) schedule.softDelete(LocalDateTime.of(2026, 10, 21, 9, 0));
+        entityManager.flush();
+        entityManager.clear();
+        Cookie cookie = accessTokenCookie(owner);
+
+        // when
+        var detail = mockMvc.perform(get(path() + "/" + settlementId).cookie(cookie));
+
+        // then
+        detail.andExpect(status().isOk()).andExpect(jsonPath("$.result.scheduleId").value(scheduleId))
+                .andExpect(jsonPath("$.result.status").value("OPEN"))
+                .andExpect(jsonPath("$.result.totalAmount").value(500));
+        mockMvc.perform(get(path()).cookie(cookie).param("size", "1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.totalElements").value(2))
+                .andExpect(jsonPath("$.result.hasNext").value(true));
+        mockMvc.perform(get(path()).cookie(cookie).param("scheduleId", scheduleId.toString()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.totalElements").value(1))
+                .andExpect(jsonPath("$.result.items[0].settlementId").value(settlementId))
+                .andExpect(jsonPath("$.result.items[0].scheduleId").value(scheduleId));
+        String listResponse = mockMvc.perform(get(path()).cookie(cookie))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.items.length()").value(2))
+                .andReturn().getResponse().getContentAsString();
+        long unlinkedCount = objectMapper.readTree(listResponse).path("result").path("items").valueStream()
+                .filter(item -> item.path("scheduleId").isNull()).count();
+        assertEquals(1L, unlinkedCount);
+        if (condition.equals("DELETED")) {
+            mockMvc.perform(authenticatedRequest(owner, csrf).content(body))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("SETTLEMENT400_1"));
+        }
     }
 
     private Settlement persistListSettlement(String title, List<GroupMember> targets) {

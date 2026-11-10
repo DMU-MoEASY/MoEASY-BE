@@ -78,7 +78,7 @@ class SettlementMappingRepositoryTest {
                 () -> assertEquals(Long.MAX_VALUE, reloaded.getTotalAmount()),
                 () -> assertEquals(splitMode, reloaded.getSplitMode()),
                 () -> assertEquals(SettlementStatus.OPEN, reloaded.getStatus()),
-                () -> assertNull(reloaded.getScheduleId()),
+                () -> assertNull(reloaded.getSchedule()),
                 () -> assertNull(reloaded.getFeeRuleId()),
                 () -> assertNull(reloaded.getDeletedAt()),
                 () -> assertNotNull(reloaded.getCreatedAt()),

@@ -14,6 +14,7 @@ import com.moeasy.moeasybe.domain.group.enums.GroupMemberStatus;
 import com.moeasy.moeasybe.domain.member.entity.Member;
 import com.moeasy.moeasybe.domain.member.enums.SocialType;
 import com.moeasy.moeasybe.domain.settlement.entity.Settlement;
+import com.moeasy.moeasybe.domain.schedule.entity.Schedule;
 import com.moeasy.moeasybe.domain.settlement.entity.SettlementItem;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementItemStatus;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
@@ -203,7 +204,7 @@ class SettlementListRepositoryTest {
     private Settlement persistSettlement(GroupMember creator, Long scheduleId,
             SettlementStatus status, LocalDateTime createdAt) {
         Settlement settlement = Settlement.builder().group(creator.getGroup()).createdByGroupMember(creator)
-                .title("정산").scheduleId(scheduleId).totalAmount(1000L).splitMode(SettlementSplitMode.EQUAL).build();
+                .title("정산").schedule(scheduleId == null ? null : entityManager.getReference(Schedule.class, scheduleId)).totalAmount(1000L).splitMode(SettlementSplitMode.EQUAL).build();
         entityManager.persist(settlement);
         entityManager.flush();
         entityManager.createQuery("update Settlement s set s.status = :status, s.createdAt = :createdAt where s.id = :id")

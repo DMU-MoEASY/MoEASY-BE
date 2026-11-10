@@ -12,8 +12,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.moeasy.moeasybe.domain.group.dto.request.GroupReqDTO;
 import com.moeasy.moeasybe.domain.group.dto.response.GroupResDTO;
-import com.moeasy.moeasybe.domain.group.service.command.GroupCommandService;
 import com.moeasy.moeasybe.domain.group.service.GroupCoverImageService;
+import com.moeasy.moeasybe.domain.group.service.command.GroupCommandService;
+import com.moeasy.moeasybe.domain.group.service.command.GroupJoinRequestCommandService;
+import com.moeasy.moeasybe.domain.group.service.query.GroupJoinRequestQueryService;
 import com.moeasy.moeasybe.domain.group.service.query.GroupQueryService;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -39,6 +41,12 @@ class GroupControllerTest {
 
     @Mock
     private GroupQueryService groupQueryService;
+
+    @Mock
+    private GroupJoinRequestCommandService joinRequestCommandService;
+
+    @Mock
+    private GroupJoinRequestQueryService joinRequestQueryService;
 
     @Mock
     private GroupCoverImageService coverImageService;
@@ -71,7 +79,8 @@ class GroupControllerTest {
 
     @BeforeEach
     void setUp() {
-        GroupController controller = new GroupController(groupCommandService, groupQueryService, coverImageService);
+        GroupController controller = new GroupController(groupCommandService, groupQueryService,
+                joinRequestCommandService, joinRequestQueryService, coverImageService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
