@@ -14,7 +14,11 @@ import java.time.ZoneOffset;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -52,17 +56,107 @@ class JwtAuthenticationFilterTest {
         assertTrue(chain.getRequest() != null);
     }
 
-    @Test
-    void Refresh_Token을_Access_Token_쿠키로_보내면_인증을_거부한다() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"Bearer", "bEaReR"})
+    @DisplayName("Bearer 헤더의 JWT로 인증하며 스킴의 대소문자를 구분하지 않는다")
+    void doFilter_bearerHeader_authenticates(String scheme) throws Exception {
+        // given
         JwtTokenProvider provider = provider();
-        String token = provider.issueRefreshToken(42L).value();
-        JwtAuthenticationFilter filter = filter(provider);
-        MockHttpServletRequest request = protectedRequest(token);
+        MockHttpServletRequest request = protectedRequest(null);
+        request.addHeader(HttpHeaders.AUTHORIZATION, scheme + " " + provider.issueAccessToken(42L).value());
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain chain = new MockFilterChain();
 
+        // when
+        filter(provider).doFilter(request, response, chain);
+
+        // then
+        assertEquals(42L, SecurityContextHolder.getContext().getAuthentication().getPrincipal());
+        assertEquals(200, response.getStatus());
+        assertTrue(chain.getRequest() != null);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("Bearer 헤더는 다른 회원의 쿠키와 유효하지 않은 쿠키보다 우선한다")
+    void doFilter_headerAndCookie_authenticatesHeader(boolean invalidCookie) throws Exception {
+        // given
+        JwtTokenProvider provider = provider();
+        MockHttpServletRequest request = protectedRequest(
+                invalidCookie ? "invalid-cookie" : provider.issueAccessToken(99L).value());
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + provider.issueAccessToken(42L).value());
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        // when
+        filter(provider).doFilter(request, response, chain);
+
+        // then
+        assertEquals(42L, SecurityContextHolder.getContext().getAuthentication().getPrincipal());
+        assertTrue(chain.getRequest() != null);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "Basic dGVzdA==", "Bearer", "Bearer invalid-token"})
+    @DisplayName("Authorization 헤더가 유효하지 않으면 정상 쿠키로 대체하지 않고 거부한다")
+    void doFilter_invalidHeaderAndValidCookie_rejects(String authorization) throws Exception {
+        // given
+        JwtTokenProvider provider = provider();
+        MockHttpServletRequest request = protectedRequest(provider.issueAccessToken(42L).value());
+        request.addHeader(HttpHeaders.AUTHORIZATION, authorization);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        // when
+        filter(provider).doFilter(request, response, chain);
+
+        // then
+        assertEquals(401, response.getStatus());
+        assertTrue(response.getContentAsString().contains("AUTH401_1"));
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+        assertNull(chain.getRequest());
+    }
+
+    @Test
+    @DisplayName("Authorization 헤더를 여러 개 전달하면 거부한다")
+    void doFilter_duplicateHeaders_rejects() throws Exception {
+        // given
+        JwtTokenProvider provider = provider();
+        MockHttpServletRequest request = protectedRequest(null);
+        String authorization = "Bearer " + provider.issueAccessToken(42L).value();
+        request.addHeader(HttpHeaders.AUTHORIZATION, authorization);
+        request.addHeader(HttpHeaders.AUTHORIZATION, authorization);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        // when
+        filter(provider).doFilter(request, response, chain);
+
+        // then
+        assertEquals(401, response.getStatus());
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+        assertNull(chain.getRequest());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("리프레시 JWT는 쿠키와 Bearer 헤더 모두에서 액세스 토큰으로 사용할 수 없다")
+    void doFilter_refreshToken_rejects(boolean bearer) throws Exception {
+        // given
+        JwtTokenProvider provider = provider();
+        String token = provider.issueRefreshToken(42L).value();
+        JwtAuthenticationFilter filter = filter(provider);
+        MockHttpServletRequest request = protectedRequest(bearer ? null : token);
+        if (bearer) {
+            request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+        }
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        // when
         filter.doFilter(request, response, chain);
 
+        // then
         assertEquals(401, response.getStatus());
         assertNull(SecurityContextHolder.getContext().getAuthentication());
         assertTrue(chain.getRequest() == null);
@@ -155,6 +249,7 @@ class JwtAuthenticationFilterTest {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/auth/reissue");
         request.setServletPath("/api/v1/auth/reissue");
         request.setCookies(new jakarta.servlet.http.Cookie(AuthCookieNames.ACCESS_TOKEN, "invalid-token"));
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer invalid-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain chain = new MockFilterChain();
 
@@ -172,7 +267,9 @@ class JwtAuthenticationFilterTest {
     private MockHttpServletRequest protectedRequest(String token) {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/members/me");
         request.setServletPath("/api/v1/members/me");
-        request.setCookies(new jakarta.servlet.http.Cookie(AuthCookieNames.ACCESS_TOKEN, token));
+        if (token != null) {
+            request.setCookies(new jakarta.servlet.http.Cookie(AuthCookieNames.ACCESS_TOKEN, token));
+        }
         return request;
     }
 

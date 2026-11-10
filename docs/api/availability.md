@@ -2,8 +2,8 @@
 
 ## 검토 결과와 보완한 정책
 
-이슈의 확정 정책을 구현 기준으로 사용한다. 기존 JWT 쿠키·CSRF·숫자 ID·ApiResponse와
-Asia/Seoul의 `yyyy-MM-dd'T'HH:mm:ss` 규약을 유지한다. UUID·UTC·Bearer 초안은 적용하지 않는다.
+이슈의 확정 정책을 구현 기준으로 사용한다. [공통 JWT 쿠키·Bearer 인증](auth.md)과 CSRF·숫자 ID·ApiResponse,
+Asia/Seoul의 `yyyy-MM-dd'T'HH:mm:ss` 규약을 사용한다. UUID·UTC 초안은 적용하지 않는다.
 Notion 기능/API 링크는 연결된 계정에서 404여서 내용을 대조하지 못했다.
 
 구현 전에 사용자와 다음 두 경계를 확정했다.
@@ -35,7 +35,7 @@ Notion 기능/API 링크는 연결된 계정에서 404여서 내용을 대조하
 ## REST 계약
 
 접두사: `/api/v1/schedules/{scheduleId}`. 모든 성공 응답은 공통 ApiResponse의 result에 아래 값을 담는다.
-쓰기 요청은 JWT 쿠키와 `XSRF-TOKEN` 쿠키에 대응하는 `X-XSRF-TOKEN` 헤더가 필요하다.
+쓰기 요청은 JWT 인증(액세스 쿠키 또는 Bearer 헤더)과 `XSRF-TOKEN` 쿠키에 대응하는 `X-XSRF-TOKEN` 헤더가 필요하다.
 클라이언트가 다른 구성원 ID나 status를 지정하는 필드는 없다.
 
 | 메서드 | 경로 | 권한 | 성공 result |

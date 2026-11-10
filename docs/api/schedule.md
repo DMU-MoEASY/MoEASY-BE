@@ -1,6 +1,6 @@
 # 모임 일정 API (#27)
 
-모든 경로의 접두사는 `/api/v1`이다. 기존 JWT 쿠키 인증과 `ApiResponse<T>`를 사용하며,
+모든 경로의 접두사는 `/api/v1`이다. [공통 JWT 쿠키·Bearer 인증](auth.md)과 `ApiResponse<T>`를 사용하며,
 쓰기 요청은 `XSRF-TOKEN` 쿠키와 `X-XSRF-TOKEN` 헤더가 필요하다.
 
 ## Swagger 명세
