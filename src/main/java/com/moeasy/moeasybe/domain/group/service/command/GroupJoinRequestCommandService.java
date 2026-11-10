@@ -145,7 +145,7 @@ public class GroupJoinRequestCommandService {
     }
 
     private void requireCapacity(Group group) {
-        if (groupMemberRepository.countByGroupIdAndStatusAndDeletedAtIsNull(group.getId(), GroupMemberStatus.ACTIVE)
+        if (groupMemberRepository.countActiveMembers(group.getId())
                 >= group.getMaxMembers()) {
             throw new GroupException(GroupErrorCode.GROUP_CAPACITY_EXCEEDED);
         }

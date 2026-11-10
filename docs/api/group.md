@@ -2,7 +2,7 @@
 
 ## 범위와 공통 계약
 
-Group API의 공통 접두사는 `/api/v1`이다. 아래 표의 `/groups` 경로에는 모두 이 접두사가 적용된다. Issue #14의 그룹 CRUD와 Issue #23의 승인제 가입 관리 API를 제공한다. 목록·검색·초대 및 참여/미참여 조회는 [후속 범위](#후속-범위)에 보존한다.
+Group API의 공통 접두사는 `/api/v1`이다. 아래 표의 `/groups` 경로에는 모두 이 접두사가 적용된다. Issue #14의 그룹 CRUD, Issue #23의 승인제 가입 관리, Issue #38의 추천·검색 피드를 제공한다. 거리·기타 정렬·초대 및 참여/미참여 조회는 [후속 범위](#후속-범위)에 보존한다.
 
 - Group API의 식별자 `groupId`는 `member_group.id`에 대응하는 양의 정수다.
 - 모든 API는 JWT로 인증된 회원만 호출할 수 있다. 쿠키·Bearer 인증과 Swagger 사용법은 [공통 인증 계약](auth.md)을 따른다. 상세 조회에는 Group 멤버십을 요구하지 않는다. 수정과 폐쇄는 해당 Group의 활성 `OWNER` 멤버십을 요구한다.
@@ -11,6 +11,7 @@ Group API의 공통 접두사는 `/api/v1`이다. 아래 표의 `/groups` 경로
 
 | Method | Endpoint | 기능 | 권한 |
 | --- | --- | --- | --- |
+| GET | /groups?sort=RECOMMENDED | 추천·검색 피드 (10장 고정) | 인증 회원 |
 | POST | /groups | Group 생성 및 생성자 OWNER 멤버십 부여 | 인증 회원 |
 | GET | /groups/{groupId} | Group 단건 상세 조회 | 인증 회원 |
 | PATCH | /groups/{groupId} | 전달된 Group 필드만 변경 | 활성 OWNER |
@@ -223,16 +224,18 @@ PENDING만 APPROVED·REJECTED·CANCELLED로 전이할 수 있다. 승인·거절
 
 | Method | Endpoint | 기능 | 기존 명세의 권한 |
 | --- | --- | --- | --- |
-| GET | /groups | 키워드·카테고리·지역·거리 기반 검색 | Public/USER |
+| GET | /groups (후속 확장) | 거리 필터·거리/최신/인원 정렬 | 재확정 필요 |
 | GET | /users/me/groups | 내 참여 모임 조회 | USER |
 | POST | /groups/{groupId}/invite-links | 초대 링크·코드 생성 | GROUP_STAFF |
 | GET | /group-invites/{inviteCode} | 초대 링크 유효성·모임 요약 조회 | Public |
 | POST | /group-invites/{inviteCode}/accept | 초대 수락 또는 가입 신청 | USER |
 | DELETE | /groups/{groupId}/invite-links/{inviteId} | 초대 링크 폐기 | GROUP_STAFF |
 
-### 기존 검색 메모
+### 미구현 검색 확장 메모
 
-`GET /groups?q=러닝&category=SPORTS&regionCode=11680&lat=37.5665&lng=126.9780&radiusKm=5&sort=DISTANCE&cursor=...&size=20`
+아래는 과거 기획 예시이며 현재 호출 계약이 아니다. 현재 추천 조회는 아래 #38 계약을 사용한다.
+
+`GET /groups?...&lat=37.5665&lng=126.9780&radiusKm=5&sort=DISTANCE`
 
 - `sort`: RECOMMENDED, DISTANCE, NEWEST, MEMBER_COUNT
 - 위치 권한이 없으면 `lat/lng/radiusKm`을 생략하고 지역 코드로 검색한다.
@@ -253,3 +256,222 @@ GET 및 PATCH `/api/v1/groups/{groupId}` 성공 응답의 `result.tier`는 읽�
 프런트엔드는 `bronze`, `silver`, `gold`를 각각 브론즈·실버·골드로 표시한다.
 초기값은 bronze이며 한국 시간 00시부터 모임별 계산이 커밋될 때 새 값이 보인다.
 상세 조회와 수정은 마지막 성공 결과를 읽는다. 산정과 장애 복구 절차는 [티어 배치 운영](../group-tier-operations.md)을 따른다.
+
+
+## 추천·검색 피드 (#38)
+
+`GET /api/v1/groups?sort=RECOMMENDED` (JWT 쿠키 `moeasy_access_token` 또는 `Authorization: Bearer <access-token>` 필요).
+성공은 HTTP 200 / `GROUP200_10`다. 고정 10장 이내, 내부 점수는 반환하지 않는다.
+광고는 모임 ID와 연결되지 않는 독립 배너다.
+랜딩 URL은 HTTPS와 유효한 DNS 호스트(국제화 도메인은 punycode), IPv4 또는 대괄호로 감싼 IPv6를 사용한다.
+선택 포트는 0~65535 범위이며, 사용자 정보(`user@host`), 공백·제어문자와 역슬래시는 허용하지 않는다.
+URL 형식 검사는 외부 사이트의 실제 응답이나 가용성을 보장하지 않는다.
+
+### 요청 필터와 FE 카테고리 대응
+
+| 파라미터 | 기본값 / 계약 |
+| --- | --- |
+| `sort` | 생략 시 `RECOMMENDED`. 그 외 값은 400 |
+| `query` | 생략 시 전체. trim 후 소문자로 정규화, 최대 100자. 모임명·소개·카테고리명·지역명에서 부분 검색. `%`, `_`는 와일드카드가 아닌 문자 |
+| `categoryCodes` | 생략 시 전체. 쉼표 또는 반복 파라미터로 여러 실제 BE 코드를 전달. OR 조건. 중복 제거 후 코드 순서 무관 |
+| `regionCode` | 생략 시 전체. `GET /api/v1/regions`의 실제 5자리 시·군·구 코드와 정확히 일치. 예: `11680` 강남구, `11110` 종로구 |
+| `cursor` | 첫 요청은 생략. 다음 요청은 같은 정렬·필터에 직전 `nextCursor`를 URL 인코딩하여 전달 |
+
+카테고리와 지역 필터, 검색은 후보 분류 **이전**에 모두 AND로 적용한다.
+존재하지 않거나 삭제된 카테고리·지역 코드는 400이다. 페이지 크기는 10으로 고정되어 `size` 파라미터를 사용하지 않는다.
+
+[FE ExploreExperience.tsx](https://github.com/DMU-MoEASY/MoEASY-FE/blob/HEAD/src/app/components/ExploreExperience.tsx)를 먼저 확인했다.
+현재 FE는 한글 문자열 비교로 탭을 처리하고 BE 코드 대응표를 가지고 있지 않다.
+아래 다중 코드 묶음은 **연동 제안안이며 확정 정책이 아니다**. 서버는 탭 별칭을 해석하지 않고 전달된 실제 코드만 적용하므로 매핑 결정과 독립적으로 호출할 수 있다.
+
+| FE 탭 | 전달할 `categoryCodes` 제안 | 근거 / 상태 |
+| --- | --- | --- |
+| 추천 | 생략 | 전체 후보에 개인화 적용 |
+| 운동 | `RUNNING,HIKING` | DB 러닝·등산을 묶는 제안 |
+| 스터디 | `STUDY` (+ `DEVELOPMENT` 포함 제안) | STUDY=스터디는 직접 대응. 개발 포함 여부는 FE 확인 필요 |
+| 문화 | `READING,PHOTOGRAPHY` | 독서·사진을 묶는 제안 |
+| 음식 | `FOOD` | DB 맛집을 음식 탭으로 표시하는 제안 |
+| 취미 | `TRAVEL,VOLUNTEERING` | 여행·봉사 배치 제안. 문화/취미 경계는 FE 확인 필요 |
+| 게임 | `BOARD_GAME` | 현재 DB에서 제공하는 보드게임 매핑 제안 |
+
+전체 실제 코드: `RUNNING`, `HIKING`, `STUDY`, `READING`, `PHOTOGRAPHY`, `FOOD`, `BOARD_GAME`, `TRAVEL`, `VOLUNTEERING`, `DEVELOPMENT`.
+FE의 기존 지역 필터는 도/광역시 이름 `startsWith` 비교다. 이번 API의 `regionCode`는 세부 지역 코드이므로 지역 목록 API를 이용해 선택 UI를 연결해야 한다. 시도 전체 필터는 이번 계약에 없다.
+
+### 적격 후보·점수·추천 사유
+
+- 미삭제 `ACTIVE` 모임 중 정원 미만만 후보로 삼는다. 활성 미삭제 멤버십이 있거나 PENDING 신청이 있거나 KICKED 이력이 있으면 제외한다. KICKED는 멤버십 삭제 여부와 무관하게 제외한다. LEFT·취소/거절 신청은 다른 조건을 통과하면 후보가 된다.
+- 현재 인원과 정원은 가입 승인과 공통 SQL 조건인 **멤버십 ACTIVE + deleted_at IS NULL**을 사용한다. 계정의 ACTIVE 여부까지 보는 티어 배치 인원 집계와는 다르다. 배치 로직을 추천 정원으로 사용하지 않는다.
+- 관심사 일치 +50 (`INTEREST_MATCH`), 대표 지역 일치 +30 (`REGION_MATCH`), 저장된 silver +5 (`SILVER_TIER`) / gold +10 (`GOLD_TIER`), 최근 활동 +10 (`RECENT_ACTIVITY`). bronze는 가산·태그 없음.
+- 첫 요청의 한국 시간 `T`에 `T-30일 < endsAt <= T`인 미삭제·미취소 일정이 있으면 활동 점수를 한 번 가산한다. 여러 일정이나 여러 관심사 때문에 모임 행·점수가 중복되지 않는다.
+- 관심사·대표 지역 중 하나라도 일치하면 일반 후보, 모두 불일치하면 낮은 관련성 후보다. 둘 다 비어 있으면 전체 후보가 일반 후보가 된다.
+- 각 후보군은 점수 DESC → 생성 시각 DESC → ID DESC. 티어는 #32가 마지막 저장한 `member_group.tier`를 읽으며 요청 중 재계산하지 않는다.
+
+### 페이지 구성·커서
+
+| 후보와 광고 | 반환 조합 |
+| --- | --- |
+| 일반 >=8, 낮은 관련성 있음, 광고 있음 | 일반8 + 낮은 관련성1 + 광고1 |
+| 일반 >=9, 낮은 관련성 없음, 광고 있음 | 일반9 + 광고1 |
+| 일반 >=9, 낮은 관련성 있음, 광고 없음 | 일반9 + 낮은 관련성1 |
+| 일반 >=10, 낮은 관련성 없음, 광고 없음 | 일반10 |
+| 위 조합으로 10장을 못 채움 | 남은 일반만 반환 후 종료 |
+| 일반 없음 | 빈 items, hasNext=false, nextCursor=null |
+
+광고는 항상 10번째, 낮은 관련성은 일반 카드 다음이다. 낮은 관련성은 최대 1개이며 일반 후보가 부족한 마지막 페이지를 낮은 관련성으로 채우지 않는다.
+활성 광고의 노출 기간은 `startsAt <= T < endsAt`. ID ASC로 A→B→A 순환하며 실제 광고가 반환된 경우만 광고 순번을 증가시킨다. 광고 1개는 반복 노출 가능하다.
+`totalGroupCount`는 광고를 제외한 전체 적격·필터 통과 모임 수다. 마지막에 낮은 관련성만 남으면 그 후보는 노출되지 않을 수 있으므로 카드 누적 개수와 다를 수 있다.
+
+커서는 일반/낮은 관련성 각각 **실제로 소비한 마지막 (점수, 생성 시각, ID)**, T, 다음 광고 순번을 포함한다.
+회원·정렬·정규화한 필터와 결합하고 HMAC으로 손상을 검증한다. 클라이언트는 해석·수정하지 않는다.
+다른 회원·필터·정렬·손상 커서는 기존 공통 400 오류로 처리한다. JWT 서명 키 교체 시 기존 커서도 무효화된다.
+동일 데이터와 같은 커서는 같은 카드·순서를 재현한다. 다음 요청은 모임 폐쇄·삭제·가입·대기·강퇴·만석 등 최신 자격을 다시 검사한다.
+전체 데이터를 별도로 저장하는 스냅샷은 아니므로 페이지 사이 티어·관심사·모임 내용 등 정렬 요소 자체가 변경되는 경우 전체 순서를 고정하지 않는다. 기준 시각은 최근 활동·광고 기간에 고정 적용된다.
+
+### 카드 계약과 FE 처리
+
+`items[].type`을 discriminator로 사용한다. Swagger의 `Item.oneOf`와 네 가지 응답 예시에도 같은 계약을 제공한다.
+200 응답은 `ApiResponse<Feed>` 스키마에 연결된다. 필수 `type`의 값은 `GROUP` 또는 `AD`이며
+각각 `GroupCard`, `AdCard`로 명시적으로 매핑한다.
+
+| 유형 | 필드 | FE 처리 |
+| --- | --- | --- |
+| GROUP | `groupId`, `name`, `description`, `categoryCode`, `categoryName`, `regionCode`, `regionName`, `coverImageUrl`(nullable), `currentMemberCount`, `maxMembers`, `tier`, `recommendationReasons` | 모임 상세로 이동. null 커버는 기본 이미지 사용. 태그를 사용자 문구로 변환 |
+| AD | `adId`, `advertiserName`, `title`, `imageUrl`, `landingUrl` | 반드시 **광고** 라벨. 모임 상세가 아닌 HTTPS 외부 링크로 이동 |
+
+상대 `imageUrl`은 **API origin** 기준으로 해석한다 (`new URL(item.imageUrl, apiOrigin)`); FE origin으로 조합하지 않는다.
+새 창 링크에는 `target="_blank" rel="noopener noreferrer"`를 사용한다.
+FE의 기존 로컬 배열 필터 대신 API 응답을 사용하고 `totalGroupCount`를 모임 개수로 표시한다.
+검색/탭/지역을 바꾸면 기존 카드·커서를 초기화한다. 이전 조건의 늦은 응답을 버리고, 다음 페이지 요청 중에는 중복 요청을 막는다.
+추가 응답의 `items`를 순서대로 append한다. 키는 `GROUP:${groupId}`, `AD:${adId}:${pageIndex}`처럼 유형과 광고 반복 노출을 구분한다.
+`hasNext=false` 또는 `nextCursor=null`이면 요청을 종료한다. 낮은 관련성·광고만을 위한 후속 페이지를 만들지 않는다.
+
+### 응답 예시
+
+아래는 로컬 시연 데이터 기준이다. 설명용 커서 문자열을 요청에 붙이지 말고 **실제 응답의 nextCursor**를 사용한다.
+
+#### 첫 페이지: 일반8 + 발견1 + 광고 A
+
+```json
+{
+  "isSuccess": true, "code": "GROUP200_10", "message": "추천 모임 피드를 조회했습니다.",
+  "result": {
+    "items": [
+      {"type":"GROUP","groupId":380117,"name":"[추천38] 일반17","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380116,"name":"[추천38] 일반16","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380115,"name":"[추천38] 일반15","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380114,"name":"[추천38] 일반14","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380113,"name":"[추천38] 일반13","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380112,"name":"[추천38] 일반12","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380111,"name":"[추천38] 일반11","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380110,"name":"[추천38] 일반10","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380119,"name":"[추천38] 발견02","description":"로컬 추천 피드 시연","categoryCode":"STUDY","categoryName":"스터디","regionCode":"11110","regionName":"서울특별시 종로구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":[]},
+      {"type":"AD","adId":380001,"advertiserName":"MoEASY 시연 A","title":"새로운 모험을 함께해요","imageUrl":"/feed-ads/ad-a.svg","landingUrl":"https://example.com/?banner=A"}
+    ],
+    "totalGroupCount": 19, "hasNext": true,
+    "nextCursor": "서버가 반환한 불투명 커서"
+  }
+}
+```
+
+#### 다음 페이지: 일반8 + 발견1 + 광고 B
+
+```json
+{
+  "isSuccess": true, "code": "GROUP200_10", "message": "추천 모임 피드를 조회했습니다.",
+  "result": {
+    "items": [
+      {"type":"GROUP","groupId":380109,"name":"[추천38] 일반09","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380108,"name":"[추천38] 일반08","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380107,"name":"[추천38] 일반07","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380106,"name":"[추천38] 일반06","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380105,"name":"[추천38] 일반05","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380104,"name":"[추천38] 일반04","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380103,"name":"[추천38] 일반03","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380102,"name":"[추천38] 일반02","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380118,"name":"[추천38] 발견01","description":"로컬 추천 피드 시연","categoryCode":"STUDY","categoryName":"스터디","regionCode":"11110","regionName":"서울특별시 종로구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":[]},
+      {"type":"AD","adId":380002,"advertiserName":"MoEASY 시연 B","title":"이번 주말의 새로운 시작","imageUrl":"/feed-ads/ad-b.svg","landingUrl":"https://example.com/?banner=B"}
+    ],
+    "totalGroupCount": 19, "hasNext": true,
+    "nextCursor": "서버가 반환한 불투명 커서"
+  }
+}
+```
+
+#### 마지막 페이지: 일반1, 종료
+
+```json
+{
+  "isSuccess": true, "code": "GROUP200_10", "message": "추천 모임 피드를 조회했습니다.",
+  "result": {
+    "items": [
+      {"type":"GROUP","groupId":380101,"name":"[추천38] 일반01","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]}
+    ],
+    "totalGroupCount": 19, "hasNext": false,
+    "nextCursor": null
+  }
+}
+```
+
+#### 광고가 없는 첫 페이지: 일반9 + 발견1
+
+```json
+{
+  "isSuccess": true, "code": "GROUP200_10", "message": "추천 모임 피드를 조회했습니다.",
+  "result": {
+    "items": [
+      {"type":"GROUP","groupId":380117,"name":"[추천38] 일반17","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380116,"name":"[추천38] 일반16","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380115,"name":"[추천38] 일반15","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380114,"name":"[추천38] 일반14","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380113,"name":"[추천38] 일반13","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380112,"name":"[추천38] 일반12","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380111,"name":"[추천38] 일반11","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380110,"name":"[추천38] 일반10","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380109,"name":"[추천38] 일반09","description":"로컬 추천 피드 시연","categoryCode":"RUNNING","categoryName":"러닝","regionCode":"11680","regionName":"서울특별시 강남구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":["INTEREST_MATCH","REGION_MATCH"]},
+      {"type":"GROUP","groupId":380119,"name":"[추천38] 발견02","description":"로컬 추천 피드 시연","categoryCode":"STUDY","categoryName":"스터디","regionCode":"11110","regionName":"서울특별시 종로구","coverImageUrl":null,"currentMemberCount":1,"maxMembers":20,"tier":"bronze","recommendationReasons":[]}
+    ],
+    "totalGroupCount": 19, "hasNext": true,
+    "nextCursor": "서버가 반환한 불투명 커서"
+  }
+}
+```
+
+### 로컬 더미 피드 재현
+
+더미는 `db/dummy/V20261110164908__group_recommendation_demo.sql`에 있으며 **local 프로파일만** Flyway로 적용한다. 운영에는 `db/migration`만 사용한다.
+URL 제약 보강은 새 `V20261110234640__strengthen_feed_advertisement_url.sql`로 적용한다.
+기존 소재가 새 제약을 위반하면 적용이 실패하며, 데이터를 자동 수정·삭제하지 않는다. 적용 전에 해당 소재의 랜딩 URL을 확인한다.
+시연 회원은 `380001`, 운영자는 `380002`. 검색어 `추천38`로 일반17·발견2를 격리한다. 가입·대기·강퇴·만석·보관·폐쇄·삭제 모임 및 시작 전·만료·비활성 광고도 들어 있다.
+A/B 이미지는 프로젝트의 `/feed-ads/ad-a.svg`, `/feed-ads/ad-b.svg`이며 외부 이미지 호스팅이나 AWS 호출 없이 제공한다.
+
+기존 로컬 실행 환경변수와 **서버와 같은 JWT_SECRET**을 준비한다. 비밀값은 셸 환경이나 Git에서 제외된 `.env`에서 관리한다.
+시연 스크립트는 환경변수만 읽으므로 `.env`만 사용하는 경우 JWT_SECRET을 별도로 셸에 설정한다.
+
+```bash
+task docker-up
+# 터미널 1: local 프로파일 + 기존 로컬 OAuth/S3 설정, JWT_SECRET을 준비한 상태
+task run
+
+# 터미널 2: 서버와 같은 JWT_SECRET 환경변수를 준비한 상태
+python3 scripts/local/group-feed-demo.py --output /tmp/moeasy-feed-page1.json
+python3 scripts/local/group-feed-demo.py --after /tmp/moeasy-feed-page1.json --output /tmp/moeasy-feed-page2.json
+python3 scripts/local/group-feed-demo.py --after /tmp/moeasy-feed-page2.json --output /tmp/moeasy-feed-page3.json
+```
+
+서버 포트가 다르면 `--base-url http://127.0.0.1:8081`을 추가한다. 스크립트는 로컬 주소만 허용하며 인증 쿠키나 비밀값을 출력하지 않는다.
+첫 응답은 10장(일반8+발견1+A), 다음은 10장(일반8+발견1+B), 마지막은 일반1장이다. 모두 totalGroupCount=19이며 마지막 hasNext=false·nextCursor=null이다.
+별도 로컬 광고를 추가하면 공통 광고 풀에 포함되므로 정확한 A/B 재현은 더미만 있는 DB에서 수행한다.
+
+직접 호출은 로그인으로 발급받은 쿠키 파일을 사용할 수 있다. 아래 첫 요청의 실제 nextCursor를 두 번째 명령에 전달한다.
+
+```bash
+curl -b /tmp/moeasy-cookies.txt --get 'http://localhost:8080/api/v1/groups' \
+  --data-urlencode 'sort=RECOMMENDED' --data-urlencode 'query=추천38'
+curl -b /tmp/moeasy-cookies.txt --get 'http://localhost:8080/api/v1/groups' \
+  --data-urlencode 'sort=RECOMMENDED' --data-urlencode 'query=추천38' \
+  --data-urlencode "cursor=$NEXT_CURSOR"
+```
+
+추천 피드 통합 테스트는 실제 MySQL·Redis, JWT 쿠키와 보안 필터, MockMvc HTTP 처리를 사용한다. 테스트 데이터는 트랜잭션 rollback으로 격리한다.
+일반17·발견2·광고2의 모임 ID 중복/누락·총19·종료 커서, 배점·정렬·사유, 일정/광고 경계, 제외 대상, 필터, 잘못된 커서, 재요청, 조회 중 자격 변경을 검증한다. 더미 SQL 자체의 3페이지 API 재현도 별도 테스트한다.
+FE 통합 후 실제 카드 렌더링·광고 라벨·클릭 시 외부 링크 이동은 FE에서 확인해야 한다. 실제 광고 네트워크·관리 화면·노출/클릭 집계·과금은 이번 범위에 없다.
