@@ -325,6 +325,95 @@ class ScheduleApiIntegrationTest {
         result.andExpect(status().isBadRequest());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "1", "-1", "0.5", "true", "\"0\""})
+    @DisplayName("장소 제공자의 숫자·불리언 입력은 400으로 거부하고 일정을 저장하지 않는다")
+    void create_nonStringPlaceProvider_returns400WithoutSaving(String provider) throws Exception {
+        // given
+        var body = (tools.jackson.databind.node.ObjectNode) mapper.readTree(BODY);
+        body.set("placeProvider", mapper.readTree(provider));
+        body.put("placeId", "12345");
+        var request = post(listPath()).contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(body));
+
+        // when
+        var result = mvc.perform(auth(request, owner));
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+        assertEquals(0, jdbc.queryForObject("select count(*) from schedule where group_id=?", Integer.class, group.getId()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"KAKAO", "GOOGLE"})
+    @DisplayName("문자열 장소 제공자는 기존 계약대로 생성할 수 있다")
+    void create_stringPlaceProvider_savesProvider(String provider) throws Exception {
+        // given
+        var body = (tools.jackson.databind.node.ObjectNode) mapper.readTree(BODY);
+        body.put("placeProvider", provider);
+        body.put("placeId", "12345");
+        var request = post(listPath()).contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(body));
+
+        // when
+        var result = mvc.perform(auth(request, owner));
+
+        // then
+        result.andExpect(status().isCreated());
+        assertEquals(provider, jdbc.queryForObject("select place_provider from schedule where group_id=?", String.class, group.getId()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0999-12-31T23:59:59", "+10000-01-01T00:00:00"})
+    @DisplayName("커서의 생성 시각이 DB 범위를 벗어나면 500 대신 400을 반환한다")
+    void list_outOfRangeCursor_returns400(String createdAt) throws Exception {
+        // given
+        String raw = "1|" + group.getId() + "|2026-11-01T00:00|2026-12-01T00:00|" + createdAt + "|1";
+        String cursor = Base64.getUrlEncoder().withoutPadding().encodeToString(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var request = get(listPath()).param("cursor", cursor);
+
+        // when
+        var result = mvc.perform(auth(request, owner));
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "from,2026-11-01T00:00", "to,2026-12-01T00:00",
+            "from,2026-11-01T00:00:00+09:00", "to,2026-12-01T00:00:00Z",
+            "from,2026-11-01T00:00:00.000", "to,2026-12-01T00:00:00.001",
+            "from,2026-11-31T00:00:00", "to,2026-12-32T00:00:00"
+    })
+    @DisplayName("목록 조회는 초 생략·오프셋·소수 초·유효하지 않은 날짜를 거부한다")
+    void list_invalidTimeFormat_returns400(String field, String value) throws Exception {
+        // given
+        String from = field.equals("from") ? value : "2026-11-01T00:00:00";
+        String to = field.equals("to") ? value : "2026-12-01T00:00:00";
+        var request = get(listPath()).param("from", from).param("to", to);
+
+        // when
+        var result = mvc.perform(auth(request, owner));
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    @DisplayName("초를 포함한 조회 기간과 기간 생략 시 기본 기간을 모두 허용한다")
+    void list_validOrOmittedPeriod_returnsSchedules(boolean explicitPeriod) throws Exception {
+        // given
+        create();
+        var request = get(listPath());
+        if (explicitPeriod) request.param("from", "2026-11-01T00:00:00").param("to", "2026-12-01T00:00:00");
+
+        // when
+        var result = mvc.perform(auth(request, owner));
+
+        // then
+        result.andExpect(status().isOk()).andExpect(jsonPath("$.result.items.length()").value(1));
+    }
+
     private Long create() {
         return command.createSchedule(group.getId(), mapper.readValue(BODY, ScheduleReqDTO.Create.class), owner).scheduleId();
     }

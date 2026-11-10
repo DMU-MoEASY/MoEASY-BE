@@ -4,7 +4,11 @@ import com.moeasy.moeasybe.domain.schedule.dto.request.ScheduleReqDTO;
 import com.moeasy.moeasybe.domain.schedule.dto.response.ScheduleResDTO;
 import com.moeasy.moeasybe.global.apiPayload.ApiResponse;
 import org.springframework.http.ResponseEntity;
+import java.beans.PropertyEditorSupport;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.format.ResolverStyle;
 import com.moeasy.moeasybe.domain.schedule.controller.docs.ScheduleControllerDocs;
 import com.moeasy.moeasybe.domain.schedule.exception.code.ScheduleSuccessCode;
 import com.moeasy.moeasybe.domain.schedule.service.command.ScheduleCommandService;
@@ -12,7 +16,8 @@ import com.moeasy.moeasybe.domain.schedule.service.query.ScheduleQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.web.bind.WebDataBinder;
+import org.springframework.web.bind.annotation.InitBinder;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -28,15 +33,31 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 @RequestMapping("/api/v1")
 public class ScheduleController implements ScheduleControllerDocs {
+    private static final DateTimeFormatter QUERY_TIME_FORMAT = DateTimeFormatter
+            .ofPattern("uuuu-MM-dd'T'HH:mm:ss").withResolverStyle(ResolverStyle.STRICT);
     private final ScheduleQueryService query;
     private final ScheduleCommandService command;
+
+    @InitBinder({"from", "to"})
+    public void bindQueryTimes(WebDataBinder binder) {
+        binder.registerCustomEditor(LocalDateTime.class, new PropertyEditorSupport() {
+            @Override
+            public void setAsText(String text) {
+                try {
+                    setValue(LocalDateTime.parse(text, QUERY_TIME_FORMAT));
+                } catch (DateTimeParseException exception) {
+                    throw new IllegalArgumentException("조회 시각은 yyyy-MM-dd'T'HH:mm:ss 형식이어야 합니다.", exception);
+                }
+            }
+        });
+    }
 
     @Override
     @GetMapping("/groups/{groupId}/schedules")
     public ResponseEntity<ApiResponse<ScheduleResDTO.Page>> getSchedules(
             @PathVariable Long groupId,
-            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss") LocalDateTime from,
-            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss") LocalDateTime to,
+            @RequestParam(required = false) LocalDateTime from,
+            @RequestParam(required = false) LocalDateTime to,
             @RequestParam(required = false) Integer size,
             @RequestParam(required = false) String cursor,
             @AuthenticationPrincipal Long memberId) {

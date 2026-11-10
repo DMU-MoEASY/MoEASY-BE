@@ -1,4 +1,5 @@
 package com.moeasy.moeasybe.domain.schedule.dto.request;
+import com.moeasy.moeasybe.domain.schedule.dto.deserializer.AvailabilityIntegerDeserializer;
 import com.moeasy.moeasybe.domain.schedule.dto.deserializer.ScheduleTimeDeserializer;
 import jakarta.validation.constraints.*;
 import java.time.*;
@@ -10,9 +11,9 @@ public final class AvailabilityReqDTO {
     @Schema(name = "AvailabilityConfigure")
     public record Configure(
             @NotNull(message = "시작 날짜는 필수입니다.") LocalDate startDate,
-            @NotNull(message = "후보 일수는 필수입니다.") Integer dayCount,
-            @NotNull(message = "시작 시간은 필수입니다.") @Min(0) @Max(23) Integer startHour,
-            @NotNull(message = "종료 시간은 필수입니다.") @Min(1) @Max(24) Integer endHour,
+            @NotNull(message = "후보 일수는 필수입니다.") @JsonDeserialize(using = AvailabilityIntegerDeserializer.class) Integer dayCount,
+            @NotNull(message = "시작 시간은 필수입니다.") @Min(0) @Max(23) @JsonDeserialize(using = AvailabilityIntegerDeserializer.class) Integer startHour,
+            @NotNull(message = "종료 시간은 필수입니다.") @Min(1) @Max(24) @JsonDeserialize(using = AvailabilityIntegerDeserializer.class) Integer endHour,
             @NotNull(message = "마감은 필수입니다.") @JsonDeserialize(using = ScheduleTimeDeserializer.class)
             LocalDateTime voteDeadlineAt) { }
     @Schema(name = "AvailabilitySubmit")

@@ -24,6 +24,7 @@ import java.util.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -370,6 +371,51 @@ class AvailabilityApiIntegrationTest {
                 .andExpect(jsonPath("$.paths['/api/v1/schedules/{scheduleId}/availability-poll/confirm'].post").exists())
                 .andExpect(jsonPath("$.components.schemas.AvailabilityDetail.properties.recommendations").exists());
     }
+    @ParameterizedTest
+    @CsvSource({
+            "create,dayCount,3.9", "create,startHour,9.9", "create,endHour,12.9",
+            "update,dayCount,3.9", "update,startHour,9.9", "update,endHour,12.9",
+            "create,dayCount,3.0", "update,endHour,12.0",
+            "create,startHour,true", "update,dayCount,2147483648",
+            "create,dayCount,'\"3\"'", "update,startHour,'\"9\"'"
+    })
+    @DisplayName("후보 일수·시간의 비정수 입력은 400으로 거부하고 투표 상태를 보존한다")
+    void configure_nonIntegerFields_returns400WithoutMutation(String operation, String field, String value) throws Exception {
+        // given
+        boolean update = operation.equals("update");
+        if (update) createPoll();
+        var before = update ? query.getPoll(scheduleId, owner) : null;
+        var body = (tools.jackson.databind.node.ObjectNode) mapper.readTree(CONFIG);
+        body.set(field, mapper.readTree(value));
+        var request = (update ? patch(path("availability-poll")) : post(path("availability-poll")))
+                .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(body));
+
+        // when
+        var result = mvc.perform(auth(request, owner));
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+        if (update) assertEquals(before, query.getPoll(scheduleId, owner));
+        else assertEquals(0, jdbc.queryForObject("select count(*) from availability_poll where schedule_id=?", Integer.class, scheduleId));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"post,availability-poll", "patch,availability-poll", "delete,availability-poll",
+            "put,availability/me", "delete,availability/me", "post,availability-poll/confirm"})
+    @DisplayName("가용시간 쓰기 API는 인증 쿠키가 있어도 CSRF 헤더가 없으면 403이다")
+    void security_writeWithoutCsrf_returns403(String method, String suffix) throws Exception {
+        // given
+        var request = request(org.springframework.http.HttpMethod.valueOf(method.toUpperCase(java.util.Locale.ROOT)), path(suffix))
+                .cookie(cookie(owner), new Cookie("XSRF-TOKEN", "test-csrf"))
+                .contentType(MediaType.APPLICATION_JSON).content(CONFIG);
+
+        // when
+        var result = mvc.perform(request);
+
+        // then
+        result.andExpect(status().isForbidden());
+    }
+
     private void confirm() {
         createPoll(); command.submit(scheduleId, new AvailabilityReqDTO.Submit(List.of(SLOT, SLOT.plusMinutes(30))), member);
         command.confirm(scheduleId, new AvailabilityReqDTO.Confirm(SLOT, query.getPoll(scheduleId, owner).token()), owner);
