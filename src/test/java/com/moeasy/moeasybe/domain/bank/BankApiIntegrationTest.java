@@ -1,6 +1,8 @@
 package com.moeasy.moeasybe.domain.bank;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -9,6 +11,7 @@ import com.moeasy.moeasybe.domain.bank.config.BankProperties;
 import com.moeasy.moeasybe.domain.bank.dto.request.BankReqDTO;
 import com.moeasy.moeasybe.domain.bank.exception.BankException;
 import com.moeasy.moeasybe.domain.bank.infra.BankSyncRateLimiter;
+import com.moeasy.moeasybe.domain.bank.repository.AccountTransactionRepository;
 import com.moeasy.moeasybe.domain.bank.service.support.BankSyncStore;
 import com.moeasy.moeasybe.domain.group.dto.request.GroupReqDTO;
 import com.moeasy.moeasybe.domain.group.enums.GroupJoinPolicy;
@@ -20,16 +23,21 @@ import jakarta.servlet.http.Cookie;
 
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -51,6 +59,7 @@ class BankApiIntegrationTest {
     private static volatile CountDownLatch entered;
     private static volatile CountDownLatch release;
     @Autowired private BankSyncStore syncStore;
+    @MockitoSpyBean private AccountTransactionRepository transactions;
     @Autowired private BankSyncRateLimiter limits;
     @Autowired private BankProperties settings;
     @Autowired private StringRedisTemplate redis;
@@ -182,6 +191,72 @@ class BankApiIntegrationTest {
                                 String.class,
                                 group))
                 .isNull();
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    @DisplayName("저장 오류는 내부 오류로 응답하고 기존 내역·대기 시간을 보존하며 예외 메시지는 로그에서 제외한다")
+    void sync_storageFailure_returnsInternalError(CapturedOutput output) throws Exception {
+        // given
+        Long owner = member(), group = group(owner);
+        mvc.perform(auth(post(path(group)), owner).content(connectBody("NH")))
+                .andExpect(status().isCreated());
+        mvc.perform(auth(post(path(group) + "/sync"), owner).content(syncBody("1111")))
+                .andExpect(status().isOk());
+        String last =
+                jdbc.queryForObject(
+                        "SELECT CAST(last_synced_at AS CHAR) FROM group_bank_account WHERE"
+                            + " group_id=?",
+                        String.class,
+                        group);
+        allowRetry(group);
+        String sensitive = "sensitive-bank-exception-value";
+        doThrow(
+                        new DataIntegrityViolationException(
+                                sensitive, new IllegalStateException(sensitive)))
+                .when(transactions)
+                .saveAll(anyList());
+
+        // when
+        var result =
+                mvc.perform(auth(post(path(group) + "/sync"), owner).content(syncBody("1111")));
+
+        // then
+        result.andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("COMMON500_1"));
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT last_sync_error FROM group_bank_account WHERE group_id=?",
+                                String.class,
+                                group))
+                .isEqualTo("COMMON500_1");
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT CAST(last_synced_at AS CHAR) FROM group_bank_account WHERE"
+                                    + " group_id=?",
+                                String.class,
+                                group))
+                .isEqualTo(last);
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT COUNT(*) FROM account_transaction WHERE"
+                                    + " group_bank_account_id IN (SELECT id FROM group_bank_account"
+                                    + " WHERE group_id=?)",
+                                Long.class,
+                                group))
+                .isEqualTo(2);
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT sync_token FROM group_bank_account WHERE group_id=?",
+                                String.class,
+                                group))
+                .isNull();
+        mvc.perform(auth(post(path(group) + "/sync"), owner).content(syncBody("1111")))
+                .andExpect(status().isTooManyRequests());
+        assertThat(output.getAll())
+                .contains(
+                        "stage=PERSIST", "DataIntegrityViolationException", "IllegalStateException")
+                .doesNotContain(sensitive);
     }
 
     @Test

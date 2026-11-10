@@ -7,27 +7,33 @@ import com.moeasy.moeasybe.domain.bank.enums.TransactionType;
 import com.moeasy.moeasybe.domain.bank.exception.BankException;
 import com.moeasy.moeasybe.domain.bank.exception.code.BankErrorCode;
 
+import lombok.extern.slf4j.Slf4j;
+
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.net.http.HttpClient;
+import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Component
 public class BankApiClient {
     private final RestClient client;
@@ -102,16 +108,16 @@ public class BankApiClient {
             for (JsonNode node : nodes) {
                 LocalDate day = LocalDate.parse(text(node, "date", 10).replace('/', '-'));
                 if (day.isBefore(request.startDate()) || day.isAfter(request.endDate()))
-                    throw new IllegalArgumentException();
+                    throw new BankException(BankErrorCode.UPSTREAM_FAILED);
                 LocalDateTime at = LocalDateTime.of(day, LocalTime.parse(text(node, "time", 8)));
-                if (at.getNano() != 0) throw new IllegalArgumentException();
+                if (at.getNano() != 0) throw new BankException(BankErrorCode.UPSTREAM_FAILED);
                 long amount = integer(node, "amount");
-                if (amount <= 0) throw new IllegalArgumentException();
+                if (amount <= 0) throw new BankException(BankErrorCode.UPSTREAM_FAILED);
                 TransactionType type =
                         switch (text(node, "type", 10)) {
                             case "deposit" -> TransactionType.DEPOSIT;
                             case "withdrawal" -> TransactionType.WITHDRAWAL;
-                            default -> throw new IllegalArgumentException();
+                            default -> throw new BankException(BankErrorCode.UPSTREAM_FAILED);
                         };
                 result.add(
                         new Transaction(
@@ -127,6 +133,7 @@ public class BankApiClient {
             }
             return result;
         } catch (RestClientResponseException ex) {
+            log.warn("은행 HTTP 오류. bank={}, status={}", bank, ex.getStatusCode().value());
             JsonNode error = null;
             try {
                 error = mapper.readTree(ex.getResponseBodyAsString());
@@ -140,7 +147,13 @@ public class BankApiClient {
                             : ex.getResponseHeaders().getFirst("Retry-After"));
         } catch (BankException ex) {
             throw ex;
-        } catch (RuntimeException ex) {
+        } catch (RestClientException | DateTimeException ex) {
+            // 메시지와 응답 본문은 기록하지 않는다. 예기치 않은 코드 결함은 서비스로 전파한다.
+            log.warn(
+                    "은행 통신·응답 처리 오류. bank={}, type={}, frames={}",
+                    bank,
+                    ex.getClass().getName(),
+                    Arrays.toString(ex.getStackTrace()));
             throw new BankException(BankErrorCode.UPSTREAM_FAILED);
         }
     }
@@ -178,14 +191,14 @@ public class BankApiClient {
         JsonNode value = node.path(field);
         if (value.isMissingNode() || value.isNull()) return "";
         if (!value.isString() || value.asString().length() > max)
-            throw new IllegalArgumentException();
+            throw new BankException(BankErrorCode.UPSTREAM_FAILED);
         return value.asString();
     }
 
     private long integer(JsonNode node, String field) {
         JsonNode value = node.path(field);
         if (!value.isIntegralNumber() || !value.canConvertToLong())
-            throw new IllegalArgumentException();
+            throw new BankException(BankErrorCode.UPSTREAM_FAILED);
         return value.asLong();
     }
 

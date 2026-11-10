@@ -12,6 +12,7 @@ import com.moeasy.moeasybe.domain.bank.infra.BankApiClient;
 import com.moeasy.moeasybe.domain.bank.repository.AccountTransactionRepository;
 import com.moeasy.moeasybe.domain.bank.repository.GroupBankAccountRepository;
 import com.moeasy.moeasybe.domain.bank.service.result.BankSyncContext;
+import com.moeasy.moeasybe.global.apiPayload.code.BaseErrorCode;
 
 import lombok.RequiredArgsConstructor;
 
@@ -93,9 +94,10 @@ public class BankSyncStore {
     }
 
     @Transactional
-    public void fail(Long group, BankSyncContext context, BankErrorCode error, long retry) {
+    public void fail(Long group, BankSyncContext context, BaseErrorCode error, long retry) {
         GroupBankAccount account = locked(group);
-        account.finishSync(context.token(), LocalDateTime.now(clock), error.name(), retry);
+        String errorName = error instanceof BankErrorCode bank ? bank.name() : error.getCode();
+        account.finishSync(context.token(), LocalDateTime.now(clock), errorName, retry);
     }
 
     private GroupBankAccount locked(Long group) {
