@@ -23,6 +23,7 @@ import java.util.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -311,6 +312,10 @@ class ScheduleApiIntegrationTest {
         result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
         mvc.perform(auth(patch(path(id)).contentType(MediaType.APPLICATION_JSON).content(fields), owner))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+        assertAll(
+                () -> assertEquals(1, jdbc.queryForObject("select count(*) from schedule where group_id=?", Integer.class, group.getId())),
+                () -> assertNull(repository.findById(id).orElseThrow().getPlaceProvider()),
+                () -> assertNull(repository.findById(id).orElseThrow().getPlaceId()));
     }
 
     @ParameterizedTest
@@ -377,6 +382,81 @@ class ScheduleApiIntegrationTest {
                 .andExpect(jsonPath("$.result.to").value("2026-12-01T00:00:00"))
                 .andExpect(jsonPath("$.result.items.length()").value(1))
                 .andExpect(jsonPath("$.result.hasNext").value(false));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "BANNED, MEMBER, DETAIL", "BANNED, MEMBER, LIST",
+            "BANNED, OWNER, CREATE", "BANNED, OWNER, UPDATE",
+            "BANNED, OWNER, CANCEL", "BANNED, OWNER, DELETE", "BANNED, MANAGER, UPDATE",
+            "DELETED, MEMBER, DETAIL", "DELETED, MEMBER, LIST",
+            "DELETED, OWNER, CREATE", "DELETED, OWNER, UPDATE",
+            "DELETED, OWNER, CANCEL", "DELETED, OWNER, DELETE", "DELETED, MANAGER, UPDATE"
+    })
+    @DisplayName("활성 멤버십이 남아 있어도 정지·삭제 상태의 계정은 일정에 접근할 수 없다")
+    void access_inactiveAccount_returns403(String accountStatus, GroupMemberRole role, String operation) throws Exception {
+        // given
+        Long scheduleId = create();
+        Long requester = switch (role) {
+            case OWNER -> owner;
+            case MANAGER -> manager;
+            case MEMBER -> member;
+        };
+        em.flush();
+        jdbc.update("update member set status=? where id=?", accountStatus, requester);
+        em.clear();
+        var request = switch (operation) {
+            case "DETAIL" -> get(path(scheduleId));
+            case "LIST" -> get(listPath());
+            case "CREATE" -> post(listPath()).contentType(MediaType.APPLICATION_JSON).content(BODY);
+            case "UPDATE" -> patch(path(scheduleId)).contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"수정\"}");
+            case "CANCEL" -> post(path(scheduleId) + "/cancel");
+            case "DELETE" -> delete(path(scheduleId));
+            default -> throw new IllegalArgumentException("Unknown operation: " + operation);
+        };
+
+        // when
+        var result = mvc.perform(auth(request, requester));
+
+        // then
+        result.andExpect(status().isForbidden());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "from,2026-11-01T00:00", "to,2026-12-01T00:00",
+            "from,2026-11-01T00:00:00+09:00", "to,2026-12-01T00:00:00Z",
+            "from,2026-11-01T00:00:00.000", "to,2026-12-01T00:00:00.001",
+            "from,2026-11-31T00:00:00", "to,2026-12-32T00:00:00"
+    })
+    @DisplayName("목록 조회는 초 생략·오프셋·소수 초·유효하지 않은 날짜를 거부한다")
+    void list_invalidTimeFormat_returns400(String field, String value) throws Exception {
+        // given
+        String from = field.equals("from") ? value : "2026-11-01T00:00:00";
+        String to = field.equals("to") ? value : "2026-12-01T00:00:00";
+        var request = get(listPath()).param("from", from).param("to", to);
+
+        // when
+        var result = mvc.perform(auth(request, owner));
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    @DisplayName("초를 포함한 조회 기간과 기간 생략 시 기본 기간을 모두 허용한다")
+    void list_validOrOmittedPeriod_returnsSchedules(boolean explicitPeriod) throws Exception {
+        // given
+        create();
+        var request = get(listPath());
+        if (explicitPeriod) request.param("from", "2026-11-01T00:00:00").param("to", "2026-12-01T00:00:00");
+
+        // when
+        var result = mvc.perform(auth(request, owner));
+
+        // then
+        result.andExpect(status().isOk()).andExpect(jsonPath("$.result.items.length()").value(1));
     }
 
     private Long create() {

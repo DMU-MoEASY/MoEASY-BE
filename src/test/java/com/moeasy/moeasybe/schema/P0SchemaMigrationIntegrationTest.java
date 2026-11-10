@@ -13,7 +13,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class P0SchemaMigrationIntegrationTest {
 
     private static final int P0_TABLE_COUNT = 32;
-    private static final int SCHEMA_FOREIGN_KEY_COUNT = 58;
+    // develop의 정산 FK와 가용시간 응답 FK를 모두 포함한다.
+    private static final int SCHEMA_FOREIGN_KEY_COUNT = 60;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;

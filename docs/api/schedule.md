@@ -23,7 +23,8 @@ PATCH 본문은 `fields`로 감싸지 않고 변경 필드를 최상위에 전�
 | POST | `/schedules/{scheduleId}/cancel` | OWNER, MANAGER | null (200) |
 | DELETE | `/schedules/{scheduleId}` | OWNER | null (200) |
 
-멤버십은 ACTIVE·미삭제이며 회원도 미삭제여야 한다. 단건은 실제 소속 모임을 기준으로 검증한다.
+멤버십은 ACTIVE·미삭제이며 회원 계정도 ACTIVE·미삭제여야 한다. 정지(BANNED)·삭제(DELETED) 상태의 계정은
+활성 멤버십이나 OWNER·MANAGER 역할이 남아 있어도 조회·변경 모두 403으로 거절한다. 단건은 실제 소속 모임을 기준으로 검증한다.
 ARCHIVED 모임은 읽기만 허용한다. CLOSED·삭제된 모임 및 삭제된 일정은 404를 반환한다.
 
 ## 생성
@@ -140,3 +141,7 @@ status, createdAt, updatedAt
 ScheduleApiIntegrationTest는 HTTP·권한·경계·정산 보존을,
 ScheduleConcurrencyIntegrationTest는 실제 별도 트랜잭션의 경합을,
 ScheduleMigrationIntegrationTest는 MySQL 기존 행 상태 이행과 CHECK 제약을 검증한다.
+
+## 가용시간 투표
+
+기존 일정에 연결하는 투표 9개 API·추천·확정·복원·실시간 계약과 API별 코드 읽기 순서는 [availability.md](availability.md)를 참고한다.

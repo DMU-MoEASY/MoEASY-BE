@@ -39,7 +39,7 @@ public class ScheduleController implements ScheduleControllerDocs {
     private final ScheduleQueryService query;
     private final ScheduleCommandService command;
 
-    @InitBinder
+    @InitBinder({"from", "to"})
     void bindQueryTimes(WebDataBinder binder) {
         binder.registerCustomEditor(LocalDateTime.class, new PropertyEditorSupport() {
             @Override

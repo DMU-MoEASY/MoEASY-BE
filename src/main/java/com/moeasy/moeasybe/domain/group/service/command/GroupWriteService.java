@@ -36,6 +36,7 @@ public class GroupWriteService {
     private final GroupCoverImageService coverImageService;
     private final GroupAccessValidator accessValidator;
     private final Clock clock;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
     @Transactional
     public GroupResDTO.Created createGroup(GroupReqDTO.Create request, Long memberId) {
@@ -81,6 +82,7 @@ public class GroupWriteService {
         GroupRequestValidator.requireConfirmationText(group, request);
         LocalDateTime closedAt = LocalDateTime.now(clock);
         group.close(closedAt);
+        events.publishEvent(new com.moeasy.moeasybe.domain.schedule.realtime.AvailabilityChanged(groupId, null, "GROUP_CLOSED"));
         deletionHistoryRepository.save(GroupConverter.toDeletionHistory(
                 group, findMember(memberId), request, closedAt));
     }
