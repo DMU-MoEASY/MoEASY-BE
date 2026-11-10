@@ -191,44 +191,6 @@ class ScheduleApiIntegrationTest {
         mvc.perform(auth(get(listPath()), requester)).andExpect(status().isForbidden());
     }
 
-    @ParameterizedTest
-    @CsvSource({
-            "BANNED, MEMBER, DETAIL", "BANNED, MEMBER, LIST",
-            "BANNED, OWNER, CREATE", "BANNED, OWNER, UPDATE",
-            "BANNED, OWNER, CANCEL", "BANNED, OWNER, DELETE", "BANNED, MANAGER, UPDATE",
-            "DELETED, MEMBER, DETAIL", "DELETED, MEMBER, LIST",
-            "DELETED, OWNER, CREATE", "DELETED, OWNER, UPDATE",
-            "DELETED, OWNER, CANCEL", "DELETED, OWNER, DELETE", "DELETED, MANAGER, UPDATE"
-    })
-    @DisplayName("활성 멤버십이 남아 있어도 정지·삭제 상태의 계정은 일정에 접근할 수 없다")
-    void access_inactiveAccount_returns403(String accountStatus, GroupMemberRole role, String operation) throws Exception {
-        // given
-        Long scheduleId = create();
-        Long requester = switch (role) {
-            case OWNER -> owner;
-            case MANAGER -> manager;
-            case MEMBER -> member;
-        };
-        em.flush();
-        jdbc.update("update member set status=? where id=?", accountStatus, requester);
-        em.clear();
-        var request = switch (operation) {
-            case "DETAIL" -> get(path(scheduleId));
-            case "LIST" -> get(listPath());
-            case "CREATE" -> post(listPath()).contentType(MediaType.APPLICATION_JSON).content(BODY);
-            case "UPDATE" -> patch(path(scheduleId)).contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"수정\"}");
-            case "CANCEL" -> post(path(scheduleId) + "/cancel");
-            case "DELETE" -> delete(path(scheduleId));
-            default -> throw new IllegalArgumentException("Unknown operation: " + operation);
-        };
-
-        // when
-        var result = mvc.perform(auth(request, requester));
-
-        // then
-        result.andExpect(status().isForbidden());
-    }
-
     @Test
     @DisplayName("쿠키 인증 쓰기는 CSRF가 필요하고 일반 구성원은 생성할 수 없다")
     void security_unauthorizedOrMissingCsrf_rejectsRequest() throws Exception {
@@ -280,7 +242,7 @@ class ScheduleApiIntegrationTest {
         GroupMember membership = em.createQuery("select m from GroupMember m where m.member.id=:id", GroupMember.class)
                 .setParameter("id", owner).getSingleResult();
         var settlement = com.moeasy.moeasybe.domain.settlement.entity.Settlement.builder()
-                .group(group).scheduleId(id).createdByGroupMember(membership).title("연결 정산")
+                .group(group).schedule(em.getReference(com.moeasy.moeasybe.domain.schedule.entity.Schedule.class, id)).createdByGroupMember(membership).title("연결 정산")
                 .totalAmount(100L).splitMode(com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode.EQUAL).build();
         em.persist(settlement);
         em.flush();
@@ -298,6 +260,13 @@ class ScheduleApiIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"from=2026-11-01T00:00:00", "from=2026-11-02T00:00:00&to=2026-11-01T00:00:00",
+            "from=2026-11-01T00:00&to=2026-12-01T00:00",
+            "from=2026-11-01T00:00:00&to=2026-12-01T00:00",
+            "from=2026-11-01T00:00:00.000&to=2026-12-01T00:00:00",
+            "from=2026-11-01T00:00:00&to=2026-12-01T00:00:00Z",
+            "from=2026-11-01T00:00:00Z&to=2026-12-01T00:00:00",
+            "from=2026-02-29T00:00:00&to=2026-03-01T00:00:00",
+            "from=0999-11-01T00:00:00&to=2026-12-01T00:00:00",
             "size=0", "size=101", "cursor=bad", "from=2026-02-30T00:00:00&to=2026-03-01T00:00:00"})
     @DisplayName("잘못된 목록 조회 조건을 HTTP 400으로 거부한다")
     void list_invalidQuery_returns400(String params) throws Exception {
@@ -326,55 +295,131 @@ class ScheduleApiIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"0", "1", "-1", "0.5", "true", "\"0\""})
-    @DisplayName("장소 제공자의 숫자·불리언 입력은 400으로 거부하고 일정을 저장하지 않는다")
-    void create_nonStringPlaceProvider_returns400WithoutSaving(String provider) throws Exception {
+    @ValueSource(strings = {"0", "1", "-1", "0.0", "true", "[]", "{}", "\"0\"", "\"UNKNOWN\""})
+    @DisplayName("생성과 PATCH는 숫자·숫자 문자열·잘못된 타입의 장소 제공자를 거부한다")
+    void write_invalidPlaceProvider_returns400(String provider) throws Exception {
         // given
+        Long id = create();
+        String fields = "{\"placeProvider\":" + provider + ",\"placeId\":\"123\"}";
         var body = (tools.jackson.databind.node.ObjectNode) mapper.readTree(BODY);
-        body.set("placeProvider", mapper.readTree(provider));
-        body.put("placeId", "12345");
-        var request = post(listPath()).contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(body));
+        mapper.readTree(fields).properties().forEach(entry -> body.set(entry.getKey(), entry.getValue()));
 
         // when
-        var result = mvc.perform(auth(request, owner));
+        var result = mvc.perform(auth(post(listPath()).contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(body)), owner));
 
         // then
         result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
-        assertEquals(0, jdbc.queryForObject("select count(*) from schedule where group_id=?", Integer.class, group.getId()));
+        mvc.perform(auth(patch(path(id)).contentType(MediaType.APPLICATION_JSON).content(fields), owner))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+        assertAll(
+                () -> assertEquals(1, jdbc.queryForObject("select count(*) from schedule where group_id=?", Integer.class, group.getId())),
+                () -> assertNull(repository.findById(id).orElseThrow().getPlaceProvider()),
+                () -> assertNull(repository.findById(id).orElseThrow().getPlaceId()));
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"KAKAO", "GOOGLE"})
-    @DisplayName("문자열 장소 제공자는 기존 계약대로 생성할 수 있다")
-    void create_stringPlaceProvider_savesProvider(String provider) throws Exception {
+    @DisplayName("문자열 장소 제공자는 생성·PATCH에 허용하고 선택 필드 쌍은 null로 제거한다")
+    void write_stringPlaceProvider_supportsCreateUpdateAndClear(String provider) throws Exception {
         // given
         var body = (tools.jackson.databind.node.ObjectNode) mapper.readTree(BODY);
         body.put("placeProvider", provider);
-        body.put("placeId", "12345");
-        var request = post(listPath()).contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(body));
+        body.put("placeId", "123");
 
         // when
-        var result = mvc.perform(auth(request, owner));
+        String response = mvc.perform(auth(post(listPath()).contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(body)), owner))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        Long id = mapper.readTree(response).path("result").path("scheduleId").longValue();
 
         // then
-        result.andExpect(status().isCreated());
-        assertEquals(provider, jdbc.queryForObject("select place_provider from schedule where group_id=?", String.class, group.getId()));
+        mvc.perform(auth(get(path(id)), owner)).andExpect(jsonPath("$.result.placeProvider").value(provider));
+        mvc.perform(auth(patch(path(id)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"placeProvider\":\"" + provider + "\",\"placeId\":\"456\"}"), owner))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.placeId").value("456"));
+        mvc.perform(auth(patch(path(id)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"placeProvider\":null,\"placeId\":null}"), owner))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.placeProvider").isEmpty())
+                .andExpect(jsonPath("$.result.placeId").isEmpty());
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"0999-12-31T23:59:59", "+10000-01-01T00:00:00"})
-    @DisplayName("커서의 생성 시각이 DB 범위를 벗어나면 500 대신 400을 반환한다")
-    void list_outOfRangeCursor_returns400(String createdAt) throws Exception {
+    @ValueSource(ints = {999, 10000})
+    @DisplayName("DB 날짜 범위 밖의 커서는 HTTP 400으로 응답한다")
+    void list_cursorDateOutsideDatabaseRange_returns400(int year) throws Exception {
         // given
-        String raw = "1|" + group.getId() + "|2026-11-01T00:00|2026-12-01T00:00|" + createdAt + "|1";
-        String cursor = Base64.getUrlEncoder().withoutPadding().encodeToString(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        var request = get(listPath()).param("cursor", cursor);
+        String cursor = new com.moeasy.moeasybe.domain.schedule.service.support.ScheduleCursor(group.getId(),
+                NOW.withDayOfMonth(1), NOW.plusMonths(1).withDayOfMonth(1), NOW.withYear(year), 1L).encode();
 
         // when
-        var result = mvc.perform(auth(request, owner));
+        var result = mvc.perform(auth(get(listPath()).param("cursor", cursor), owner));
 
         // then
         result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+    }
+
+    @Test
+    @DisplayName("초까지 지정한 기간과 마이크로초 커서는 HTTP 후속 조회에서도 유지된다")
+    void list_strictTimesAndCursor_preservesInitialWindow() throws Exception {
+        // given
+        create();
+        create();
+        jdbc.update("update schedule set created_at='2026-10-01 12:00:00.123456' where group_id=?", group.getId());
+        em.flush();
+        em.clear();
+
+        // when
+        String response = mvc.perform(auth(get(listPath()).param("from", "2026-11-01T00:00:00")
+                        .param("to", "2026-12-01T00:00:00").param("size", "1"), owner))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.hasNext").value(true))
+                .andReturn().getResponse().getContentAsString();
+        String cursor = mapper.readTree(response).path("result").path("nextCursor").asText();
+
+        // then
+        mvc.perform(auth(get(listPath()).param("cursor", cursor).param("size", "1"), owner))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.from").value("2026-11-01T00:00:00"))
+                .andExpect(jsonPath("$.result.to").value("2026-12-01T00:00:00"))
+                .andExpect(jsonPath("$.result.items.length()").value(1))
+                .andExpect(jsonPath("$.result.hasNext").value(false));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "BANNED, MEMBER, DETAIL", "BANNED, MEMBER, LIST",
+            "BANNED, OWNER, CREATE", "BANNED, OWNER, UPDATE",
+            "BANNED, OWNER, CANCEL", "BANNED, OWNER, DELETE", "BANNED, MANAGER, UPDATE",
+            "DELETED, MEMBER, DETAIL", "DELETED, MEMBER, LIST",
+            "DELETED, OWNER, CREATE", "DELETED, OWNER, UPDATE",
+            "DELETED, OWNER, CANCEL", "DELETED, OWNER, DELETE", "DELETED, MANAGER, UPDATE"
+    })
+    @DisplayName("활성 멤버십이 남아 있어도 정지·삭제 상태의 계정은 일정에 접근할 수 없다")
+    void access_inactiveAccount_returns403(String accountStatus, GroupMemberRole role, String operation) throws Exception {
+        // given
+        Long scheduleId = create();
+        Long requester = switch (role) {
+            case OWNER -> owner;
+            case MANAGER -> manager;
+            case MEMBER -> member;
+        };
+        em.flush();
+        jdbc.update("update member set status=? where id=?", accountStatus, requester);
+        em.clear();
+        var request = switch (operation) {
+            case "DETAIL" -> get(path(scheduleId));
+            case "LIST" -> get(listPath());
+            case "CREATE" -> post(listPath()).contentType(MediaType.APPLICATION_JSON).content(BODY);
+            case "UPDATE" -> patch(path(scheduleId)).contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"수정\"}");
+            case "CANCEL" -> post(path(scheduleId) + "/cancel");
+            case "DELETE" -> delete(path(scheduleId));
+            default -> throw new IllegalArgumentException("Unknown operation: " + operation);
+        };
+
+        // when
+        var result = mvc.perform(auth(request, requester));
+
+        // then
+        result.andExpect(status().isForbidden());
     }
 
     @ParameterizedTest

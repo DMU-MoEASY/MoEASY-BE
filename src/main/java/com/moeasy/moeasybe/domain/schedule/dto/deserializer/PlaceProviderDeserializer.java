@@ -6,7 +6,7 @@ import tools.jackson.core.JsonToken;
 import tools.jackson.databind.DeserializationContext;
 import tools.jackson.databind.ValueDeserializer;
 
-public class SchedulePlaceProviderDeserializer extends ValueDeserializer<PlaceProvider> {
+public class PlaceProviderDeserializer extends ValueDeserializer<PlaceProvider> {
 
     @Override
     public PlaceProvider deserialize(JsonParser parser, DeserializationContext context) {
