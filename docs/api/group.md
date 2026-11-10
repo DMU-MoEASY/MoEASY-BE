@@ -238,6 +238,15 @@ PENDING만 APPROVED·REJECTED·CANCELLED로 전이할 수 있다. 승인·거절
 - 위치 권한이 없으면 `lat/lng/radiusKm`을 생략하고 지역 코드로 검색한다.
 - 추천 점수의 내부 계산값은 노출하지 않고 추천 사유 태그만 반환한다.
 
+## 전체 모임 회원 목록
+
+`GET /api/v1/groups/{groupId}/members` — JWT 인증 필요, CSRF 불필요.
+
+폐쇄·삭제·삭제 이력이 없는 모임의 활성 회원만 조회할 수 있으며, 명단에는 활성·미삭제 모임 회원과 미삭제 계정만 `groupMemberId` 오름차순으로 포함한다.
+모임장·운영진·요청자도 포함하며 페이지네이션·검색·일정 필터는 제공하지 않는다.
+HTTP 200 / `GROUP200_9`, `result.members[]`에는 `groupMemberId`, `memberId`, `nickname`, `role`을 포함한다.
+정산 대상에는 계정 ID가 아닌 `groupMemberId`를 전달한다. 비회원은 403, 모임 없음·폐쇄·삭제는 404이다.
+
 ## 활동 티어 (#32)
 
 GET 및 PATCH `/api/v1/groups/{groupId}` 성공 응답의 `result.tier`는 읽기 전용 문자열이다.

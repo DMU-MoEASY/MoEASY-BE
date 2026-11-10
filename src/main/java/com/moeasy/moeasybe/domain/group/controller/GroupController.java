@@ -12,10 +12,10 @@ import com.moeasy.moeasybe.domain.group.service.command.GroupJoinRequestCommandS
 import com.moeasy.moeasybe.domain.group.service.query.GroupJoinRequestQueryService;
 import com.moeasy.moeasybe.domain.group.service.query.GroupQueryService;
 import com.moeasy.moeasybe.global.apiPayload.ApiResponse;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+@Validated
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/groups")
@@ -40,7 +41,7 @@ public class GroupController implements GroupControllerDocs {
     @Override
     @PostMapping("/cover-image-uploads")
     public ResponseEntity<ApiResponse<GroupResDTO.CoverImageUploadIssue>> issueCoverImageUpload(
-            @Valid @RequestBody GroupReqDTO.CoverImageUploadIssue request,
+            @RequestBody GroupReqDTO.CoverImageUploadIssue request,
             @AuthenticationPrincipal Long memberId
     ) {
         GroupResDTO.CoverImageUploadIssue result = coverImageService.issueUpload(memberId, request.contentType());
@@ -51,13 +52,22 @@ public class GroupController implements GroupControllerDocs {
     @Override
     @PostMapping
     public ResponseEntity<ApiResponse<GroupResDTO.Created>> createGroup(
-            @Valid @RequestBody GroupReqDTO.Create request,
+            @RequestBody GroupReqDTO.Create request,
             @AuthenticationPrincipal Long memberId
     ) {
         GroupResDTO.Created result = groupCommandService.createGroup(request, memberId);
 
         return ResponseEntity.status(GroupSuccessCode.GROUP_CREATED.getStatus())
                 .body(ApiResponse.onSuccess(GroupSuccessCode.GROUP_CREATED, result));
+    }
+
+    @Override
+    @GetMapping("/{groupId}/members")
+    public ResponseEntity<ApiResponse<GroupResDTO.Members>> getMembers(
+            @PathVariable Long groupId, @AuthenticationPrincipal Long memberId) {
+        return ResponseEntity.status(GroupSuccessCode.GROUP_MEMBERS_FETCHED.getStatus())
+                .body(ApiResponse.onSuccess(GroupSuccessCode.GROUP_MEMBERS_FETCHED,
+                        groupQueryService.getMembers(groupId, memberId)));
     }
 
     @Override
@@ -76,7 +86,7 @@ public class GroupController implements GroupControllerDocs {
     @PatchMapping("/{groupId}")
     public ResponseEntity<ApiResponse<GroupResDTO.Detail>> updateGroup(
             @PathVariable Long groupId,
-            @Valid @RequestBody GroupReqDTO.Update request,
+            @RequestBody GroupReqDTO.Update request,
             @AuthenticationPrincipal Long memberId
     ) {
         GroupResDTO.Detail result = groupCommandService.updateGroup(groupId, request, memberId);
@@ -89,7 +99,7 @@ public class GroupController implements GroupControllerDocs {
     @DeleteMapping("/{groupId}")
     public ResponseEntity<ApiResponse<Void>> closeGroup(
             @PathVariable Long groupId,
-            @Valid @RequestBody GroupReqDTO.Close request,
+            @RequestBody GroupReqDTO.Close request,
             @AuthenticationPrincipal Long memberId
     ) {
         groupCommandService.closeGroup(groupId, request, memberId);
@@ -102,7 +112,7 @@ public class GroupController implements GroupControllerDocs {
     @PostMapping("/{groupId}/join-requests")
     public ResponseEntity<ApiResponse<GroupJoinRequestResDTO.Created>> createJoinRequest(
             @PathVariable Long groupId,
-            @Valid @RequestBody GroupJoinRequestReqDTO.Create request,
+            @RequestBody GroupJoinRequestReqDTO.Create request,
             @AuthenticationPrincipal Long memberId
     ) {
         GroupJoinRequestResDTO.Created result = joinRequestCommandService.create(groupId, request, memberId);
@@ -125,7 +135,7 @@ public class GroupController implements GroupControllerDocs {
     @GetMapping("/{groupId}/join-requests")
     public ResponseEntity<ApiResponse<GroupJoinRequestResDTO.PendingList>> getPendingJoinRequests(
             @PathVariable Long groupId,
-            @Valid @ModelAttribute GroupJoinRequestReqDTO.Page pagination,
+            @ModelAttribute GroupJoinRequestReqDTO.Page pagination,
             @AuthenticationPrincipal Long memberId
     ) {
         GroupJoinRequestResDTO.PendingList result = joinRequestQueryService.getPending(
@@ -162,7 +172,7 @@ public class GroupController implements GroupControllerDocs {
     public ResponseEntity<ApiResponse<Void>> rejectJoinRequest(
             @PathVariable Long groupId,
             @PathVariable Long requestId,
-            @Valid @RequestBody GroupJoinRequestReqDTO.Reject request,
+            @RequestBody GroupJoinRequestReqDTO.Reject request,
             @AuthenticationPrincipal Long memberId
     ) {
         joinRequestCommandService.reject(groupId, requestId, request, memberId);

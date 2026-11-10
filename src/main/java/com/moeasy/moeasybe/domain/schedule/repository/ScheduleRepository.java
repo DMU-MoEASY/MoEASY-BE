@@ -34,6 +34,7 @@ public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
 
     boolean existsByIdAndGroupIdAndDeletedAtIsNull(Long scheduleId, Long groupId);
     Optional<Schedule> findByIdAndDeletedAtIsNull(Long id);
+    Optional<Schedule> findByIdAndGroupIdAndDeletedAtIsNull(Long id, Long groupId);
 
     @Query("select s.group.id from Schedule s where s.id = :id and s.deletedAt is null")
     Optional<Long> findGroupId(@Param("id") Long id);

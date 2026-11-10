@@ -1,14 +1,26 @@
 package com.moeasy.moeasybe.domain.group.dto.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import java.time.Instant;
 import com.moeasy.moeasybe.domain.group.enums.GroupJoinPolicy;
+import com.moeasy.moeasybe.domain.group.enums.GroupMemberRole;
 import com.moeasy.moeasybe.domain.group.enums.GroupStatus;
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import lombok.Builder;
 
 public final class GroupResDTO {
     private GroupResDTO() {
+    }
+
+    @Builder
+    public record Members(List<MemberSummary> members) {
+    }
+
+    @Builder
+    public record MemberSummary(Long groupMemberId, Long memberId, String nickname,
+            GroupMemberRole role) {
     }
 
     @Builder
@@ -25,6 +37,6 @@ public final class GroupResDTO {
 
     @Builder
     public record CoverImageUploadIssue(String coverImageKey, String uploadUrl, Instant uploadUrlExpiresAt,
-            java.util.Map<String, String> requiredHeaders) {
+            Map<String, String> requiredHeaders) {
     }
 }

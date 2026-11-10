@@ -23,6 +23,7 @@ import java.util.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -99,56 +100,6 @@ class ScheduleApiIntegrationTest {
         mvc.perform(auth(get(path(id)), member)).andExpect(status().isNotFound());
         assertAll(() -> assertFalse(repository.existsByIdAndGroupIdAndDeletedAtIsNull(id, group.getId())),
                 () -> assertEquals(1, jdbc.queryForObject("select count(*) from schedule where id=?", Integer.class, id)));
-    }
-
-    @ParameterizedTest
-    @EnumSource(value = GroupMemberRole.class, names = {"OWNER", "MANAGER"})
-    @DisplayName("정지 계정은 활성 운영진 자격과 유효한 JWT가 있어도 일정을 생성할 수 없다")
-    void create_bannedAccount_returns403(GroupMemberRole role) throws Exception {
-        // given
-        Long actor = role == GroupMemberRole.OWNER ? owner : manager;
-        ban(actor);
-        var request = post(listPath()).contentType(MediaType.APPLICATION_JSON).content(BODY);
-        // when
-        var result = mvc.perform(auth(request, actor));
-        // then
-        result.andExpect(status().isForbidden());
-        assertEquals(0, jdbc.queryForObject("select count(*) from schedule where group_id=?", Integer.class, group.getId()));
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"update", "cancel", "delete", "detail", "list"})
-    @DisplayName("정지 계정은 기존 역할로 일정 변경과 조회에 접근할 수 없다")
-    void schedule_bannedAccount_returns403(String operation) throws Exception {
-        // given
-        Long id = create();
-        Long actor = switch (operation) {
-            case "delete" -> owner;
-            case "detail", "list" -> member;
-            default -> manager;
-        };
-        ban(actor);
-        var request = switch (operation) {
-            case "update" -> patch(path(id)).contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"수정\"}");
-            case "cancel" -> post(path(id) + "/cancel");
-            case "delete" -> delete(path(id));
-            case "detail" -> get(path(id));
-            default -> get(listPath());
-        };
-        // when
-        var result = mvc.perform(auth(request, actor));
-        // then
-        result.andExpect(status().isForbidden());
-        var schedule = repository.findById(id).orElseThrow();
-        assertAll(() -> assertEquals("모임", schedule.getTitle()),
-                () -> assertEquals(com.moeasy.moeasybe.domain.schedule.enums.ScheduleStatus.SCHEDULED, schedule.getStatus()),
-                () -> assertNull(schedule.getDeletedAt()));
-    }
-
-    private void ban(Long actor) {
-        em.flush();
-        jdbc.update("update member set status='BANNED' where id=?", actor);
-        em.clear();
     }
 
     @ParameterizedTest
@@ -292,7 +243,7 @@ class ScheduleApiIntegrationTest {
         GroupMember membership = em.createQuery("select m from GroupMember m where m.member.id=:id", GroupMember.class)
                 .setParameter("id", owner).getSingleResult();
         var settlement = com.moeasy.moeasybe.domain.settlement.entity.Settlement.builder()
-                .group(group).scheduleId(id).createdByGroupMember(membership).title("연결 정산")
+                .group(group).schedule(em.getReference(com.moeasy.moeasybe.domain.schedule.entity.Schedule.class, id)).createdByGroupMember(membership).title("연결 정산")
                 .totalAmount(100L).splitMode(com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode.EQUAL).build();
         em.persist(settlement);
         em.flush();
@@ -310,6 +261,13 @@ class ScheduleApiIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"from=2026-11-01T00:00:00", "from=2026-11-02T00:00:00&to=2026-11-01T00:00:00",
+            "from=2026-11-01T00:00&to=2026-12-01T00:00",
+            "from=2026-11-01T00:00:00&to=2026-12-01T00:00",
+            "from=2026-11-01T00:00:00.000&to=2026-12-01T00:00:00",
+            "from=2026-11-01T00:00:00&to=2026-12-01T00:00:00Z",
+            "from=2026-11-01T00:00:00Z&to=2026-12-01T00:00:00",
+            "from=2026-02-29T00:00:00&to=2026-03-01T00:00:00",
+            "from=0999-11-01T00:00:00&to=2026-12-01T00:00:00",
             "size=0", "size=101", "cursor=bad", "from=2026-02-30T00:00:00&to=2026-03-01T00:00:00"})
     @DisplayName("잘못된 목록 조회 조건을 HTTP 400으로 거부한다")
     void list_invalidQuery_returns400(String params) throws Exception {
@@ -335,6 +293,222 @@ class ScheduleApiIntegrationTest {
         var result = mvc.perform(auth(request, owner));
         // then
         result.andExpect(status().isBadRequest());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "1", "-1", "0.0", "true", "[]", "{}", "\"0\"", "\"UNKNOWN\""})
+    @DisplayName("생성과 PATCH는 숫자·숫자 문자열·잘못된 타입의 장소 제공자를 거부한다")
+    void write_invalidPlaceProvider_returns400(String provider) throws Exception {
+        // given
+        Long id = create();
+        String fields = "{\"placeProvider\":" + provider + ",\"placeId\":\"123\"}";
+        var body = (tools.jackson.databind.node.ObjectNode) mapper.readTree(BODY);
+        mapper.readTree(fields).properties().forEach(entry -> body.set(entry.getKey(), entry.getValue()));
+
+        // when
+        var result = mvc.perform(auth(post(listPath()).contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(body)), owner));
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+        mvc.perform(auth(patch(path(id)).contentType(MediaType.APPLICATION_JSON).content(fields), owner))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+        assertAll(
+                () -> assertEquals(1, jdbc.queryForObject("select count(*) from schedule where group_id=?", Integer.class, group.getId())),
+                () -> assertNull(repository.findById(id).orElseThrow().getPlaceProvider()),
+                () -> assertNull(repository.findById(id).orElseThrow().getPlaceId()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"KAKAO", "GOOGLE"})
+    @DisplayName("문자열 장소 제공자는 생성·PATCH에 허용하고 선택 필드 쌍은 null로 제거한다")
+    void write_stringPlaceProvider_supportsCreateUpdateAndClear(String provider) throws Exception {
+        // given
+        var body = (tools.jackson.databind.node.ObjectNode) mapper.readTree(BODY);
+        body.put("placeProvider", provider);
+        body.put("placeId", "123");
+
+        // when
+        String response = mvc.perform(auth(post(listPath()).contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(body)), owner))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        Long id = mapper.readTree(response).path("result").path("scheduleId").longValue();
+
+        // then
+        mvc.perform(auth(get(path(id)), owner)).andExpect(jsonPath("$.result.placeProvider").value(provider));
+        mvc.perform(auth(patch(path(id)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"placeProvider\":\"" + provider + "\",\"placeId\":\"456\"}"), owner))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.placeId").value("456"));
+        mvc.perform(auth(patch(path(id)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"placeProvider\":null,\"placeId\":null}"), owner))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.placeProvider").isEmpty())
+                .andExpect(jsonPath("$.result.placeId").isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {999, 10000})
+    @DisplayName("DB 날짜 범위 밖의 커서는 HTTP 400으로 응답한다")
+    void list_cursorDateOutsideDatabaseRange_returns400(int year) throws Exception {
+        // given
+        String cursor = new com.moeasy.moeasybe.domain.schedule.service.support.ScheduleCursor(group.getId(),
+                NOW.withDayOfMonth(1), NOW.plusMonths(1).withDayOfMonth(1), NOW.withYear(year), 1L).encode();
+
+        // when
+        var result = mvc.perform(auth(get(listPath()).param("cursor", cursor), owner));
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+    }
+
+    @Test
+    @DisplayName("초까지 지정한 기간과 마이크로초 커서는 HTTP 후속 조회에서도 유지된다")
+    void list_strictTimesAndCursor_preservesInitialWindow() throws Exception {
+        // given
+        create();
+        create();
+        jdbc.update("update schedule set created_at='2026-10-01 12:00:00.123456' where group_id=?", group.getId());
+        em.flush();
+        em.clear();
+
+        // when
+        String response = mvc.perform(auth(get(listPath()).param("from", "2026-11-01T00:00:00")
+                        .param("to", "2026-12-01T00:00:00").param("size", "1"), owner))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.hasNext").value(true))
+                .andReturn().getResponse().getContentAsString();
+        String cursor = mapper.readTree(response).path("result").path("nextCursor").asText();
+
+        // then
+        mvc.perform(auth(get(listPath()).param("cursor", cursor).param("size", "1"), owner))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.from").value("2026-11-01T00:00:00"))
+                .andExpect(jsonPath("$.result.to").value("2026-12-01T00:00:00"))
+                .andExpect(jsonPath("$.result.items.length()").value(1))
+                .andExpect(jsonPath("$.result.hasNext").value(false));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "BANNED, MEMBER, DETAIL", "BANNED, MEMBER, LIST",
+            "BANNED, OWNER, CREATE", "BANNED, OWNER, UPDATE",
+            "BANNED, OWNER, CANCEL", "BANNED, OWNER, DELETE", "BANNED, MANAGER, UPDATE",
+            "DELETED, MEMBER, DETAIL", "DELETED, MEMBER, LIST",
+            "DELETED, OWNER, CREATE", "DELETED, OWNER, UPDATE",
+            "DELETED, OWNER, CANCEL", "DELETED, OWNER, DELETE", "DELETED, MANAGER, UPDATE"
+    })
+    @DisplayName("활성 멤버십이 남아 있어도 정지·삭제 상태의 계정은 일정에 접근할 수 없다")
+    void access_inactiveAccount_returns403(String accountStatus, GroupMemberRole role, String operation) throws Exception {
+        // given
+        Long scheduleId = create();
+        Long requester = switch (role) {
+            case OWNER -> owner;
+            case MANAGER -> manager;
+            case MEMBER -> member;
+        };
+        em.flush();
+        jdbc.update("update member set status=? where id=?", accountStatus, requester);
+        em.clear();
+        var request = switch (operation) {
+            case "DETAIL" -> get(path(scheduleId));
+            case "LIST" -> get(listPath());
+            case "CREATE" -> post(listPath()).contentType(MediaType.APPLICATION_JSON).content(BODY);
+            case "UPDATE" -> patch(path(scheduleId)).contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"수정\"}");
+            case "CANCEL" -> post(path(scheduleId) + "/cancel");
+            case "DELETE" -> delete(path(scheduleId));
+            default -> throw new IllegalArgumentException("Unknown operation: " + operation);
+        };
+
+        // when
+        var result = mvc.perform(auth(request, requester));
+
+        // then
+        result.andExpect(status().isForbidden());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "from,2026-11-01T00:00", "to,2026-12-01T00:00",
+            "from,2026-11-01T00:00:00+09:00", "to,2026-12-01T00:00:00Z",
+            "from,2026-11-01T00:00:00.000", "to,2026-12-01T00:00:00.001",
+            "from,2026-11-31T00:00:00", "to,2026-12-32T00:00:00"
+    })
+    @DisplayName("목록 조회는 초 생략·오프셋·소수 초·유효하지 않은 날짜를 거부한다")
+    void list_invalidTimeFormat_returns400(String field, String value) throws Exception {
+        // given
+        String from = field.equals("from") ? value : "2026-11-01T00:00:00";
+        String to = field.equals("to") ? value : "2026-12-01T00:00:00";
+        var request = get(listPath()).param("from", from).param("to", to);
+
+        // when
+        var result = mvc.perform(auth(request, owner));
+
+        // then
+        result.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COMMON400_1"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    @DisplayName("초를 포함한 조회 기간과 기간 생략 시 기본 기간을 모두 허용한다")
+    void list_validOrOmittedPeriod_returnsSchedules(boolean explicitPeriod) throws Exception {
+        // given
+        create();
+        var request = get(listPath());
+        if (explicitPeriod) request.param("from", "2026-11-01T00:00:00").param("to", "2026-12-01T00:00:00");
+
+        // when
+        var result = mvc.perform(auth(request, owner));
+
+        // then
+        result.andExpect(status().isOk()).andExpect(jsonPath("$.result.items.length()").value(1));
+    }
+
+
+    @ParameterizedTest
+    @EnumSource(value = GroupMemberRole.class, names = {"OWNER", "MANAGER"})
+    @DisplayName("정지 계정은 활성 운영진 자격과 유효한 JWT가 있어도 일정을 생성할 수 없다")
+    void create_bannedAccount_returns403(GroupMemberRole role) throws Exception {
+        // given
+        Long actor = role == GroupMemberRole.OWNER ? owner : manager;
+        ban(actor);
+        var request = post(listPath()).contentType(MediaType.APPLICATION_JSON).content(BODY);
+        // when
+        var result = mvc.perform(auth(request, actor));
+        // then
+        result.andExpect(status().isForbidden());
+        assertEquals(0, jdbc.queryForObject("select count(*) from schedule where group_id=?", Integer.class, group.getId()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"update", "cancel", "delete", "detail", "list"})
+    @DisplayName("정지 계정은 기존 역할로 일정 변경과 조회에 접근할 수 없다")
+    void schedule_bannedAccount_returns403(String operation) throws Exception {
+        // given
+        Long id = create();
+        Long actor = switch (operation) {
+            case "delete" -> owner;
+            case "detail", "list" -> member;
+            default -> manager;
+        };
+        ban(actor);
+        var request = switch (operation) {
+            case "update" -> patch(path(id)).contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"수정\"}");
+            case "cancel" -> post(path(id) + "/cancel");
+            case "delete" -> delete(path(id));
+            case "detail" -> get(path(id));
+            default -> get(listPath());
+        };
+        // when
+        var result = mvc.perform(auth(request, actor));
+        // then
+        result.andExpect(status().isForbidden());
+        var schedule = repository.findById(id).orElseThrow();
+        assertAll(() -> assertEquals("모임", schedule.getTitle()),
+                () -> assertEquals(com.moeasy.moeasybe.domain.schedule.enums.ScheduleStatus.SCHEDULED, schedule.getStatus()),
+                () -> assertNull(schedule.getDeletedAt()));
+    }
+
+    private void ban(Long actor) {
+        em.flush();
+        jdbc.update("update member set status='BANNED' where id=?", actor);
+        em.clear();
     }
 
     private Long create() {

@@ -43,6 +43,10 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, Long> 
             Long groupId, Long memberId, GroupMemberStatus status);
 
     @EntityGraph(attributePaths = "member")
+    List<GroupMember> findAllByGroupIdAndStatusAndDeletedAtIsNullAndMemberDeletedAtIsNullOrderByIdAsc(
+            Long groupId, GroupMemberStatus status);
+
+    @EntityGraph(attributePaths = "member")
     List<GroupMember> findAllByGroupIdAndIdInAndStatusAndDeletedAtIsNullAndMemberDeletedAtIsNull(
             Long groupId, Collection<Long> ids, GroupMemberStatus status);
 }

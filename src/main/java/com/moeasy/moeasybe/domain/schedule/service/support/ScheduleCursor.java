@@ -17,10 +17,17 @@ public record ScheduleCursor(Long groupId, LocalDateTime from, LocalDateTime to,
             if (parts.length != 6 || !parts[0].equals("1")) throw new IllegalArgumentException("잘못된 커서입니다.");
             ScheduleCursor c = new ScheduleCursor(Long.valueOf(parts[1]), LocalDateTime.parse(parts[2]),
                     LocalDateTime.parse(parts[3]), LocalDateTime.parse(parts[4]), Long.valueOf(parts[5]));
-            if (c.groupId <= 0 || c.id <= 0 || !c.from.isBefore(c.to)) throw new IllegalArgumentException("잘못된 커서입니다.");
+            if (c.groupId <= 0 || c.id <= 0 || !c.from.isBefore(c.to)
+                    || !isDatabaseDate(c.from) || !isDatabaseDate(c.to) || !isDatabaseDate(c.createdAt)) {
+                throw new IllegalArgumentException("잘못된 커서입니다.");
+            }
             return c;
         } catch (RuntimeException exception) {
             throw new IllegalArgumentException("잘못된 커서입니다.");
         }
+    }
+
+    private static boolean isDatabaseDate(LocalDateTime value) {
+        return value.getYear() >= 1000 && value.getYear() <= 9999;
     }
 }

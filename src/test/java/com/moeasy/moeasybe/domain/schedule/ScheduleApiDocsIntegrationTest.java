@@ -26,6 +26,39 @@ class ScheduleApiDocsIntegrationTest {
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper mapper;
 
+    @ParameterizedTest
+    @CsvSource({
+            "/api/v1/schedules/{scheduleId}/availability-poll,post",
+            "/api/v1/schedules/{scheduleId}/availability-poll,patch",
+            "/api/v1/schedules/{scheduleId}/availability-poll,delete",
+            "/api/v1/schedules/{scheduleId}/availability/me,put",
+            "/api/v1/schedules/{scheduleId}/availability/me,delete",
+            "/api/v1/schedules/{scheduleId}/availability-poll/confirm,post"
+    })
+    @DisplayName("가용시간 쓰기 API의 Swagger에 CSRF 헤더와 토큰 발급 방법을 제공한다")
+    void apiDocs_availabilityWrites_exposesCsrfHeader(String path, String method) throws Exception {
+        // given
+        var request = get("/v3/api-docs");
+
+        // when
+        var response = mvc.perform(request).andReturn().getResponse();
+        JsonNode operation = mapper.readTree(response.getContentAsString()).path("paths").path(path).path(method);
+        JsonNode csrf = null;
+        for (JsonNode parameter : operation.path("parameters")) {
+            if (parameter.path("name").asText().equals("X-XSRF-TOKEN")) csrf = parameter;
+        }
+        JsonNode header = csrf;
+
+        // then
+        org.junit.jupiter.api.Assertions.assertNotNull(header);
+        assertAll(
+                () -> assertEquals(200, response.getStatus()),
+                () -> assertEquals("header", header.path("in").asText()),
+                () -> assertTrue(header.path("required").asBoolean()),
+                () -> assertEquals("string", header.path("schema").path("type").asText()),
+                () -> assertTrue(operation.path("description").asText().contains("GET /api/v1/auth/csrf")));
+    }
+
     @Test
     @DisplayName("일정 요청·응답 스키마가 그룹 DTO와 충돌하지 않는다")
     void apiDocs_scheduleSchemas_preservesDistinctGroupSchemas() throws Exception {
@@ -122,6 +155,18 @@ class ScheduleApiDocsIntegrationTest {
                 () -> assertEquals(write ? Set.of(success, "400", "401", "403", "404", "409")
                         : Set.of(success, "400", "401", "403", "404"), codes),
                 () -> assertFalse(parameters.contains("memberId")),
+                () -> assertEquals(write, parameters.contains("X-XSRF-TOKEN")),
+                () -> {
+                    if (write) {
+                        JsonNode csrf = operation.path("parameters").valueStream()
+                                .filter(parameter -> parameter.path("name").asText().equals("X-XSRF-TOKEN"))
+                                .findFirst().orElseThrow();
+                        assertAll(
+                                () -> assertEquals("header", csrf.path("in").asText()),
+                                () -> assertTrue(csrf.path("required").asBoolean()),
+                                () -> assertEquals("string", csrf.path("schema").path("type").asText()));
+                    }
+                },
                 () -> assertTrue(operation.path("responses").path(success).path("content").has("application/json"))
         );
     }

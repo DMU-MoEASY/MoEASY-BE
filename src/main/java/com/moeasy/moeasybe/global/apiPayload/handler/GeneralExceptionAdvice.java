@@ -84,7 +84,7 @@ public class GeneralExceptionAdvice {
     ) {
         GeneralErrorCode code = GeneralErrorCode.BAD_REQUEST;
 
-        log.warn("잘못된 요청이 발생했습니다.", ex);
+        log.warn("잘못된 요청이 발생했습니다. type={}", ex.getClass().getSimpleName());
 
         return ResponseEntity.status(code.getStatus())
                 .body(ApiResponse.onFailure(code, null));

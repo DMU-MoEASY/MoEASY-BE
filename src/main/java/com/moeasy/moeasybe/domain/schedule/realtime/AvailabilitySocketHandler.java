@@ -54,7 +54,9 @@ public class AvailabilitySocketHandler extends TextWebSocketHandler {
         authorizedSessions(targets).forEach(s -> send(s, event.type()));
     }
 
-    @Scheduled(fixedDelayString = "${availability.socket-check-ms:1000}", initialDelayString = "${availability.socket-check-ms:1000}")
+    @Scheduled(scheduler = "availabilitySocketScheduler",
+            fixedDelayString = "${availability.socket-check-ms:1000}",
+            initialDelayString = "${availability.socket-check-ms:1000}")
     public void revalidate() {
         authorizedSessions(new ArrayList<>(sessions.values()));
     }

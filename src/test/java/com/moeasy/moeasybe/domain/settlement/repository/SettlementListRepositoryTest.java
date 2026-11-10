@@ -14,7 +14,9 @@ import com.moeasy.moeasybe.domain.group.enums.GroupMemberStatus;
 import com.moeasy.moeasybe.domain.member.entity.Member;
 import com.moeasy.moeasybe.domain.member.enums.SocialType;
 import com.moeasy.moeasybe.domain.settlement.entity.Settlement;
+import com.moeasy.moeasybe.domain.schedule.entity.Schedule;
 import com.moeasy.moeasybe.domain.settlement.entity.SettlementItem;
+import com.moeasy.moeasybe.domain.settlement.enums.SettlementItemStatus;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementSplitMode;
 import com.moeasy.moeasybe.domain.settlement.enums.SettlementStatus;
 import jakarta.persistence.EntityManager;
@@ -158,8 +160,8 @@ class SettlementListRepositoryTest {
     }
 
     @Test
-    @DisplayName("청구 인원수는 요청한 정산만 일괄 집계하고 탈퇴·삭제된 대상도 포함한다")
-    void countTargetsBySettlementIds_historicalTargets_countsStoredItems() {
+    @DisplayName("청구 금액·인원수는 요청한 정산만 일괄 집계하고 탈퇴·삭제된 대상도 포함한다")
+    void summarizeBySettlementIds_historicalTargets_summarizesStoredItems() {
         // given
         GroupMember left = persistMembership(owner.getGroup());
         GroupMember deleted = persistMembership(owner.getGroup());
@@ -178,14 +180,18 @@ class SettlementListRepositoryTest {
         entityManager.clear();
 
         // when
-        Map<Long, SettlementItemRepository.TargetCount> counts = itemRepository
-                .countTargetsBySettlementIds(List.of(first.getId(), second.getId())).stream()
-                .collect(Collectors.toMap(SettlementItemRepository.TargetCount::getSettlementId, Function.identity()));
+        Map<Long, SettlementItemRepository.Summary> counts = itemRepository
+                .summarizeBySettlementIds(List.of(first.getId(), second.getId()),
+                        SettlementItemStatus.PAID, SettlementItemStatus.PENDING).stream()
+                .collect(Collectors.toMap(SettlementItemRepository.Summary::getSettlementId, Function.identity()));
 
         // then
         assertAll(
                 () -> assertEquals(2, counts.size()),
                 () -> assertEquals(3, counts.get(first.getId()).getTargetCount()),
+                () -> assertEquals(300L, counts.get(first.getId()).getChargedAmount()),
+                () -> assertEquals(0L, counts.get(first.getId()).getPaidCount()),
+                () -> assertEquals(3L, counts.get(first.getId()).getPendingCount()),
                 () -> assertEquals(1, counts.get(second.getId()).getTargetCount()),
                 () -> assertFalse(counts.containsKey(outside.getId()))
         );
@@ -198,7 +204,7 @@ class SettlementListRepositoryTest {
     private Settlement persistSettlement(GroupMember creator, Long scheduleId,
             SettlementStatus status, LocalDateTime createdAt) {
         Settlement settlement = Settlement.builder().group(creator.getGroup()).createdByGroupMember(creator)
-                .title("정산").scheduleId(scheduleId).totalAmount(1000L).splitMode(SettlementSplitMode.EQUAL).build();
+                .title("정산").schedule(scheduleId == null ? null : entityManager.getReference(Schedule.class, scheduleId)).totalAmount(1000L).splitMode(SettlementSplitMode.EQUAL).build();
         entityManager.persist(settlement);
         entityManager.flush();
         entityManager.createQuery("update Settlement s set s.status = :status, s.createdAt = :createdAt where s.id = :id")

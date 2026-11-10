@@ -1,0 +1,8 @@
+simulation: bankapi
+routing: path
+mocks:
+  - name: Bank API
+    routeKey: bankapi
+    origin:
+      - api.bankapi.co.kr
+    path: postman/mocks/bankapi

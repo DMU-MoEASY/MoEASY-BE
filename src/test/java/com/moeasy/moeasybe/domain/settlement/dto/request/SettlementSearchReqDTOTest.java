@@ -14,6 +14,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.core.ResolvableType;
@@ -171,11 +172,81 @@ class SettlementSearchReqDTOTest {
         );
     }
 
+    @Test
+    @DisplayName("납부 이력 조건을 생략하면 첫 페이지 20개를 사용한다")
+    void paymentSearch_noParameters_appliesDefaults() {
+        // given
+        Map<String, String> parameters = Map.of();
+
+        // when
+        ServletRequestDataBinder binder = bind(parameters, SettlementReqDTO.PaymentSearch.class);
+        var request = (SettlementReqDTO.PaymentSearch) binder.getTarget();
+
+        // then
+        assertAll(
+                () -> assertFalse(binder.getBindingResult().hasErrors()),
+                () -> assertEquals(0, request.page()),
+                () -> assertEquals(20, request.size())
+        );
+    }
+
+    @Test
+    @DisplayName("납부 이력 페이지 크기 상한은 허용하고 생략한 페이지 번호는 기본값을 사용한다")
+    void paymentSearch_maxSize_preservesProvidedValue() {
+        // given
+        Map<String, String> parameters = Map.of("size", "100");
+
+        // when
+        ServletRequestDataBinder binder = bind(parameters, SettlementReqDTO.PaymentSearch.class);
+        var request = (SettlementReqDTO.PaymentSearch) binder.getTarget();
+
+        // then
+        assertAll(
+                () -> assertFalse(binder.getBindingResult().hasErrors()),
+                () -> assertEquals(0, request.page()),
+                () -> assertEquals(100, request.size())
+        );
+    }
+
+    @ParameterizedTest
+    @CsvSource({"page, -1", "size, 0", "size, 101"})
+    @DisplayName("납부 이력 조회는 잘못된 페이지 번호·크기를 거부한다")
+    void paymentSearch_outOfRange_reportsValidationError(String field, String value) {
+        // given
+        Map<String, String> parameters = Map.of(field, value);
+
+        // when
+        ServletRequestDataBinder binder = bind(parameters, SettlementReqDTO.PaymentSearch.class);
+
+        // then
+        assertTrue(binder.getBindingResult().hasFieldErrors(field));
+    }
+
+    @Test
+    @DisplayName("납부 이력 페이지 번호가 정수가 아니면 바인딩 오류를 반환한다")
+    void paymentSearch_invalidPage_reportsBindingFailure() {
+        // given
+        Map<String, String> parameters = Map.of("page", "abc");
+
+        // when
+        ServletRequestDataBinder binder = bind(parameters, SettlementReqDTO.PaymentSearch.class);
+
+        // then
+        assertAll(
+                () -> assertTrue(binder.getBindingResult().hasFieldErrors("page")),
+                () -> assertTrue(binder.getBindingResult().getFieldError("page").isBindingFailure())
+        );
+    }
+
     private ServletRequestDataBinder bind(Map<String, String> parameters) {
+        return bind(parameters, SettlementReqDTO.Search.class);
+    }
+
+    private ServletRequestDataBinder bind(Map<String, String> parameters, Class<?> requestType) {
         MockHttpServletRequest request = new MockHttpServletRequest();
         parameters.forEach(request::addParameter);
         ServletRequestDataBinder binder = new ServletRequestDataBinder(null, "search");
-        binder.setTargetType(ResolvableType.forClass(SettlementReqDTO.Search.class));
+        binder.setTargetType(ResolvableType.forClass(requestType));
         binder.setConversionService(new DefaultFormattingConversionService());
         binder.setValidator(validator);
         binder.construct(request);

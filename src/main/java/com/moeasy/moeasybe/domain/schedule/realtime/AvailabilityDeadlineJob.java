@@ -12,11 +12,16 @@ public class AvailabilityDeadlineJob {
     private final AvailabilityPollRepository polls;
     private final AvailabilityCommandService command;
     private final AvailabilitySupport support;
-    @Scheduled(fixedDelayString = "${availability.close-delay-ms:1000}", initialDelayString = "${availability.close-delay-ms:1000}")
+    @Scheduled(scheduler = "availabilityDeadlineScheduler",
+            fixedDelayString = "${availability.close-delay-ms:1000}",
+            initialDelayString = "${availability.close-delay-ms:1000}")
     public void closeDue() {
         for (Long id : polls.findDueScheduleIds(support.now(), PageRequest.of(0, 100))) {
-            try { command.closeDue(id); }
-            catch (RuntimeException e) { log.warn("Availability deadline retry required: scheduleId={}", id); }
+            try {
+                command.closeDue(id);
+            } catch (RuntimeException exception) {
+                log.warn("Availability deadline retry required: scheduleId={}", id, exception);
+            }
         }
     }
 }

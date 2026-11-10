@@ -24,13 +24,14 @@ class SettlementLookupResDTOTest {
     private final JsonMapper objectMapper = JsonMapper.builder().build();
 
     @Test
-    @DisplayName("목록 응답은 요약·페이지 정보만 제공하고 날짜를 초 단위 문자열로 반환한다")
+    @DisplayName("목록 응답은 납부 현황·페이지 정보를 제공하고 날짜를 초 단위 문자열로 반환한다")
     void page_summary_serializesAgreedResponse() {
         // given
         var summary = SettlementResDTO.Summary.builder()
                 .settlementId(31L).title("러닝 후 식사비").scheduleId(7L)
                 .status(SettlementStatus.OPEN).splitMode(SettlementSplitMode.EQUAL)
                 .totalAmount(10000L).targetCount(3)
+                .paidAmount(4000L).remainingAmount(6000L).paidCount(1).pendingCount(2)
                 .dueAt(LocalDateTime.of(2026, 11, 1, 23, 59, 59))
                 .createdAt(LocalDateTime.of(2026, 10, 20, 14, 0, 0, 123456000))
                 .build();
@@ -52,6 +53,7 @@ class SettlementLookupResDTOTest {
                             "items":[{
                               "settlementId":31,"title":"러닝 후 식사비","scheduleId":7,
                               "status":"OPEN","splitMode":"EQUAL","totalAmount":10000,
+                              "paidAmount":4000,"remainingAmount":6000,"paidCount":1,"pendingCount":2,
                               "targetCount":3,"dueAt":"2026-11-01T23:59:59","createdAt":"2026-10-20T14:00:00"
                             }],
                             "page":0,"size":20,"totalElements":1,"totalPages":1,"hasNext":false
@@ -79,18 +81,20 @@ class SettlementLookupResDTOTest {
     }
 
     @Test
-    @DisplayName("상세 응답은 생성자와 청구 항목 ID·저장 금액·상태를 반환하고 본인 전용 필드를 노출하지 않는다")
+    @DisplayName("상세 응답은 정산·청구별 납부 현황과 청구 버전을 반환하고 Long 금액을 보존한다")
     void detail_items_serializesAgreedResponse() {
         // given
         var creator = SettlementResDTO.Creator.builder().groupMemberId(11L).nickname("정규").build();
         var item = SettlementResDTO.Item.builder()
                 .settlementItemId(101L).groupMemberId(11L).nickname("정규")
-                .amount(Long.MAX_VALUE).status(SettlementItemStatus.PENDING).build();
+                .amount(Long.MAX_VALUE).status(SettlementItemStatus.PENDING)
+                .paidAmount(4000L).remainingAmount(Long.MAX_VALUE - 4000L).version(1L).build();
         var detail = SettlementResDTO.Detail.builder()
                 .settlementId(31L).groupId(1L).scheduleId(7L)
                 .title("개별 식사비").description("식사비 정산입니다.")
                 .status(SettlementStatus.OPEN).splitMode(SettlementSplitMode.CUSTOM)
                 .totalAmount(Long.MAX_VALUE).targetCount(1)
+                .paidAmount(4000L).remainingAmount(Long.MAX_VALUE - 4000L).paidCount(0).pendingCount(1)
                 .dueAt(LocalDateTime.of(2026, 11, 1, 23, 59, 59))
                 .createdAt(LocalDateTime.of(2026, 10, 20, 14, 0, 0, 123456000))
                 .createdBy(creator).items(List.of(item)).build();
@@ -109,10 +113,12 @@ class SettlementLookupResDTOTest {
                             "settlementId":31,"groupId":1,"scheduleId":7,
                             "title":"개별 식사비","description":"식사비 정산입니다.",
                             "status":"OPEN","splitMode":"CUSTOM","totalAmount":9223372036854775807,
+                            "paidAmount":4000,"remainingAmount":9223372036854771807,"paidCount":0,"pendingCount":1,
                             "targetCount":1,"dueAt":"2026-11-01T23:59:59","createdAt":"2026-10-20T14:00:00",
                             "createdBy":{"groupMemberId":11,"nickname":"정규"},
                             "items":[{"settlementItemId":101,"groupMemberId":11,"nickname":"정규",
-                                      "amount":9223372036854775807,"status":"PENDING"}]
+                                      "amount":9223372036854775807,"status":"PENDING",
+                                      "paidAmount":4000,"remainingAmount":9223372036854771807,"version":1}]
                           }
                         }
                         """), json)
@@ -120,15 +126,17 @@ class SettlementLookupResDTOTest {
     }
 
     @Test
-    @DisplayName("조회 응답의 선택 정보는 생략하지 않고 null로 반환한다")
+    @DisplayName("선택 정보와 아직 채우지 않은 납부 현황은 null로 유지하며 0으로 보정하지 않는다")
     void lookup_optionalFields_serializesExplicitNulls() {
         // given
         var summary = SettlementResDTO.Summary.builder().build();
         var detail = SettlementResDTO.Detail.builder().build();
+        var item = SettlementResDTO.Item.builder().build();
 
         // when
         JsonNode summaryJson = serialize(summary);
         JsonNode detailJson = serialize(detail);
+        JsonNode itemJson = serialize(item);
 
         // then
         assertAll(
@@ -137,6 +145,17 @@ class SettlementLookupResDTOTest {
                 () -> assertTrue(detailJson.get("scheduleId").isNull()),
                 () -> assertTrue(detailJson.get("description").isNull()),
                 () -> assertTrue(detailJson.get("dueAt").isNull()),
+                () -> assertTrue(summaryJson.get("paidAmount").isNull()),
+                () -> assertTrue(summaryJson.get("remainingAmount").isNull()),
+                () -> assertTrue(summaryJson.get("paidCount").isNull()),
+                () -> assertTrue(summaryJson.get("pendingCount").isNull()),
+                () -> assertTrue(detailJson.get("paidAmount").isNull()),
+                () -> assertTrue(detailJson.get("remainingAmount").isNull()),
+                () -> assertTrue(detailJson.get("paidCount").isNull()),
+                () -> assertTrue(detailJson.get("pendingCount").isNull()),
+                () -> assertTrue(itemJson.get("paidAmount").isNull()),
+                () -> assertTrue(itemJson.get("remainingAmount").isNull()),
+                () -> assertTrue(itemJson.get("version").isNull()),
                 () -> assertFalse(summaryJson.has("myItem")),
                 () -> assertFalse(detailJson.has("mySettlementItemId"))
         );

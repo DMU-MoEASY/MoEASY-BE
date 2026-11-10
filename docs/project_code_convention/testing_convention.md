@@ -70,6 +70,11 @@
 - 테스트 데이터는 rollback, 명시적 정리, 또는 범위가 분리된 고유 데이터로 격리한다.
 - 필요한 테스트를 장기간 `@Disabled`로 두지 않는다. 이유와 복구 조건을 함께 기록한다.
 
+### 기존 데이터 마이그레이션 검증 실행
+
+`SettlementPaymentMigrationIntegrationTest`는 `DB_URL`과 같은 MySQL 서버에 임의 이름의 별도 DB를 만들고 테스트 후 삭제한다. 기존 애플리케이션 DB의 테이블은 변경하지 않는다.
+DB 생성·삭제 권한이 있는 **테스트 전용** 계정을 `MIGRATION_TEST_DB_USERNAME`, `MIGRATION_TEST_DB_PASSWORD`로 지정할 수 있다. 기본값은 로컬 Compose·CI MySQL의 개발용 `root` / `root1234`이며 운영 자격 증명을 사용하지 않는다.
+
 ### 예외 및 Advice 테스트
 
 - 직접 advice 테스트는 예외와 응답 코드 매핑을 최소한의 대표 데이터로 검증한다.

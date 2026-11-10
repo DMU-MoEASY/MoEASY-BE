@@ -165,6 +165,95 @@ class AvailabilitySocketHandlerTest {
         verify(session, never()).sendMessage(any());
     }
 
+
+    @Test
+    @DisplayName("동일 구독의 여러 연결은 각 주기 검사마다 한 번의 일괄 조회로 판정한다")
+    void revalidate_duplicateSubscription_queriesOncePerPass() throws Exception {
+        // given
+        var subscription = new Subscription(2L, 3L);
+        var first = connect("first", 1L, subscription);
+        var duplicate = connect("duplicate", 1L, subscription);
+
+        // when
+        handler.revalidate();
+        handler.revalidate();
+
+        // then
+        verify(access, times(2)).findAuthorized(Set.of(subscription));
+        verify(first, never()).close(any());
+        verify(duplicate, never()).close(any());
+    }
+
+    @Test
+    @DisplayName("회원은 같아도 일정이 다르면 각각의 구독 권한을 판정한다")
+    void revalidate_sameMemberOnDifferentSchedules_checksBothSubscriptions() throws Exception {
+        // given
+        var active = new Subscription(2L, 3L);
+        var revoked = new Subscription(5L, 3L);
+        var first = connect("first", 1L, active);
+        var other = connect("other", 1L, revoked);
+        when(access.findAuthorized(Set.of(active, revoked))).thenReturn(Set.of(active));
+
+        // when
+        handler.revalidate();
+
+        // then
+        verify(access).findAuthorized(Set.of(active, revoked));
+        verify(first, never()).close(any());
+        verify(other).close(CloseStatus.POLICY_VIOLATION);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
+    @DisplayName("동일 구독이어도 만료된 연결만 닫고 유효한 연결은 유지한다")
+    void check_sameSubscriptionWithDifferentExpiry_closesOnlyExpiredSession(boolean notification) throws Exception {
+        // given
+        var current = new AtomicReference<>(NOW);
+        Clock moving = mock(Clock.class);
+        when(moving.instant()).thenAnswer(invocation -> current.get());
+        handler = new AvailabilitySocketHandler(access, moving);
+        var subscription = new Subscription(2L, 3L);
+        var expired = connect("expired", 1L, subscription);
+        var valid = session("valid", 1L, 2L, 3L, NOW.plusSeconds(120));
+        handler.afterConnectionEstablished(valid);
+        current.set(NOW.plusSeconds(60));
+        clearInvocations(access, expired, valid);
+
+        // when
+        if (notification) handler.invalidate(new AvailabilityChanged(1L, 2L, "CHANGED"));
+        else handler.revalidate();
+
+        // then
+        verify(access).findAuthorized(Set.of(subscription));
+        verify(expired).close(CloseStatus.POLICY_VIOLATION);
+        verify(expired, never()).sendMessage(any());
+        verify(valid, never()).close(any());
+        if (notification) verifyNotification(valid, "CHANGED");
+        else verify(valid, never()).sendMessage(any());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
+    @DisplayName("구독 자격을 잃으면 중복 연결 모두 종료하고 알림을 보내지 않는다")
+    void check_revokedSubscription_closesAllWithoutSending(boolean notification) throws Exception {
+        // given
+        var subscription = new Subscription(2L, 3L);
+        var first = connect("first", 1L, subscription);
+        var duplicate = connect("duplicate", 1L, subscription);
+        when(access.findAuthorized(Set.of(subscription))).thenReturn(Set.of());
+
+        // when
+        if (notification) handler.invalidate(new AvailabilityChanged(1L, 2L, "ROSTER_CHANGED"));
+        else handler.revalidate();
+
+        // then
+        verify(access).findAuthorized(Set.of(subscription));
+        verify(first).close(CloseStatus.POLICY_VIOLATION);
+        verify(duplicate).close(CloseStatus.POLICY_VIOLATION);
+        verify(first, never()).sendMessage(any());
+        verify(duplicate, never()).sendMessage(any());
+    }
+
     private WebSocketSession connect(String id, Long group, Subscription subscription) throws Exception {
         return connect(id, group, subscription, () -> {});
     }

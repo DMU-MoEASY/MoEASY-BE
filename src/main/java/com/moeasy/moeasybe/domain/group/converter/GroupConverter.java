@@ -12,9 +12,18 @@ import com.moeasy.moeasybe.domain.group.enums.GroupMemberStatus;
 import com.moeasy.moeasybe.domain.member.entity.Member;
 import com.moeasy.moeasybe.storage.S3StorageService;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public final class GroupConverter {
     private GroupConverter() {
+    }
+
+    public static GroupResDTO.Members toMembers(List<GroupMember> members) {
+        return GroupResDTO.Members.builder().members(members.stream()
+                .map(member -> GroupResDTO.MemberSummary.builder()
+                        .groupMemberId(member.getId()).memberId(member.getMember().getId())
+                        .nickname(member.getMember().getNickname()).role(member.getRole()).build())
+                .toList()).build();
     }
 
     public static Group toEntity(GroupReqDTO.Create request, Category category) {

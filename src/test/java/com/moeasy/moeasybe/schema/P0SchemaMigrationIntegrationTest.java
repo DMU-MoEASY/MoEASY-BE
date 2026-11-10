@@ -2,6 +2,8 @@ package com.moeasy.moeasybe.schema;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.moeasy.moeasybe.domain.settlement.migration.SettlementPaymentMigrationGuard;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -11,10 +13,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class P0SchemaMigrationIntegrationTest {
 
     private static final int P0_TABLE_COUNT = 32;
-    private static final int SCHEMA_FOREIGN_KEY_COUNT = 66;
+    private static final int SCHEMA_FOREIGN_KEY_COUNT = 68;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private Flyway flyway;
 
     @Test
     void flywayCreatesTheApprovedP0Schema() {
@@ -137,6 +142,8 @@ class P0SchemaMigrationIntegrationTest {
                   AND constraint_type = 'CHECK'
                 """, Integer.class);
 
+        assertThat(flyway.getConfiguration().getCallbacks())
+                .anyMatch(callback -> callback instanceof SettlementPaymentMigrationGuard);
         assertThat(tableCount).isEqualTo(P0_TABLE_COUNT);
         assertThat(socialIdentityIndexCount).isEqualTo(1);
         assertThat(socialLoginColumns).isEqualTo(2);

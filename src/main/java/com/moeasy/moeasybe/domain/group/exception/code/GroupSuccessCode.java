@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 @Getter
 @AllArgsConstructor
 public enum GroupSuccessCode implements BaseSuccessCode {
+    GROUP_MEMBERS_FETCHED(HttpStatus.OK, "GROUP200_9", "모임 회원 목록을 조회했습니다."),
     GROUP_CREATED(HttpStatus.CREATED, "GROUP201_1", "모임을 생성했습니다."),
     GROUP_FETCHED(HttpStatus.OK, "GROUP200_1", "모임을 조회했습니다."),
     GROUP_UPDATED(HttpStatus.OK, "GROUP200_2", "모임을 수정했습니다."),
