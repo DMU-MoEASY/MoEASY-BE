@@ -14,6 +14,8 @@ import java.time.*;
 import java.util.*;
 import java.util.concurrent.*;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -105,6 +107,32 @@ class AvailabilityRealtimeIntegrationTest {
             // then
             assertTrue(deliveries.await(5,TimeUnit.SECONDS));
         } finally { first.destroy(); second.destroy(); }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"account", "group", "schedule"})
+    @DisplayName("계정 정지·모임 폐쇄·일정 삭제 후 실제 소켓은 알림을 받지 않고 종료된다")
+    void notifications_revokedAccess_closesWithoutSending(String target) throws Exception {
+        // given
+        Listener listener = new Listener();
+        var socket = connect(listener);
+        assertTrue(listener.messages.poll(5, TimeUnit.SECONDS).contains("CONNECTED"));
+        try {
+            switch (target) {
+                case "account" -> jdbc.update("update member set status='BANNED' where id=?", memberId);
+                case "group" -> jdbc.update("update member_group set status='CLOSED' where id=?", groupId);
+                case "schedule" -> jdbc.update("update schedule set deleted_at=CURRENT_TIMESTAMP where id=?", scheduleId);
+                default -> throw new AssertionError(target);
+            }
+            // when
+            tx.executeWithoutResult(status -> events.publishEvent(
+                    new com.moeasy.moeasybe.domain.schedule.realtime.AvailabilityChanged(groupId, scheduleId, "ROSTER_CHANGED")));
+            int closeStatus = listener.closed.get(5, TimeUnit.SECONDS);
+            // then
+            assertAll(() -> assertEquals(1008, closeStatus), () -> assertTrue(listener.messages.isEmpty()));
+        } finally {
+            socket.abort();
+        }
     }
     private org.springframework.data.redis.listener.RedisMessageListenerContainer node(CountDownLatch received) {
         var node=new org.springframework.data.redis.listener.RedisMessageListenerContainer(); node.setConnectionFactory(connection);

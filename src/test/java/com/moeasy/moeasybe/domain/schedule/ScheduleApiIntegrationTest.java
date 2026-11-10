@@ -23,6 +23,7 @@ import java.util.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -98,6 +99,56 @@ class ScheduleApiIntegrationTest {
         mvc.perform(auth(get(path(id)), member)).andExpect(status().isNotFound());
         assertAll(() -> assertFalse(repository.existsByIdAndGroupIdAndDeletedAtIsNull(id, group.getId())),
                 () -> assertEquals(1, jdbc.queryForObject("select count(*) from schedule where id=?", Integer.class, id)));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = GroupMemberRole.class, names = {"OWNER", "MANAGER"})
+    @DisplayName("정지 계정은 활성 운영진 자격과 유효한 JWT가 있어도 일정을 생성할 수 없다")
+    void create_bannedAccount_returns403(GroupMemberRole role) throws Exception {
+        // given
+        Long actor = role == GroupMemberRole.OWNER ? owner : manager;
+        ban(actor);
+        var request = post(listPath()).contentType(MediaType.APPLICATION_JSON).content(BODY);
+        // when
+        var result = mvc.perform(auth(request, actor));
+        // then
+        result.andExpect(status().isForbidden());
+        assertEquals(0, jdbc.queryForObject("select count(*) from schedule where group_id=?", Integer.class, group.getId()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"update", "cancel", "delete", "detail", "list"})
+    @DisplayName("정지 계정은 기존 역할로 일정 변경과 조회에 접근할 수 없다")
+    void schedule_bannedAccount_returns403(String operation) throws Exception {
+        // given
+        Long id = create();
+        Long actor = switch (operation) {
+            case "delete" -> owner;
+            case "detail", "list" -> member;
+            default -> manager;
+        };
+        ban(actor);
+        var request = switch (operation) {
+            case "update" -> patch(path(id)).contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"수정\"}");
+            case "cancel" -> post(path(id) + "/cancel");
+            case "delete" -> delete(path(id));
+            case "detail" -> get(path(id));
+            default -> get(listPath());
+        };
+        // when
+        var result = mvc.perform(auth(request, actor));
+        // then
+        result.andExpect(status().isForbidden());
+        var schedule = repository.findById(id).orElseThrow();
+        assertAll(() -> assertEquals("모임", schedule.getTitle()),
+                () -> assertEquals(com.moeasy.moeasybe.domain.schedule.enums.ScheduleStatus.SCHEDULED, schedule.getStatus()),
+                () -> assertNull(schedule.getDeletedAt()));
+    }
+
+    private void ban(Long actor) {
+        em.flush();
+        jdbc.update("update member set status='BANNED' where id=?", actor);
+        em.clear();
     }
 
     @ParameterizedTest

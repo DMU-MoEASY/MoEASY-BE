@@ -42,6 +42,7 @@ public class ScheduleAccess {
         GroupMember member = members
                 .findByGroupIdAndMemberIdAndStatusAndDeletedAtIsNullAndMemberDeletedAtIsNull(
                         groupId, memberId, GroupMemberStatus.ACTIVE)
+                .filter(m -> m.getMember().getStatus() == MemberStatus.ACTIVE)
                 .orElseThrow(() -> new GeneralException(GeneralErrorCode.FORBIDDEN));
         if (write && (ownerOnly ? member.getRole() != GroupMemberRole.OWNER
                 : member.getRole() != GroupMemberRole.OWNER && member.getRole() != GroupMemberRole.MANAGER)) {
