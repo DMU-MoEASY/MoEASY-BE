@@ -5,7 +5,7 @@
 Group API의 공통 접두사는 `/api/v1`이다. 아래 표의 `/groups` 경로에는 모두 이 접두사가 적용된다. Issue #14의 그룹 CRUD와 Issue #23의 승인제 가입 관리 API를 제공한다. 목록·검색·초대 및 참여/미참여 조회는 [후속 범위](#후속-범위)에 보존한다.
 
 - Group API의 식별자 `groupId`는 `member_group.id`에 대응하는 양의 정수다.
-- 모든 API는 Issue #15의 JWT로 인증된 회원만 호출할 수 있다. 상세 조회에는 Group 멤버십을 요구하지 않는다. 수정과 폐쇄는 해당 Group의 활성 `OWNER` 멤버십을 요구한다.
+- 모든 API는 JWT로 인증된 회원만 호출할 수 있다. 쿠키·Bearer 인증과 Swagger 사용법은 [공통 인증 계약](auth.md)을 따른다. 상세 조회에는 Group 멤버십을 요구하지 않는다. 수정과 폐쇄는 해당 Group의 활성 `OWNER` 멤버십을 요구한다.
 - 명세의 기존 `STAFF`는 DB 역할 `MANAGER`를 뜻한다. 가입 관리의 목록·승인·거절에는 삭제되지 않은 활성 OWNER·MANAGER 권한이 필요하다. 역할 임명·회수 API는 포함하지 않는다.
 - 정상·오류 응답은 공통 `ApiResponse<T>` 형식을 따른다. 아래 Group 코드는 `GroupSuccessCode`와 `GroupErrorCode`에 정의되어 있다.
 

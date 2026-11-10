@@ -44,7 +44,7 @@
 
 - 모든 경로의 공통 접두사는 `/api/v1`이다.
 - 정상·오류 응답은 기존 `ApiResponse<T>` 형식을 사용한다.
-- 인증에는 JWT HttpOnly 쿠키를 사용한다. POST·PATCH·PUT·DELETE 요청에는 기존 CSRF 쿠키와 `X-XSRF-TOKEN` 헤더가 필요하다. 저장하지 않는 POST 미리보기도 같은 검증을 적용한다.
+- 인증에는 JWT HttpOnly 쿠키 또는 Bearer 헤더를 사용한다. [공통 인증·Swagger 테스트 절차](auth.md)를 따른다. POST·PATCH·PUT·DELETE 요청에는 기존 CSRF 쿠키와 `X-XSRF-TOKEN` 헤더가 필요하다. 저장하지 않는 POST 미리보기도 같은 검증을 적용한다.
 - 생성자·요청자의 회원 ID는 JWT에서 주입받으며 요청 본문으로 받지 않는다.
 - `groupId`는 `member_group.id`다. 정산 대상의 `groupMemberId`는 `group_member.id`이며 로그인 회원의 `memberId`와 다르다. 모든 ID는 양의 정수다.
 - 생성·미리보기·조회 API 모두 경로의 `groupId`가 0 이하이면 서비스 호출 전에 HTTP 400 / `VALID400_1`과 `groupId` 검증 메시지를 반환한다.
@@ -179,7 +179,7 @@ HTTP 201과 생성한 `settlementId`를 `ApiResponse<SettlementResDTO.Created>` 
 
 ### Swagger에서 생성 테스트
 
-1. API를 호출하는 호스트에 유효한 `moeasy_access_token` 쿠키가 있어야 한다.
+1. Swagger Authorize에 유효한 액세스 JWT를 입력하거나, API 호스트의 `moeasy_access_token` 쿠키를 사용한다.
 2. `GET /api/v1/auth/csrf`를 호출해 CSRF 쿠키를 발급받고 응답의 `result.token` 값을 복사한다.
 3. 정산 생성 API의 `groupId`와 요청 본문을 입력한다. 대상 ID는 `group_member.id`를 사용한다.
 4. `X-XSRF-TOKEN` 헤더 입력란에 복사한 값을 넣어 실행한다. CSRF 쿠키도 같은 요청에 전달되어야 한다.
@@ -257,7 +257,7 @@ HTTP 통합 테스트에서는 실제 JWT 필터와 CSRF 발급 API를 사용해
 #### 권한과 검증
 
 - 폐쇄·삭제되지 않은 모임의 활성 `OWNER`·`MANAGER`만 요청할 수 있다. 생성과 같은 인증·권한·대상 기준을 사용한다.
-- JWT 인증 쿠키와 CSRF 쿠키·`X-XSRF-TOKEN` 헤더가 필요하다. POST이므로 저장 여부와 관계없이 기존 CSRF 검증을 적용한다.
+- JWT 인증(액세스 쿠키 또는 Bearer 헤더)과 CSRF 쿠키·`X-XSRF-TOKEN` 헤더가 필요하다. POST이므로 저장 여부와 관계없이 기존 CSRF 검증을 적용한다.
 - 분할 방식·조건부 필드·대상 중복·회원 소속 및 활성 상태·금액 범위·CUSTOM 합계를 생성과 동일하게 검증한다.
 - 정산·청구 데이터를 저장하거나 예약하지 않는다. 미리보기 식별자나 토큰을 발급하지 않는다.
 - 제목·설명·일정·납부 기한은 요청 필드에 포함하지 않는다. 선택한 대상 ID만으로 계산하며, 일정의 유효성 등 생성에 필요한 나머지 정보는 생성 요청에서 검증한다.
@@ -322,7 +322,7 @@ HTTP 200, `SETTLEMENT200_1`로 `ApiResponse<SettlementResDTO.Preview>`를 반환
 
 #### Swagger 테스트
 
-1. API 서버의 Swagger에 인증 쿠키가 있는 상태에서 `GET /api/v1/auth/csrf`를 실행한다.
+1. API 서버의 Swagger에서 액세스 쿠키 또는 Authorize로 인증하고 `GET /api/v1/auth/csrf`를 실행한다.
 2. 응답 `result.token`을 복사하고 미리보기의 `X-XSRF-TOKEN` 입력란에 넣는다. 발급된 `XSRF-TOKEN` 쿠키도 요청에 함께 전송되어야 한다.
 3. `groupId`와 EQUAL 또는 CUSTOM 요청을 입력한다. Swagger 예시의 대상 ID는 실제 모임의 `group_member.id`로 바꾼다.
 4. HTTP 200 / `SETTLEMENT200_1`과 회원별 금액을 확인한다. 미리보기만 실행하면 정산은 생성되지 않는다.
@@ -345,7 +345,7 @@ HTTP 200, `SETTLEMENT200_1`로 `ApiResponse<SettlementResDTO.Preview>`를 반환
 
 ### 공통 조회 권한과 데이터 기준
 
-- JWT HttpOnly 쿠키로 인증한다. GET 요청이므로 CSRF 쿠키·헤더는 필요하지 않다.
+- JWT HttpOnly 쿠키 또는 Bearer 헤더로 인증한다. GET 요청이므로 CSRF 쿠키·헤더는 필요하지 않다.
 - 해당 모임의 활성 회원이면 `OWNER`·`MANAGER`·`MEMBER` 모두 조회할 수 있다. 정산 대상이 아닌 회원도 같은 범위로 조회한다.
 - 일반 회원에게도 전체 대상자의 청구 금액과 청구 상태를 공개한다. 본인 청구만으로 결과를 제한하지 않는다.
 - 탈퇴·강퇴·삭제된 모임 회원, 삭제된 회원 계정과 비회원은 조회할 수 없다.
@@ -441,7 +441,7 @@ HTTP 200, `SETTLEMENT200_2`를 사용한다. 목록에는 정산 요약과 페�
 
 Swagger에서는 다음 순서로 확인한다.
 
-1. API를 호출하는 호스트에 유효한 `moeasy_access_token` 쿠키가 있어야 한다.
+1. Swagger Authorize에 유효한 액세스 JWT를 입력하거나, API 호스트의 `moeasy_access_token` 쿠키를 사용한다.
 2. 목록 조회의 `groupId`를 입력하고 필요에 따라 `page`·`size`·`status`·`scheduleId`를 지정한다. CSRF 발급이나 헤더 입력은 필요하지 않다.
 3. HTTP 200 / `SETTLEMENT200_2`와 `items`·페이지 정보를 확인한다. 조회 결과가 없으면 빈 목록을 반환한다.
 
@@ -519,7 +519,7 @@ HTTP 200, `SETTLEMENT200_3`을 사용한다.
 
 실제 MySQL 테스트에서 정산 소속·삭제 여부, 생성자·대상자의 계정 로딩, 청구 정렬·금액·상태 보존, 폐쇄 모임과 삭제 계정의 기록을 검증한다. 실제 JWT 필터를 사용하는 HTTP 테스트에서는 역할별 조회, 인증·권한 오류, 모임·정산 없음, 경로 ID 검증과 Swagger의 상세 응답 스키마를 확인한다.
 
-Swagger에서는 인증 쿠키가 있는 상태에서 목록의 `settlementId`와 해당 `groupId`를 상세 조회에 입력한다. HTTP 200 / `SETTLEMENT200_3`, `createdBy`와 `items`를 확인한다. 브라우저 프론트의 교차 출처 호출에는 목록과 동일하게 쿠키 전송 설정이 필요하다.
+Swagger에서는 액세스 쿠키 또는 Authorize로 인증한 상태에서 목록의 `settlementId`와 해당 `groupId`를 상세 조회에 입력한다. HTTP 200 / `SETTLEMENT200_3`, `createdBy`와 `items`를 확인한다. 브라우저 프론트의 교차 출처 호출에는 목록과 동일하게 쿠키 전송 설정이 필요하다.
 
 ### 조회 오류 응답 계약
 
@@ -568,7 +568,7 @@ Swagger에서는 인증 쿠키가 있는 상태에서 목록의 `settlementId`�
 - `settlementItemId`는 회원 한 명의 청구인 `settlement_item.id`다. 대상 회원 ID인 `groupMemberId`와 다르다.
 - `paymentId`는 개별 납부 기록인 `settlement_payment.id`다. 같은 청구에 여러 차례 납부하면 서로 다른 `paymentId`가 생긴다.
 - 모임 → 정산 → 청구 → 납부 기록의 소속을 검증한다. 다른 정산의 청구나 다른 청구의 납부 ID로 접근할 수 없다.
-- 경로 ID는 양수다. JWT 쿠키 인증을 사용하고 두 POST API에는 CSRF 쿠키와 `X-XSRF-TOKEN` 헤더가 필요하다. Swagger에도 헤더 입력란을 제공한다.
+- 경로 ID는 양수다. JWT 쿠키 또는 Bearer 인증을 사용하고 두 POST API에는 CSRF 쿠키와 `X-XSRF-TOKEN` 헤더가 필요하다. Swagger에도 헤더 입력란을 제공한다.
 
 ### 권한과 변경 가능한 상태
 

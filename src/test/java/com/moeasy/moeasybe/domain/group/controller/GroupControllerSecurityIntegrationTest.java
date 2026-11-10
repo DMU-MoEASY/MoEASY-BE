@@ -18,13 +18,17 @@ import jakarta.servlet.http.Cookie;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
@@ -76,43 +80,40 @@ class GroupControllerSecurityIntegrationTest {
                 .andExpect(status().isUnauthorized());
     }
 
-    @Test
-    void 인증된_비회원도_csrf_토큰_없이_그룹을_조회할_수_있다() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 인증된_비회원도_csrf_토큰_없이_그룹을_조회할_수_있다(boolean bearer) throws Exception {
         // given
         Long ownerId = insertMember();
         Long nonMemberId = insertMember();
         Long groupId = createGroup(ownerId);
 
         // when
-        mockMvc.perform(get(GROUPS_PATH + "/" + groupId)
-                        .cookie(accessTokenCookie(nonMemberId)))
+        mockMvc.perform(authenticate(get(GROUPS_PATH + "/" + groupId), nonMemberId, bearer))
                 // then
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.groupId").value(groupId));
     }
 
-    @Test
-    void csrf_토큰이_없는_인증된_post_patch_delete는_거부된다() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void csrf_토큰이_없는_인증된_post_patch_delete는_거부된다(boolean bearer) throws Exception {
         // given
         Long memberId = insertMember();
         Long groupId = createGroup(memberId);
-        Cookie accessToken = accessTokenCookie(memberId);
 
         // when / then
-        mockMvc.perform(post(GROUPS_PATH)
-                        .cookie(accessToken)
+        mockMvc.perform(authenticate(post(GROUPS_PATH), memberId, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(createRequestBody()))
                 .andExpect(status().isForbidden());
 
-        mockMvc.perform(patch(GROUPS_PATH + "/" + groupId)
-                        .cookie(accessToken)
+        mockMvc.perform(authenticate(patch(GROUPS_PATH + "/" + groupId), memberId, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"CSRF 없이 수정\"}"))
                 .andExpect(status().isForbidden());
 
-        mockMvc.perform(delete(GROUPS_PATH + "/" + groupId)
-                        .cookie(accessToken)
+        mockMvc.perform(authenticate(delete(GROUPS_PATH + "/" + groupId), memberId, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(closeRequestBody("검증 모임")))
                 .andExpect(status().isForbidden());
@@ -126,15 +127,16 @@ class GroupControllerSecurityIntegrationTest {
         )).isZero();
     }
 
-    @Test
-    void jwt와_csrf를_보내_그룹을_생성하면_인증_회원을_owner로_저장한다() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void jwt와_csrf를_보내_그룹을_생성하면_인증_회원을_owner로_저장한다(boolean bearer) throws Exception {
         // given
         Long memberId = insertMember();
         CsrfCredentials csrf = requestCsrfCredentials();
 
         // when
-        MvcResult result = mockMvc.perform(post(GROUPS_PATH)
-                        .cookie(accessTokenCookie(memberId), csrf.cookie())
+        MvcResult result = mockMvc.perform(authenticate(post(GROUPS_PATH), memberId, bearer)
+                        .cookie(csrf.cookie())
                         .header(CSRF_HEADER_NAME, csrf.token())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(createRequestBody()))
@@ -258,6 +260,13 @@ class GroupControllerSecurityIntegrationTest {
 
     private Cookie accessTokenCookie(Long memberId) {
         return new Cookie(AuthCookieNames.ACCESS_TOKEN, jwtTokenProvider.issueAccessToken(memberId).value());
+    }
+
+    private MockHttpServletRequestBuilder authenticate(
+            MockHttpServletRequestBuilder request, Long memberId, boolean bearer) {
+        return bearer
+                ? request.header(HttpHeaders.AUTHORIZATION, "Bearer " + jwtTokenProvider.issueAccessToken(memberId).value())
+                : request.cookie(accessTokenCookie(memberId));
     }
 
     private CsrfCredentials requestCsrfCredentials() throws Exception {

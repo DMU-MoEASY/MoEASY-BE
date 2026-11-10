@@ -1,8 +1,8 @@
 package com.moeasy.moeasybe.domain.schedule.realtime;
 
 import com.moeasy.moeasybe.global.config.CorsProperties;
-import com.moeasy.moeasybe.global.security.jwt.JwtTokenProvider;
-import com.moeasy.moeasybe.domain.auth.config.AuthCookieNames;
+import com.moeasy.moeasybe.global.security.jwt.JwtAuthenticationFilter;
+import java.time.Instant;
 import java.util.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.*;
@@ -21,7 +21,6 @@ public class AvailabilityRealtimeConfig implements WebSocketConfigurer {
     private final AvailabilitySocketHandler handler;
     private final AvailabilitySubscriptionAccess access;
     private final CorsProperties cors;
-    private final JwtTokenProvider jwt;
 
     @Override public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(handler, "/ws/schedules/{scheduleId}/availability")
@@ -29,21 +28,22 @@ public class AvailabilityRealtimeConfig implements WebSocketConfigurer {
                 .addInterceptors(new HandshakeInterceptor() {
                     @Override public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
                             WebSocketHandler wsHandler, Map<String, Object> attributes) {
-                        // A read-only socket uses cookie JWT and a strict Origin allowlist. All writes retain REST CSRF.
+                        // Reuse the filter's selected JWT and keep strict Origin checks. All writes retain REST CSRF.
                         if (!cors.allowedOrigins().contains(request.getHeaders().getOrigin())) {
                             response.setStatusCode(HttpStatus.FORBIDDEN); return false;
                         }
                         try {
                             if (request.getPrincipal() == null) { response.setStatusCode(HttpStatus.UNAUTHORIZED); return false; }
+                            var servlet = ((ServletServerHttpRequest) request).getServletRequest();
+                            if (!(servlet.getAttribute(JwtAuthenticationFilter.ACCESS_TOKEN_EXPIRES_AT_ATTRIBUTE)
+                                    instanceof Instant expiresAt)) {
+                                response.setStatusCode(HttpStatus.UNAUTHORIZED); return false;
+                            }
                             Long memberId = Long.valueOf(request.getPrincipal().getName());
                             String[] path = request.getURI().getPath().split("/");
                             Long scheduleId = Long.valueOf(path[3]);
                             Long groupId = access.require(scheduleId, memberId);
-                            var servlet = ((ServletServerHttpRequest) request).getServletRequest();
-                            String token = Arrays.stream(Optional.ofNullable(servlet.getCookies()).orElse(new jakarta.servlet.http.Cookie[0]))
-                                    .filter(c -> AuthCookieNames.ACCESS_TOKEN.equals(c.getName())).map(jakarta.servlet.http.Cookie::getValue)
-                                    .findFirst().orElseThrow();
-                            attributes.put("expiresAt", jwt.decode(token).getExpiresAt());
+                            attributes.put("expiresAt", expiresAt);
                             attributes.put("memberId", memberId); attributes.put("scheduleId", scheduleId); attributes.put("groupId", groupId);
                             return true;
                         } catch (RuntimeException e) { response.setStatusCode(HttpStatus.FORBIDDEN); return false; }
