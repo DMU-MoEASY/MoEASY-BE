@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600">
+  <rect width="1200" height="600" rx="40" fill="#065f46"/>
+  <circle cx="1020" cy="450" r="280" fill="#059669"/>
+  <text x="80" y="150" font-family="sans-serif" font-size="32" fill="white">MoEASY · DEMO AD B</text>
+  <text x="80" y="290" font-family="sans-serif" font-size="64" font-weight="bold" fill="white">A fresh start this weekend</text>
+  <text x="80" y="400" font-family="sans-serif" font-size="36" fill="white">Discover something new.</text>
+  <rect x="80" y="460" width="300" height="70" rx="35" fill="white"/>
+  <text x="120" y="508" font-family="sans-serif" font-size="30" fill="#065f46">Learn more →</text>
+</svg>

@@ -1,6 +1,7 @@
 package com.moeasy.moeasybe.global.security;
 
 import java.util.List;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.server.PathContainer;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.OrRequestMatcher;
@@ -29,7 +30,8 @@ public final class SecurityRequestMatchers {
     );
 
     public static final RequestMatcher PUBLIC_ENDPOINTS = new OrRequestMatcher(
-            PUBLIC_PATHS.stream().map(PATH_MATCHER::matcher).toList());
+            new OrRequestMatcher(PUBLIC_PATHS.stream().map(PATH_MATCHER::matcher).toList()),
+            PATH_MATCHER.matcher(HttpMethod.GET, "/feed-ads/**"));
 
     private static final List<PathPattern> PUBLIC_PATH_PATTERNS = PUBLIC_PATHS.stream()
             .map(PathPatternParser.defaultInstance::parse)

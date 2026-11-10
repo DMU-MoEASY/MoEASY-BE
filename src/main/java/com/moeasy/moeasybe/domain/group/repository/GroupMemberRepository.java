@@ -34,6 +34,10 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, Long> 
 
     Optional<GroupMember> findByGroupIdAndMemberId(Long groupId, Long memberId);
 
+    @Query(value = "SELECT COUNT(*) FROM group_member gm WHERE gm.group_id=:groupId AND "
+            + GroupMembershipSql.ACTIVE, nativeQuery = true)
+    long countActiveMembers(Long groupId);
+
     long countByGroupIdAndStatusAndDeletedAtIsNull(Long groupId, GroupMemberStatus status);
 
     boolean existsByGroupIdAndMemberIdAndRoleAndStatus(Long groupId, Long memberId,
