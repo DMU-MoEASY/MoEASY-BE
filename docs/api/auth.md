@@ -40,6 +40,7 @@ Authorization: Bearer <access-token>
 - 인증 스킴 `Bearer`는 대소문자를 구분하지 않는다. 헤더 값에는 액세스 JWT 하나를 전달한다. Authorization 헤더를 여러 개 전달하면 401로 거부한다. 쿼리나 요청 본문의 `access_token`은 인증에 사용하지 않는다.
 - 헤더와 쿠키 모두 기존 JWT 검증을 재사용한다. 서명·발급자·만료와 액세스 토큰 종류, 양수 회원 ID 검증을 유지한다. 리프레시 JWT로 일반 API에 접근할 수 없다.
 - Bearer 지원은 Swagger와 일반 HTTP 클라이언트에 동일하게 적용한다. Swagger 요청이라는 이유로 인증·권한 검증을 생략하지 않는다.
+- WebSocket 핸드셰이크도 같은 인증 우선순위를 따른다. 필터가 인증한 회원 ID와 해당 JWT의 만료 시각을 사용하며, 쿠키의 다른 토큰으로 연결 만료 기준을 바꾸지 않는다. Origin·구성원 자격 검증과 만료 후 연결 종료는 유지한다.
 - 로그인·CSRF 발급·OAuth state 발급·토큰 재발급·로그아웃 등 기존 공개 경로는 공개 상태를 유지한다. 공개 경로의 기존 인증 필터 제외 정책도 유지한다.
 - Authorize 입력은 토큰을 새로 발급하지 않는다. 기존 로그인 등으로 발급받은 유효한 액세스 JWT를 사용한다.
 - 로그인·재발급의 응답 계약은 변경하지 않는다. 재발급·로그아웃은 계속 리프레시 쿠키를 사용하며 Authorize의 액세스 JWT로 대체하지 않는다.
@@ -58,7 +59,7 @@ Authorization: Bearer <access-token>
 ## Swagger 테스트 절차
 
 1. 테스트할 회원의 유효한 액세스 JWT를 준비한다.
-2. Swagger의 `Authorize`에서 Bearer 인증 입력란에 JWT 원문을 입력한다. `Bearer ` 접두사는 Swagger가 붙이므로 입력하지 않는다.
+2. Swagger의 `Authorize`에서 Bearer 인증 입력란에 JWT 원문을 입력한다. `Bearer` 접두사와 그 뒤 공백은 Swagger가 붙이므로 입력하지 않는다.
 3. 보호 API 요청의 `Authorization: Bearer ...` 헤더를 확인한다. GET 조회에는 CSRF 발급이 필요하지 않다.
 4. 상태 변경 API 테스트 전, 같은 Swagger에서 `GET /api/v1/auth/csrf`를 호출하고 `result.token`을 복사한다.
 5. 대상 API의 `X-XSRF-TOKEN` 헤더에 CSRF 값을 입력한다. API 서버의 CSRF 쿠키도 함께 전송되어야 한다.

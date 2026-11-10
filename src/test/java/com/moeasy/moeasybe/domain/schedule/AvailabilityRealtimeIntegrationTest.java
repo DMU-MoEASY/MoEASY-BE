@@ -1,6 +1,8 @@
 package com.moeasy.moeasybe.domain.schedule;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 import com.moeasy.moeasybe.domain.group.entity.*;
 import com.moeasy.moeasybe.domain.group.enums.*;
 import com.moeasy.moeasybe.domain.member.entity.Member;
@@ -18,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class AvailabilityRealtimeIntegrationTest {
@@ -33,10 +36,15 @@ class AvailabilityRealtimeIntegrationTest {
     @Autowired org.springframework.context.ApplicationEventPublisher events;
     @Autowired org.springframework.data.redis.connection.RedisConnectionFactory connection;
     @Autowired com.moeasy.moeasybe.domain.schedule.realtime.AvailabilitySocketHandler handler;
+    @MockitoBean(name = "clock") Clock clock;
     private Long groupId, memberId, scheduleId;
     private final java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
     private static final LocalDateTime SLOT = LocalDateTime.of(2099,1,10,9,0);
     @BeforeEach void setUp() {
+        Clock fixed = Clock.fixed(Instant.now(), ZoneId.of("Asia/Seoul"));
+        when(clock.instant()).thenReturn(fixed.instant());
+        when(clock.getZone()).thenReturn(fixed.getZone());
+        when(clock.withZone(any())).thenAnswer(invocation -> fixed.withZone(invocation.getArgument(0)));
         tx.executeWithoutResult(status -> {
             Category c = em.createQuery("select c from Category c where c.code='RUNNING'", Category.class).getSingleResult();
             Group g = Group.builder().category(c).name("가용 경합").description("설명").regionCode("11680")
@@ -69,6 +77,42 @@ class AvailabilityRealtimeIntegrationTest {
         assertAll(() -> assertEquals(401,((java.net.http.WebSocketHandshakeException)anonymous.getCause()).getResponse().statusCode()),
                 () -> assertEquals(403,((java.net.http.WebSocketHandshakeException)badOrigin.getCause()).getResponse().statusCode()));
     }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    @DisplayName("Bearer 소켓은 쿠키 유무와 관계없이 인증에 사용한 액세스 JWT 만료 시 종료된다")
+    void revalidate_bearerWithOptionalOtherRefreshCookie_closesAtBearerExpiry(boolean withCookie) throws Exception {
+        // given
+        String accessToken = jwt.issueAccessToken(memberId).value();
+        Instant expiry = jwt.decode(accessToken).getExpiresAt();
+        var builder = client.newWebSocketBuilder()
+                .header("Origin", cors.allowedOrigins().getFirst())
+                .header("Authorization", "Bearer " + accessToken);
+        if (withCookie) {
+            builder.header("Cookie", "moeasy_access_token=" + jwt.issueRefreshToken(memberId + 1_000_000L).value());
+        }
+        Listener listener = new Listener();
+        var socket = builder.buildAsync(java.net.URI.create(
+                "ws://localhost:" + port + "/ws/schedules/" + scheduleId + "/availability"), listener).join();
+        try {
+            String connected = listener.messages.poll(5, TimeUnit.SECONDS);
+            assertNotNull(connected);
+            assertTrue(connected.contains("CONNECTED"));
+            when(clock.instant()).thenReturn(expiry.plusSeconds(1));
+
+            // when
+            handler.revalidate();
+            handler.invalidate(new com.moeasy.moeasybe.domain.schedule.realtime.AvailabilityChanged(
+                    groupId, scheduleId, "ROSTER_CHANGED"));
+
+            // then
+            assertAll(() -> assertEquals(1008, listener.closed.get(5, TimeUnit.SECONDS)),
+                    () -> assertTrue(listener.messages.isEmpty()));
+        } finally {
+            socket.abort();
+        }
+    }
+
     @Test @DisplayName("커밋한 변경만 Redis를 거쳐 전달하고 자격 상실 후 수신을 차단한다")
     void notifications_committedChangeAndRevocation_preservesPrivacy() throws Exception {
         // given

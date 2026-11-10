@@ -29,6 +29,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+    /** 인증에 사용한 액세스 JWT의 만료 시각을 WebSocket 핸드셰이크에 전달한다. */
+    public static final String ACCESS_TOKEN_EXPIRES_AT_ATTRIBUTE =
+            JwtAuthenticationFilter.class.getName() + ".expiresAt";
+
     private static final DefaultBearerTokenResolver BEARER_TOKEN_RESOLVER = new DefaultBearerTokenResolver();
 
     private final JwtTokenProvider jwtTokenProvider;
@@ -66,6 +70,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 SecurityContext context = SecurityContextHolder.createEmptyContext();
                 context.setAuthentication(authentication);
                 SecurityContextHolder.setContext(context);
+                request.setAttribute(ACCESS_TOKEN_EXPIRES_AT_ATTRIBUTE, jwt.getExpiresAt());
             }
         } catch (JwtException | IllegalArgumentException | OAuth2AuthenticationException ex) {
             SecurityContextHolder.clearContext();

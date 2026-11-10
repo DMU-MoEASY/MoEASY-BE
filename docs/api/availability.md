@@ -123,7 +123,10 @@ AvailabilityChanged(groupId, null, "ROSTER_CHANGED") 이벤트를 각 영향 모
 
 연결: `/ws/schedules/{scheduleId}/availability` (HTTPS 배포에서는 wss).
 구독은 URL의 일정 하나로 고정한다. 별도 SUBSCRIBE 메시지나 STOMP destination은 없다.
-연결에는 유효한 JWT 쿠키·설정된 CORS Origin·활성 일정 구성원 자격이 필요하다.
+연결에는 유효한 액세스 JWT·설정된 CORS Origin·활성 일정 구성원 자격이 필요하다.
+브라우저에서는 액세스 쿠키를 사용한다. Authorization 헤더를 보낼 수 있는 클라이언트는
+[공통 Bearer 인증](auth.md)도 사용할 수 있으며, 헤더가 있으면 쿠키보다 우선한다.
+회원 ID와 만료 시각은 필터가 인증에 사용한 동일한 JWT에서 가져온다. 핸드셰이크에서 쿠키를 별도로 해석하지 않는다.
 Origin 없는 연결과 허용되지 않은 Origin도 거절한다. 소켓은 읽기 전용이며 텍스트 명령을 보내면 종료한다.
 Swagger의 6개 쓰기 API는 `X-XSRF-TOKEN` 헤더 입력을 제공한다. `GET /api/v1/auth/csrf`로
 토큰과 `XSRF-TOKEN` 쿠키를 발급받고 응답의 `result.token`을 헤더로 전달한다.

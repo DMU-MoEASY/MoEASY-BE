@@ -441,7 +441,7 @@ HTTP 200, `SETTLEMENT200_2`를 사용한다. 목록에는 정산 요약과 페�
 
 Swagger에서는 다음 순서로 확인한다.
 
-1. API를 호출하는 호스트에 유효한 `moeasy_access_token` 쿠키가 있어야 한다.
+1. Swagger Authorize에 유효한 액세스 JWT를 입력하거나, API 호스트의 `moeasy_access_token` 쿠키를 사용한다.
 2. 목록 조회의 `groupId`를 입력하고 필요에 따라 `page`·`size`·`status`·`scheduleId`를 지정한다. CSRF 발급이나 헤더 입력은 필요하지 않다.
 3. HTTP 200 / `SETTLEMENT200_2`와 `items`·페이지 정보를 확인한다. 조회 결과가 없으면 빈 목록을 반환한다.
 
