@@ -43,3 +43,13 @@ The current image workflow uses the built-in `GITHUB_TOKEN` for GHCR. The develo
 - `DISCORD_WEBHOOK` is optional and is used only for test-failure notifications.
 
 Non-sensitive values such as `AWS_REGION`, `AWS_S3_BUCKET`, `EC2_APP_DIR`, and the image name may be deployment configuration. The bucket baseline script configures an existing bucket but does not create or delete AWS resources, and the repository does not automatically apply IAM policies.
+
+## Bank API 계좌 연동
+
+서버의 환경변수에 `BANK_API_ENCRYPTION_KEY`를 설정한다. JWT 키와 별개인 임의의 32바이트를 Base64로 인코딩한 값이며 `openssl rand -base64 32`로 생성할 수 있다.
+기존 Compose의 `env_file`로 전달한다. 키가 없으면 기존 기능은 기동되고 은행 비밀정보 저장·복호화만 503으로 거부한다.
+키를 교체하면 기존 암호문과 계좌 지문을 사용할 수 없으므로 별도 재암호화·지문 이관이 필요하다.
+운영진 개인의 API Key/Secret Key는 계좌 연결 요청으로 등록하며 서버 공용 환경변수로 저장하지 않는다.
+`BANK_API_BASE_URL`은 기본 공식 주소를 유지한다. 실제 조회는 국내 IP의 백엔드에서 수행한다.
+계좌 정보와 거래내역은 모든 활성 모임 회원에게 공개하며, 연결·해제·동기화는 운영진 전용이다.
+자세한 계약과 실제 계좌 검증 범위는 [은행 API 문서](api/bank.md)를 참고한다.
