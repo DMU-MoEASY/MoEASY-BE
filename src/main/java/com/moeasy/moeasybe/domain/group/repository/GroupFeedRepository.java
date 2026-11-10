@@ -20,19 +20,24 @@ public class GroupFeedRepository {
         public Position position() { return new Position(score, createdAt, id); }
     }
 
+    private static final String CURRENT_MEMBERS = "(SELECT COUNT(*) FROM group_member gm WHERE gm.group_id=g.id AND "
+            + GroupMembershipSql.ACTIVE + ")";
+
     private static final String BASE = """
-            SELECT g.*,c.code category_code,c.name category_name,
-                   CONCAT_WS(' ',r.province_name,r.name) region_name,COALESCE(mc.current_members,0) current_members,
+            SELECT g.id,g.name,g.description,g.region_code,g.cover_image_key,g.max_members,g.tier,g.created_at,
+                   c.code category_code,c.name category_name,
+                   CONCAT_WS(' ',r.province_name,r.name) region_name,
+            """ + CURRENT_MEMBERS + """
+                   current_members,
                    (g.category_id IN (:interests)) interest_match,
                    (g.region_code=:primaryRegion) region_match,
                    EXISTS(SELECT 1 FROM schedule s WHERE s.group_id=g.id AND s.deleted_at IS NULL
                           AND s.status='SCHEDULED' AND s.ends_at>:since AND s.ends_at<=:at) recent_match
             FROM member_group g JOIN category c ON c.id=g.category_id
             LEFT JOIN region r ON r.code=g.region_code
-            LEFT JOIN (SELECT gm.group_id,COUNT(*) current_members FROM group_member gm WHERE
-            """ + GroupMembershipSql.ACTIVE + """
-             GROUP BY gm.group_id) mc ON mc.group_id=g.id
-            WHERE g.deleted_at IS NULL AND g.status='ACTIVE' AND COALESCE(mc.current_members,0)<g.max_members
+            WHERE g.deleted_at IS NULL AND g.status='ACTIVE' AND
+            """ + CURRENT_MEMBERS + """
+                   <g.max_members
             AND NOT EXISTS(SELECT 1 FROM group_member me WHERE me.group_id=g.id AND me.member_id=:member
                            AND (me.status='KICKED' OR (me.status='ACTIVE' AND me.deleted_at IS NULL)))
             AND NOT EXISTS(SELECT 1 FROM group_join_request j WHERE j.group_id=g.id AND j.member_id=:member

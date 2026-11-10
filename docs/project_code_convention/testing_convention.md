@@ -75,6 +75,11 @@
 `SettlementPaymentMigrationIntegrationTest`는 `DB_URL`과 같은 MySQL 서버에 임의 이름의 별도 DB를 만들고 테스트 후 삭제한다. 기존 애플리케이션 DB의 테이블은 변경하지 않는다.
 DB 생성·삭제 권한이 있는 **테스트 전용** 계정을 `MIGRATION_TEST_DB_USERNAME`, `MIGRATION_TEST_DB_PASSWORD`로 지정할 수 있다. 기본값은 로컬 Compose·CI MySQL의 개발용 `root` / `root1234`이며 운영 자격 증명을 사용하지 않는다.
 
+### 추천 피드 테스트 DB 격리
+
+`GroupFeedApiIntegrationTest`와 `GroupFeedDemoIntegrationTest`는 `GroupFeedTestDatabase`를 통해 `DB_URL`과 같은 MySQL 서버에 컨텍스트별 `group_feed_test_<임의 값>` DB를 만든다. 계정은 위의 `MIGRATION_TEST_DB_USERNAME`, `MIGRATION_TEST_DB_PASSWORD`를 재사용한다.
+Spring 컨텍스트 초기화 전에 데이터소스를 전용 DB로 지정하고 Flyway의 `db/migration`만 적용한다. 각 테스트는 트랜잭션 롤백으로 빈 모임·광고 상태를 유지하며, 고정 ID를 사용하는 시연 SQL 검증은 별도 클래스에서 반복 실행한다. 컨텍스트 종료 시 커넥션 풀을 닫은 뒤 생성한 DB만 삭제한다. 개발 DB를 초기화하거나 기존 데이터를 삭제하지 않는다.
+
 ### 예외 및 Advice 테스트
 
 - 직접 advice 테스트는 예외와 응답 코드 매핑을 최소한의 대표 데이터로 검증한다.

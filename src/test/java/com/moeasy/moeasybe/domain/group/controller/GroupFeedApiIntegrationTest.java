@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.moeasy.moeasybe.domain.group.entity.*;
 import com.moeasy.moeasybe.domain.group.enums.*;
+import com.moeasy.moeasybe.domain.group.support.GroupFeedTestDatabase;
 import com.moeasy.moeasybe.domain.member.entity.*;
 import com.moeasy.moeasybe.domain.member.enums.SocialType;
 import com.moeasy.moeasybe.domain.region.entity.Region;
@@ -23,6 +24,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +35,8 @@ import tools.jackson.databind.ObjectMapper;
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
+@ContextConfiguration(initializers = GroupFeedTestDatabase.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class GroupFeedApiIntegrationTest {
     @Autowired MockMvc mvc;
     @Autowired EntityManager em;
@@ -50,7 +55,9 @@ class GroupFeedApiIntegrationTest {
     @BeforeEach
     void setUp() {
         when(clock.withZone(KST)).thenReturn(Clock.fixed(NOW.atZone(KST).toInstant(), KST));
-        db.update("UPDATE feed_advertisement SET active=FALSE");
+        assertAll(() -> assertTrue(db.queryForObject("SELECT DATABASE()", String.class).startsWith("group_feed_test_")),
+                () -> assertEquals(0L, db.queryForObject("SELECT COUNT(*) FROM member_group", Long.class)),
+                () -> assertEquals(0L, db.queryForObject("SELECT COUNT(*) FROM feed_advertisement", Long.class)));
         running = category("RUNNING");
         study = category("STUDY");
         viewer = member();
@@ -150,6 +157,31 @@ class GroupFeedApiIntegrationTest {
         assertAll(() -> assertEquals(2, result.path("totalGroupCount").intValue()),
                 () -> assertEquals(2, result.path("items").size()),
                 () -> assertEquals(1, result.path("items").get(0).path("currentMemberCount").intValue()));
+    }
+
+    @Test
+    @DisplayName("현재 인원은 활성 미삭제 멤버십만 세며 멤버십이 없는 모임은 0명으로 반환한다")
+    void getFeed_membershipCount_countsOnlyActiveUndeletedRows() throws Exception {
+        // given
+        long withMembers = group(true);
+        long empty = group(true);
+        Member left = member();
+        Member deleted = member();
+        em.flush();
+        db.update("INSERT INTO group_member(group_id,member_id,status) VALUES (?,?,'LEFT')", withMembers, left.getId());
+        db.update("INSERT INTO group_member(group_id,member_id,status,deleted_at) VALUES (?,?,'ACTIVE',?)",
+                withMembers, deleted.getId(), NOW);
+        db.update("DELETE FROM group_member WHERE group_id=?", empty);
+
+        // when
+        JsonNode result = feed(null);
+
+        // then
+        Map<Long, Integer> counts = new HashMap<>();
+        result.path("items").forEach(item -> counts.put(item.path("groupId").longValue(),
+                item.path("currentMemberCount").intValue()));
+        assertAll(() -> assertEquals(2, result.path("totalGroupCount").intValue()),
+                () -> assertEquals(Map.of(withMembers, 1, empty, 0), counts));
     }
 
     @Test
@@ -280,7 +312,9 @@ class GroupFeedApiIntegrationTest {
         // when
         var invalid = mvc.perform(get("/api/v1/groups").cookie(auth).param("cursor", "broken"));
         // then
-        invalid.andExpect(status().isBadRequest());
+        invalid.andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400_1"))
+                .andExpect(jsonPath("$.result").doesNotExist());
         for (String value : List.of(cursor + "x", "", "not.base64")) {
             mvc.perform(get("/api/v1/groups").cookie(auth).param("cursor", value)).andExpect(status().isBadRequest());
         }
@@ -392,37 +426,6 @@ class GroupFeedApiIntegrationTest {
         // then
         result.andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith("image/svg+xml"));
-    }
-
-    @Test
-    @DisplayName("로컬 더미 SQL 자체로도 19개 모임과 A·B 광고를 인증 API에서 재현한다")
-    void getFeed_localDummySql_reproducesDemo() throws Exception {
-        // given
-        db.execute((org.springframework.jdbc.core.ConnectionCallback<Void>) connection -> {
-            org.springframework.jdbc.datasource.init.ScriptUtils.executeSqlScript(connection,
-                    new org.springframework.core.io.ClassPathResource("db/dummy/V20261110164908__group_recommendation_demo.sql"));
-            return null;
-        });
-        // when
-        String cursor = null;
-        List<Long> actual = new ArrayList<>();
-        for (int page = 0; page < 3; page++) {
-            var request = get("/api/v1/groups").cookie(cookie(380001)).param("sort", "RECOMMENDED").param("query", "추천38");
-            if (cursor != null) request.param("cursor", cursor);
-            JsonNode result = mapper.readTree(mvc.perform(request).andExpect(status().isOk())
-                    .andReturn().getResponse().getContentAsString()).path("result");
-            // then
-            assertEquals(19, result.path("totalGroupCount").intValue());
-            assertEquals(page < 2 ? 10 : 1, result.path("items").size());
-            if (page < 2) assertPage(result, 8, 1, 380001 + page);
-            else assertFalse(result.path("hasNext").booleanValue());
-            actual.addAll(ids(result));
-            cursor = result.path("nextCursor").isNull() ? null : result.path("nextCursor").stringValue();
-        }
-        assertNull(cursor);
-        assertEquals(19, actual.size());
-        assertEquals(java.util.stream.LongStream.rangeClosed(380101, 380119).boxed().collect(java.util.stream.Collectors.toSet()),
-                new HashSet<>(actual));
     }
 
     private void seed(int normal, int low) {

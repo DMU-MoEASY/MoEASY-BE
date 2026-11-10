@@ -261,7 +261,7 @@ GET 및 PATCH `/api/v1/groups/{groupId}` 성공 응답의 `result.tier`는 읽�
 ## 추천·검색 피드 (#38)
 
 `GET /api/v1/groups?sort=RECOMMENDED` (JWT 쿠키 `moeasy_access_token` 또는 `Authorization: Bearer <access-token>` 필요).
-성공은 HTTP 200 / `GROUP200_10`다. 고정 10장 이내, 내부 점수는 반환하지 않는다.
+성공은 HTTP 200 / `GROUP200_10`이다. 고정 10장 이내, 내부 점수는 반환하지 않는다.
 광고는 모임 ID와 연결되지 않는 독립 배너다.
 랜딩 URL은 HTTPS와 유효한 DNS 호스트(국제화 도메인은 punycode), IPv4 또는 대괄호로 감싼 IPv6를 사용한다.
 선택 포트는 0~65535 범위이며, 사용자 정보(`user@host`), 공백·제어문자와 역슬래시는 허용하지 않는다.

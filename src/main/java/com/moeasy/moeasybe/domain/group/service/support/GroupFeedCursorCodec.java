@@ -40,7 +40,7 @@ public class GroupFeedCursorCodec {
             }
             return c;
         } catch (RuntimeException exception) {
-            throw new IllegalArgumentException("잘못된 추천 커서입니다.");
+            throw new IllegalArgumentException("잘못된 추천 커서입니다.", exception);
         }
     }
 
