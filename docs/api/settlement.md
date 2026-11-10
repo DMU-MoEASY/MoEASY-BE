@@ -19,9 +19,26 @@
 | 정산 목록 조회 Service·Repository·Converter | 구현됨 | 활성 회원 권한, 폐쇄 모임 허용, 필터·정렬·페이지 집계와 저장된 청구 인원수 일괄 조회 |
 | 정산 목록 조회 엔드포인트·Swagger | 구현됨 | JWT 쿠키 인증, 경로·쿼리 입력 검증, HTTP 200 공통 페이지 응답과 Swagger 예시 |
 | 정산 상세 조회 | 구현됨 | JWT 쿠키 인증, 모임 소속·조회 권한 검증, 전체 청구 내역·기존 닉네임 반환과 Swagger 예시 |
-| 납부·환불·영수증 관리·수정·취소·마감 | 미구현 | [후속 기능](#후속-기능) 참고 |
+| 납부 엔티티·Enum·감사 정보·청구 버전 저장 | 구현됨 | 수동 납부 매핑, 출처·처리자·취소 정보와 금액·버전 DB 제약 |
+| 납부 등록 요청·응답 DTO·성공/오류 코드 | 구현됨 | 금액·버전 검증, DB 범위의 일시 변환, 등록 후 청구 현황 응답 |
+| 청구의 납부 반영 규칙 | 구현됨 | 잔액·정산/청구 상태·버전 검증과 부분 납부/완납 상태·버전 갱신 |
+| 납부 등록 Service·Repository·Converter | 구현됨 | 운영진 권한·입금 시각·소속 검증, 청구 행 잠금과 최신 납부 합계, 납부·상태·버전의 트랜잭션 저장 |
+| 납부 등록 엔드포인트·Swagger | 구현됨 | JWT·CSRF 검증, 경로·DTO 검증, HTTP 201 청구 현황과 400·401·403·404·409 응답 |
+| 납부 기록 취소 요청·응답 DTO·성공/오류 코드 | 구현됨 | 사유 trim·필수/길이·정수 버전 검증, 취소 후 청구 현황 응답 |
+| 납부 기록 취소·청구 반영 도메인 규칙 | 구현됨 | 수동·은행 완료 납부의 취소 감사 정보 보존, 차감 후 납부액·청구 상태·버전 갱신 |
+| 납부 기록 취소 Repository·Service·Converter | 구현됨 | 운영진 권한·소속 검증, 청구 행 잠금과 취소 전 합계 조회, 납부 취소·청구 상태·버전의 트랜잭션 저장 |
+| 납부 기록 취소 엔드포인트·Swagger | 구현됨 | JWT·CSRF 검증, 경로·DTO 검증, HTTP 200 취소 후 청구 현황과 400·401·403·404·409 응답 |
+| 납부 이력 조회 요청·응답 DTO·성공 코드 | 구현됨 | 페이지 기본값·범위 검증, 등록자·취소 감사 정보를 포함한 페이지 응답 |
+| 납부 이력 조회 Repository·Service·Converter | 구현됨 | 활성 회원 권한·모임/정산/청구 소속 검증, 취소 기록을 포함한 페이지 조회와 등록자·취소자 정보 로딩 |
+| 납부 이력 조회 엔드포인트·Swagger | 구현됨 | JWT 인증·경로/페이지 검증, HTTP 200 이력 페이지와 400·401·403·404 응답 |
+| 정산 목록·상세의 납부 현황 응답 DTO | 구현됨 | 납부액·잔액·완납/미납 인원수와 상세 청구 버전 정의 |
+| 정산 목록·상세의 납부 현황 집계·응답 연결 | 구현됨 | 유효 납부액·잔액·완납/미납 인원수와 청구 버전 반환. 페이지 단위 일괄 집계 |
+| 정산 목록·상세 현황의 Swagger 예시·HTTP 검증 | 구현됨 | 현황·청구 버전 예시와 납부 등록·완납·취소 후 HTTP 조회 검증 |
+| 환불·영수증 관리·정산 수정·취소·마감 | 미구현 | [후속 기능](#후속-기능) 참고 |
 
 정산 생성·분할 미리보기·조회는 [Issue #20](https://github.com/DMU-MoEASY/MoEASY-BE/issues/20)의 범위다. 모임 회원 목록 조회는 프론트의 대상 선택 연동에 필요한 별도 API이며 `group` 도메인에서 제공한다. 정산 생성 API는 대상 ID로 직접 소속·상태를 검증하므로 회원 목록 조회 API의 구현에 의존하지 않는다. 미구현 API는 현재 호출할 수 없다.
+
+납부 기록 등록·취소·이력 조회와 기존 조회 응답의 납부 현황 확장은 [Issue #26](https://github.com/DMU-MoEASY/MoEASY-BE/issues/26)의 범위다. 납부 등록·취소·이력 조회와 기존 목록·상세의 납부 현황 조회를 호출할 수 있다. 현황 필드의 Swagger 예시와 납부 변경 후 HTTP 조회 검증도 구현되어 있다.
 
 ## 공통 계약
 
@@ -382,6 +399,10 @@ HTTP 200, `SETTLEMENT200_2`를 사용한다. 목록에는 정산 요약과 페�
         "status": "OPEN",
         "splitMode": "EQUAL",
         "totalAmount": 10000,
+        "paidAmount": 0,
+        "remainingAmount": 10000,
+        "paidCount": 0,
+        "pendingCount": 3,
         "targetCount": 3,
         "dueAt": "2026-11-01T23:59:59",
         "createdAt": "2026-10-20T14:00:00"
@@ -405,7 +426,7 @@ HTTP 200, `SETTLEMENT200_2`를 사용한다. 목록에는 정산 요약과 페�
 1. `GroupRepository.findById`로 모임이 존재하는지 확인한다. 폐쇄 시 설정되는 모임 상태·`deleted_at`은 조회 제한에 사용하지 않는다.
 2. 요청자의 모임 회원 상태가 `ACTIVE`이고 모임 회원 정보와 연결된 계정이 삭제되지 않았는지 확인한다. 역할이나 청구 대상 여부는 제한하지 않는다.
 3. `SettlementRepository.findPageByGroup`에서 모임 ID·정산 삭제 여부·상태·일정 필터를 적용하고 생성 시각·ID 내림차순으로 페이지를 조회한다. 전체 건수에도 같은 필터를 사용한다.
-4. 현재 페이지의 정산 ID들로 청구 항목 수를 한 번에 집계한다. 대상자의 현재 활성·삭제 여부로 집계를 제한하지 않으며, 빈 페이지에서는 집계 쿼리를 실행하지 않는다.
+4. 현재 페이지의 정산 ID들로 청구 금액·인원수와 유효 납부액을 각각 한 번씩 집계한다. 대상자의 현재 활성·삭제 여부로 집계를 제한하지 않으며, 빈 페이지에서는 두 집계 쿼리를 실행하지 않는다. 납부 기록을 청구 인원수 집계에 조인하지 않아 여러 납부로 청구액·인원수가 중복되지 않는다.
 5. `SettlementConverter.toPage`·`toSummary`로 요약과 페이지 정보를 조립한다. 목록을 표시하기 위해 생성자·대상자의 닉네임이나 청구 항목 전체를 로딩하지 않는다.
 
 실제 MySQL 테스트에서 필터·정렬·페이지 집계·기존 청구 인원수 보존과 활성 일반 회원·폐쇄 모임의 조회, 비활성·삭제 요청자의 접근 거부를 검증한다.
@@ -454,6 +475,10 @@ HTTP 200, `SETTLEMENT200_3`을 사용한다.
     "status": "OPEN",
     "splitMode": "EQUAL",
     "totalAmount": 10000,
+    "paidAmount": 0,
+    "remainingAmount": 10000,
+    "paidCount": 0,
+    "pendingCount": 3,
     "targetCount": 3,
     "dueAt": "2026-11-01T23:59:59",
     "createdAt": "2026-10-20T14:00:00",
@@ -462,9 +487,12 @@ HTTP 200, `SETTLEMENT200_3`을 사용한다.
       "nickname": "정규"
     },
     "items": [
-      { "settlementItemId": 101, "groupMemberId": 11, "nickname": "정규", "amount": 3334, "status": "PENDING" },
-      { "settlementItemId": 102, "groupMemberId": 12, "nickname": "민지", "amount": 3333, "status": "PENDING" },
-      { "settlementItemId": 103, "groupMemberId": 13, "nickname": "도윤", "amount": 3333, "status": "PENDING" }
+      { "settlementItemId": 101, "groupMemberId": 11, "nickname": "정규", "amount": 3334, "status": "PENDING",
+        "paidAmount": 0, "remainingAmount": 3334, "version": 0 },
+      { "settlementItemId": 102, "groupMemberId": 12, "nickname": "민지", "amount": 3333, "status": "PENDING",
+        "paidAmount": 0, "remainingAmount": 3333, "version": 0 },
+      { "settlementItemId": 103, "groupMemberId": 13, "nickname": "도윤", "amount": 3333, "status": "PENDING",
+        "paidAmount": 0, "remainingAmount": 3333, "version": 0 }
     ]
   }
 }
@@ -473,7 +501,7 @@ HTTP 200, `SETTLEMENT200_3`을 사용한다.
 - `targetCount`는 `items` 길이와 같다. 항목의 `status`는 `PENDING`·`PAID`·`REFUNDED`·`CANCELLED` 중 저장된 청구 상태다.
 - `scheduleId`·`description`·`dueAt`에 저장된 값이 없으면 해당 필드는 null이다.
 - `amount`는 저장된 최종 청구액이다. 미리보기와 달리 `remainderAmount`는 반환하지 않으며 조회 시 금액을 재분할하지 않는다.
-- 납부액·미납 잔액·납부 기록·영수증·송금 링크는 해당 기능 구현 시 계약에 추가한다. 미구현 데이터를 임의의 0원이나 빈 값으로 제공하지 않는다.
+- 납부액·미납 잔액·청구 버전과 전체 현황은 [현황 확장 계약](#기존-정산-목록상세의-현황-확장-계약)을 따른다. 청구별 개별 기록은 납부 이력 API로 조회한다. 영수증·송금 링크는 미구현이다.
 - 본인 청구 여부 표시가 필요한 경우의 식별 계약은 후속 납부 기능에서 정의한다.
 
 #### 내부 상세 조회 흐름
@@ -484,7 +512,7 @@ HTTP 200, `SETTLEMENT200_3`을 사용한다.
 2. 목록과 같은 활성 회원 검증을 재사용하며 역할·청구 대상 여부는 제한하지 않는다. 조회 권한이 없으면 정산 존재 여부를 확인하기 전에 거부한다.
 3. `SettlementRepository.findByIdAndGroupIdAndDeletedAtIsNull`로 정산 ID·모임 ID·미삭제 조건을 함께 확인한다. 정산 없음·삭제·다른 모임의 정산은 모두 `SETTLEMENT404_1`로 반환한다. `EntityGraph`로 생성자 모임 회원과 계정을 함께 로딩한다.
 4. `SettlementItemRepository.findAllBySettlementIdOrderByGroupMemberIdAsc`로 전체 청구 내역을 조회한다. `EntityGraph`로 대상 계정도 함께 로딩하며, 탈퇴·강퇴·삭제된 대상이나 청구 상태를 이유로 항목을 제외하지 않는다.
-5. `SettlementConverter.toDetail`·`toCreator`·`toItem`으로 저장된 정산 정보와 청구액·상태·현재 닉네임을 조립한다. `targetCount`는 반환하는 청구 항목 수이며 조회 시 금액을 재계산하거나 상태를 변경하지 않는다.
+5. 유효 납부액을 청구 ID별로 한 번에 집계하고 서비스에서 잔액·정산 전체 합계·완납/미납 인원수를 계산한다. `SettlementConverter.toDetail`·`toCreator`·`toItem`으로 저장된 정산 정보와 청구 현황·버전·현재 닉네임을 조립한다. `targetCount`는 반환하는 청구 항목 수이며 조회 시 청구액을 재분할하거나 상태·버전을 변경하지 않는다.
 
 모임·정산 ID의 양수 제약은 Docs 인터페이스에 선언하고 Controller의 `@Validated`로 검증한다. HTTP 응답은 `SETTLEMENT200_3`의 공통 응답 형식을 사용한다. GET이므로 CSRF 발급·헤더 입력은 필요하지 않다.
 
@@ -522,24 +550,384 @@ Swagger에서는 인증 쿠키가 있는 상태에서 목록의 `settlementId`�
 | 단순 필수값·빈 대상 배열·길이·양수 검증 실패 | 400 | `VALID400_1` |
 | 잘못된 JSON 타입·소수·Long 범위 초과·잘못된 날짜/분할 방식 형식 | 400 | `COMMON400_1` |
 
+## 납부 기록 및 현황 관리
+
+납부 저장 구조·등록/취소 DTO·성공/오류 코드와 등록/취소 Service·Repository·Converter는 구현되어 있다. 두 서비스는 청구 행 잠금·최신 납부 집계·납부 변경과 청구 상태/버전 변경을 하나의 트랜잭션으로 처리한다. 납부 등록·취소·이력 조회 엔드포인트와 Swagger도 구현되어 있다. 기존 정산 목록·상세도 납부 현황을 반환하며 Swagger 예시와 HTTP 통합 테스트가 같은 응답 계약을 확인한다. 실제 송금은 수행하지 않으며 운영진이 확인한 입금을 기록한다. 기록 취소는 오등록 정정이며 실제 환불이나 송금 취소와 다르다.
+
+### 경로와 식별자
+
+공통 경로는 `/api/v1/groups/{groupId}/settlements/{settlementId}`다.
+
+| 기능 | 메서드 | 하위 경로 | 성공 응답 |
+| --- | --- | --- | --- |
+| 납부 기록 등록 | POST | `/items/{settlementItemId}/payments` | 201 / `SETTLEMENT201_2` |
+| 납부 기록 취소 | POST | `/items/{settlementItemId}/payments/{paymentId}/cancel` | 200 / `SETTLEMENT200_4` |
+| 청구별 납부 이력 조회 | GET | `/items/{settlementItemId}/payments` | 200 / `SETTLEMENT200_5` |
+
+- `settlementItemId`는 회원 한 명의 청구인 `settlement_item.id`다. 대상 회원 ID인 `groupMemberId`와 다르다.
+- `paymentId`는 개별 납부 기록인 `settlement_payment.id`다. 같은 청구에 여러 차례 납부하면 서로 다른 `paymentId`가 생긴다.
+- 모임 → 정산 → 청구 → 납부 기록의 소속을 검증한다. 다른 정산의 청구나 다른 청구의 납부 ID로 접근할 수 없다.
+- 경로 ID는 양수다. JWT 쿠키 인증을 사용하고 두 POST API에는 CSRF 쿠키와 `X-XSRF-TOKEN` 헤더가 필요하다. Swagger에도 헤더 입력란을 제공한다.
+
+### 권한과 변경 가능한 상태
+
+| 작업 | 요청자 | 모임 상태 | 정산·청구 상태 |
+| --- | --- | --- | --- |
+| 등록 | 활성 `OWNER` 또는 `MANAGER` | 폐쇄 모임도 허용 | 정산 `OPEN`, 청구 `PENDING` |
+| 취소 | 활성 `OWNER` 또는 `MANAGER` | 폐쇄 모임도 허용 | 정산 `OPEN`, 청구 `PENDING` 또는 `PAID` |
+| 이력·현황 조회 | 모든 활성 모임 회원 | 폐쇄 모임도 허용 | 기존 정산 조회 기준 유지 |
+
+- 활성 회원의 기준은 [공통 계약](#공통-계약)과 같다. 일반 회원은 직접 납부를 등록하거나 취소할 수 없다.
+- 모임은 기존 조회처럼 `findById`로 존재 여부를 확인한다. 모임 폐쇄로 채워진 `deleted_at`을 이유로 기존 정산의 납부 정리를 막지 않는다.
+- 정산 자체가 삭제되었으면 접근할 수 없다. `CLOSED`·`CANCELLED` 정산과 `REFUNDED`·`CANCELLED` 청구는 변경할 수 없다.
+- 전액 납부한 `PAID` 청구는 추가 납부 잔액이 없으므로 등록할 수 없지만 잘못된 기존 납부를 취소할 수 있다.
+- 대상자의 탈퇴·강퇴·계정 삭제는 기존 청구의 소멸을 의미하지 않는다. 요청자 권한과 별개로 기존 대상의 납부를 기록·취소하고 이력을 조회할 수 있다.
+- 납부 기한이 지나도 기록할 수 있다. 전원 완납하더라도 정산 상태를 자동으로 `CLOSED`로 변경하지 않는다.
+
+### 납부액과 청구 상태
+
+이번 기능에서 유효한 납부액은 같은 청구의 `payment_type=PAYMENT`, `status=COMPLETED` 기록 금액의 합계다. `CANCELLED`·`PENDING`·`FAILED` 기록은 합계에서 제외한다. 실제 환불 기록의 생성과 반영은 후속 환불 기능에서 정의한다.
+
+| 계산 결과 | 청구 상태 |
+| --- | --- |
+| 납부액이 0원이거나 청구액 미만 | `PENDING` |
+| 납부액이 청구액과 같음 | `PAID` |
+| 납부액이 청구액을 초과 | 등록 거부 |
+
+`remainingAmount = amount - paidAmount`다. 청구액과 납부액은 원 단위 정수이며 Java `Long` 범위를 넘는 계산·저장을 허용하지 않는다. 초과 여부는 합산 전에 잔액과 비교하고 합산에서도 오버플로를 방지한다. 납부액을 별도 캐시 컬럼에 중복 저장하지 않고 유효한 기록으로 계산한다.
+
+### 청구의 납부 반영 구현
+
+`SettlementItem.applyPayment(expectedVersion, currentPaidAmount, paymentAmount)`가 납부 반영 후의 누적 납부액을 반환한다. DB 조회·납부 기록 생성은 수행하지 않는다.
+
+1. 삭제된 정산은 `SETTLEMENT404_1`, `OPEN`이 아닌 정산 또는 `REFUNDED`·`CANCELLED` 청구는 `SETTLEMENT409_2`로 거부한다.
+2. 현재 청구 버전과 요청 버전이 다르거나 현재 버전이 `Long.MAX_VALUE`라 증가할 수 없으면 `SETTLEMENT409_1`로 거부한다.
+3. 납부액이 양수가 아니거나 현재 납부 합계가 0~청구액 범위를 벗어나면 `SETTLEMENT400_4`로 거부한다. HTTP 요청의 0·음수 금액은 이 메서드 호출 전에 DTO 검증으로 `VALID400_1`을 반환한다.
+4. 현재 잔액보다 큰 납부액은 합산 전에 `SETTLEMENT400_6`으로 거부한다. 검증 후의 합계는 청구액 이하이므로 `Long` 범위를 넘지 않는다.
+5. 모든 검증이 끝나면 부분 납부는 `PENDING`, 완납은 `PAID`로 변경하고 버전을 1 증가시킨다. 검증 실패 시 엔티티 상태와 버전은 바꾸지 않는다. 정산 자체를 자동 마감하거나 납부 기한 경과를 이유로 거부하지 않는다.
+
+등록 서비스는 청구 행 잠금 획득 후 유효 납부 기록의 최신 합계를 구해 전달한다. 엔티티 메서드만 호출해서는 병렬 요청·실제 납부 기록과의 정합성을 보장하지 않는다. MySQL 테스트는 부분 납부 시 같은 상태에서도 버전이 저장되는지, 마감/취소/환불 상태·버전 최댓값 처리, 동시 요청의 직렬화와 납부 저장 실패 시 롤백을 검증한다.
+
+### 납부 기록 등록 계약
+
+| 요청 필드 | 타입 | 규칙 |
+| --- | --- | --- |
+| `amount` | integer | 필수. 1~9,223,372,036,854,775,807원, 현재 잔액 이하 |
+| `expectedVersion` | integer | 필수. 상세 조회에서 받은 청구 버전, 0 이상의 `Long` 정수 |
+| `occurredAt` | string 또는 null | 선택. 실제 입금 시각. 생략·null이면 서버 현재 시각 |
+
+금액·버전은 JSON 숫자를 사용하며 숫자 문자열·소수·지수 표기·범위 초과를 거부한다. 큰 정수의 프론트 정밀도 제한은 기존 [정산 생성 요청](#요청)과 동일하다. `occurredAt`은 `yyyy-MM-dd'T'HH:mm:ss`, 한국 시간(`Asia/Seoul`) 기준이며 연도 1000~9999의 유효한 날짜만 받는다. 과거 시각은 허용하고 현재보다 미래이면 거부한다. 등록 시각인 `createdAt`은 서버가 별도로 기록한다.
+
+`SettlementReqDTO.RegisterPayment`는 금액의 필수·양수와 버전의 필수·0 이상을 검증한다. 두 필드는 기존 `SettlementLongDeserializer`로 JSON 정수만 읽는다. `dueAt`·`occurredAt`은 공통 `SettlementDateTimeDeserializer`로 초 단위 형식과 DB 저장 가능 연도를 검증한다. 입금 시각 생략·null은 DTO에서 그대로 유지한다. 등록 서비스는 서버 현재 시각 보정·미래 시각 판단·권한 검증을 수행하고 청구의 납부 반영 메서드로 잔액·상태·버전 검증을 연결한다. Controller는 Docs 인터페이스의 `@Valid`를 상속하여 HTTP 요청에 DTO 검증을 적용한다.
+
+```json
+{
+  "amount": 4000,
+  "expectedVersion": 0,
+  "occurredAt": "2026-10-29T14:00:00"
+}
+```
+
+새 기록은 `paymentType=PAYMENT`, `status=COMPLETED`, `source=MANUAL`로 저장한다. 수동 등록자는 JWT로 인증하고 모임장·운영진 권한을 검증한 요청자의 모임 회원이며, 납부 대상 회원과 구분한다. 클라이언트에서 출처·상태·등록자를 지정하지 않는다. 청구액 10,000원에 처음 4,000원을 등록한 성공 응답은 다음과 같다.
+
+```json
+{
+  "isSuccess": true,
+  "code": "SETTLEMENT201_2",
+  "message": "납부 기록 등록에 성공했습니다.",
+  "result": {
+    "paymentId": 501,
+    "settlementItemId": 101,
+    "status": "PENDING",
+    "paidAmount": 4000,
+    "remainingAmount": 6000,
+    "version": 1
+  }
+}
+```
+
+응답의 `status`는 청구 상태다. 나머지 6,000원을 버전 1로 등록하면 다른 `paymentId`를 발급하고 청구는 `PAID`, 잔액은 0원, 버전은 2가 된다.
+
+등록 응답은 `SettlementResDTO.PaymentRegistered`로 정의한다. 성공 코드 `PAYMENT_REGISTERED`는 HTTP 201 / `SETTLEMENT201_2`다. Controller·Converter·서비스 연결과 Swagger 명세가 구현되어 있다.
+
+### 납부 등록 호출 방법
+
+1. 로그인으로 발급된 Access Token 쿠키를 전송할 수 있는 상태에서 `GET /api/v1/auth/csrf`를 호출한다. 브라우저는 응답의 `XSRF-TOKEN` 쿠키를 보관하고, 프론트는 응답 본문의 `result.token`을 사용한다.
+2. 등록 경로의 `groupId`, `settlementId`, `settlementItemId`와 요청 본문의 금액·현재 청구 버전을 전달한다. 교차 출처 호출은 `credentials: 'include'` 또는 `withCredentials: true`를 사용하고 `X-XSRF-TOKEN` 헤더에 CSRF 토큰을 넣는다.
+3. 성공하면 HTTP 201 / `SETTLEMENT201_2`와 누적 납부액·잔액·청구 상태·증가한 버전을 받는다. 다음 변경에는 이 응답의 `version`을 사용한다. 초기 청구 버전은 0이며 409 발생 시 최신 상태 확인 없이 버전만 올려 재요청하지 않는다.
+4. Swagger에서도 먼저 CSRF를 발급받고 납부 등록의 `X-XSRF-TOKEN` 입력란에 응답 토큰을 입력한다. 로그인·CSRF 쿠키는 브라우저가 자동 전송한다.
+
+`SettlementController.registerPayment`가 경로 ID·본문과 JWT principal의 회원 ID를 서비스에 전달한다. 경로 ID의 `@Positive`와 본문의 `@Valid`는 `SettlementControllerDocs`에 선언하고, 바인딩 어노테이션은 실제 Controller에 둔다. 정상 응답의 HTTP 상태·코드·메시지는 `PAYMENT_REGISTERED`에서 가져온다. Swagger는 실제 `ApiResponse<PaymentRegistered>` 스키마, 요청 예시, CSRF 헤더와 201·400·401·403·404·409 응답을 제공한다.
+
+새로고침하거나 409 충돌이 발생하면 기존 정산 상세 조회로 청구의 최신 `version`·누적 납부액·잔액을 다시 읽는다. 납부 이력 API로 개별 기록의 등록·취소 여부를 확인할 수 있다. 이력의 개수나 가장 최근 기록으로 청구 버전을 추정하지 않는다.
+
+### 납부 등록 내부 흐름
+
+`SettlementCommandService.registerPayment`는 `@Transactional(isolation = READ_COMMITTED)` 안에서 다음 순서로 처리한다.
+
+1. 필수 ID·요청·금액·버전의 null을 거부하고, `GroupRepository.findById`로 모임 존재 여부를 확인한다. 폐쇄 상태로 인한 `deleted_at`은 제한하지 않는다.
+2. 요청자가 삭제되지 않은 계정의 활성 모임장·운영진인지 검증한다. 정산·청구의 존재 여부를 확인하기 전에 권한을 검사한다.
+3. 모임에 속한 미삭제 정산을 확인하고 `SettlementItemRepository.findByIdAndSettlementIdForUpdate`로 해당 정산의 청구 행에 쓰기 잠금을 건다. 청구 대상의 탈퇴·강퇴·계정 삭제 여부는 제한하지 않는다.
+4. `Clock`의 현재 시각을 한국 시간으로 변환한다. 입금 시각이 없으면 이를 사용하고, 미래 시각은 거부한다. 과거 입금·기한 경과는 허용한다.
+5. `SettlementPaymentRepository.sumAmountByItemAndTypeAndStatus`로 잠금 획득 후 최신 `PAYMENT / COMPLETED` 합계를 읽는다. 출처는 제한하지 않으며 기록이 없으면 0이다.
+6. `SettlementItem.applyPayment`로 잔액·상태·버전을 검증하고 청구를 갱신한다. `SettlementConverter.toPayment`로 수동 기록을 만들고 저장한 뒤 `toPaymentRegistered`로 결과를 조립한다.
+7. 커밋 시 납부 행과 청구 상태·버전이 함께 반영되고 잠금이 해제된다. 저장 중 예외가 발생하면 전부 롤백한다. 외부 은행 API를 호출하지 않는다.
+
+MySQL 통합 테스트는 운영진 권한, 소속·삭제·상태 검증, 부분/완전 납부, 입금 시각, 출처·유형·상태별 합산, 저장 후 실패의 롤백을 확인한다. 별도 트랜잭션의 동시 요청에서는 실제 행 잠금 대기·`READ_COMMITTED` 격리 수준을 확인하며, 같은 버전은 하나만 성공하고 다음 버전은 앞 요청의 커밋된 합계를 읽는지 검증한다. 실제 JWT 필터·CSRF 발급 API를 거치는 HTTP 통합 테스트는 운영진 등록·부분 납부/완납 응답, 인증·CSRF 실패, 경로·DTO 검증, 400·404·409 오류와 Swagger의 실제 요청/응답 스키마를 검증한다.
+
+### 납부 기록 취소 계약
+
+요청은 `SettlementReqDTO.CancelPayment`, 응답은 `SettlementResDTO.PaymentCancelled`로 정의한다. 요청 DTO는 사유의 앞뒤 공백을 `trim()`으로 제거한 후 필수·255자 이하를 검증하고, 버전은 등록과 같은 JSON 정수 변환과 필수·0 이상 검증을 적용한다. Controller·Swagger까지 구현되어 취소 API를 호출할 수 있다. 성공 시 HTTP 200 / `SETTLEMENT200_4`와 취소 후 청구 현황을 반환한다.
+
+| 요청 필드 | 타입 | 규칙 |
+| --- | --- | --- |
+| `expectedVersion` | integer | 필수. 현재 청구 버전, 등록과 같은 정수 규칙 |
+| `reason` | string | 필수. trim 후 공백이 아닌 1~255자 |
+
+```json
+{
+  "expectedVersion": 2,
+  "reason": "다른 회원의 입금을 잘못 등록했습니다."
+}
+```
+
+- 해당 납부 기록 전체를 한 번 취소한다. 취소 금액을 따로 받거나 하나의 기록을 부분 취소하지 않는다.
+- 원본 행·금액·입금 시각·등록자·등록 시각을 보존하고 납부 상태만 `CANCELLED`로 변경한다. 취소자·취소 시각·사유를 추가로 보존한다.
+- 취소는 출처(`MANUAL`·`BANK`)와 관계없이 `PAYMENT / COMPLETED` 기록을 대상으로 한다. 이미 취소했거나 그 외 상태·종류의 기록은 변경하지 않는다. 잘못 매칭된 은행 납부도 정정할 수 있으며, 원본 은행 거래나 `account_transaction_id` 연결을 삭제하지 않는다.
+- 취소한 기록을 제외하여 납부액·잔액·청구 상태를 다시 계산하고 버전을 증가시킨다.
+
+위 예시에서 4,000원 기록인 `paymentId=501`을 취소하면 다른 6,000원 기록은 유지된다.
+응답의 `status`는 취소 후 **청구 항목 상태**이며, 납부 기록 자체의 `CANCELLED` 상태가 아니다. `paidAmount`도 취소한 금액이 아니라 취소 후 남아 있는 유효 납부 합계다.
+
+```json
+{
+  "isSuccess": true,
+  "code": "SETTLEMENT200_4",
+  "message": "납부 기록 취소에 성공했습니다.",
+  "result": {
+    "paymentId": 501,
+    "settlementItemId": 101,
+    "status": "PENDING",
+    "paidAmount": 6000,
+    "remainingAmount": 4000,
+    "version": 3
+  }
+}
+```
+
+### 납부 취소 호출 방법
+
+1. 로그인한 모임장·운영진의 Access Token 쿠키와 CSRF 쿠키를 유지한다. 상태 변경 요청에는 `GET /api/v1/auth/csrf` 응답 본문의 `result.token`을 `X-XSRF-TOKEN` 헤더로 전달한다.
+2. 취소할 **개별 납부 기록 ID**와 현재 청구 버전으로 아래 요청을 보낸다. `reason`은 필수이며 취소 금액은 보내지 않는다.
+
+   ```http
+   POST /api/v1/groups/{groupId}/settlements/{settlementId}/items/{settlementItemId}/payments/{paymentId}/cancel
+   Content-Type: application/json
+   X-XSRF-TOKEN: <CSRF 응답 본문의 token>
+
+   {"expectedVersion":2,"reason":"다른 회원의 입금을 잘못 등록했습니다."}
+   ```
+
+3. 프론트는 `credentials: 'include'` 또는 Axios `withCredentials: true`로 쿠키를 전송한다. 성공 응답의 청구 상태·납부액·잔액·버전으로 화면을 갱신하고, 다음 변경에는 새 버전을 사용한다. 409 또는 타임아웃이면 버전을 임의로 올려 자동 재시도하지 않고 상세 현황·납부 이력으로 반영 여부를 확인한다.
+4. Swagger에서는 같은 서버에 로그인하여 쿠키를 유지하고, 발급받은 CSRF 토큰을 `X-XSRF-TOKEN` 입력란에 넣는다. 요청 본문에는 `expectedVersion`과 `reason`만 입력한다.
+
+`SettlementController.cancelPayment`는 네 경로 ID·요청 본문·JWT principal을 서비스에 전달한다. 경로의 `@Positive`와 본문의 `@Valid`는 Docs 인터페이스에 선언하며, 실제 Controller는 검증 계약을 상속한다. Swagger는 실제 `ApiResponse<SettlementResDTO.PaymentCancelled>` 응답 스키마와 400·401·403·404·409 예시를 제공한다. HTTP 통합 테스트는 실제 JWT·CSRF 필터를 거쳐 정상 응답·대표 인증/검증/업무 오류와 생성된 명세를 확인한다.
+
+### 납부 취소 도메인 구현
+
+- `SettlementPayment.cancel(cancelledBy, cancelledAt, reason)`은 출처와 관계없이 `PAYMENT / COMPLETED` 기록을 취소한다. 다른 종류·상태 또는 이미 취소한 기록은 `SETTLEMENT409_3`으로 거부한다. 원본 금액·입금 시각·등록자·등록 시각·출처·은행 거래 연결은 변경하지 않고 상태와 취소 감사 정보만 기록한다. 취소자·시각과 trim 후 1~255자의 사유를 모두 확인한 후 변경하므로 잘못된 입력으로 일부 감사 정보만 남기지 않는다.
+- `SettlementItem.cancelPayment(expectedVersion, currentPaidAmount, paymentAmount)`는 **취소 전** 유효 납부 합계에서 해당 기록의 원본 금액을 차감해 반환한다. 등록과 같은 정산·청구 상태 및 버전 검증을 재사용하며, 0 이하 취소액·청구액 범위를 벗어난 기존 합계·합계보다 큰 취소액은 `SETTLEMENT400_4`로 거부한다. 청구액 이하의 합계에서 양수 금액을 차감하므로 성공 후 상태는 항상 `PENDING`이며 버전을 정확히 1 증가시킨다.
+- 두 메서드만으로 DB 동시성·권한·소속 검증이 보장되지는 않는다. 취소 서비스가 청구 행 잠금 후 **취소 전** 합계를 읽고 두 변경을 같은 트랜잭션으로 연결한다.
+- 테스트는 완납/부분 납부의 취소·전액 차감·유효하지 않은 금액·버전 충돌, 취소 원본과 최초 감사 정보 보존, 수동·은행 납부 취소 허용과 환불·미완료 기록 거부를 검증한다. 기존 MySQL 매핑 테스트도 실제 `cancel` 메서드로 취소 정보를 저장하고 다시 읽는다.
+
+### 납부 취소 서비스 구현
+
+`SettlementCommandService.cancelPayment`는 등록과 같은 `@Transactional(isolation = READ_COMMITTED)`로 처리한다.
+
+1. 필수 ID·요청·버전·사유의 null을 검증하고 모임 존재 여부와 활성 모임장·운영진 권한을 확인한다. 폐쇄 모임과 탈퇴·삭제된 기존 청구 대상도 정리할 수 있다.
+2. 모임에 속한 삭제되지 않은 정산을 조회하고, `SettlementItemRepository.findByIdAndSettlementIdForUpdate`로 해당 정산의 청구 행을 잠근다.
+3. `SettlementPaymentRepository.findByIdAndSettlementItemId`로 잠근 청구에 속한 납부를 조회한다. 기록이 없거나 다른 청구의 기록이면 `SETTLEMENT404_3`으로 거부한다. 별도의 납부 행 잠금 대신 등록·취소가 같은 청구 행 잠금을 사용한다.
+4. 잠금 획득 후 최신 `PAYMENT / COMPLETED` 합계를 읽는다. 취소 상태 변경 **전에** 집계하여 취소액이 두 번 차감되지 않도록 한다.
+5. 서버 Clock의 한국 시간으로 `payment.cancel`을 호출하고, `item.cancelPayment`로 버전·정산/청구 상태·차감 금액을 검증하고 청구 상태와 버전을 변경한다. 조회한 엔티티는 변경 감지로 함께 저장되며, 후속 검증에 실패하면 납부 취소 감사 정보까지 롤백한다.
+6. `SettlementConverter.toPaymentCancelled`가 취소 후 누적 납부액·잔액·청구 상태·버전과 식별자를 조립한다. 정산 자동 마감·은행 API 호출·실제 환불은 수행하지 않는다.
+
+MySQL 통합 테스트는 수동·은행 납부 취소와 실제 취소자, 폐쇄 모임·과거 대상, 권한·납부 소속·중복 취소·버전/정산 상태 충돌을 검증한다. 실제 트랜잭션에서 두 변경을 flush한 뒤 실패했을 때 함께 롤백되는지, 취소·등록 경쟁에서 같은 버전은 충돌하고 다음 버전은 취소 후 커밋된 합계를 읽는지도 확인한다. 입력 형식과 엔티티 계산 규칙의 상세 사례는 기존 DTO·도메인 테스트를 재사용한다.
+
+### 청구 버전과 동시 요청
+
+- 청구에 `version`을 0으로 초기화하고, 성공한 등록·취소마다 정확히 1 증가시킨다. 같은 `PENDING` 상태에서 부분 납부가 추가되어도 증가해야 한다.
+- 청구 행을 잠근 트랜잭션에서 현재 버전과 `expectedVersion`을 비교한다. 잔액 검증·납부 기록 변경·청구 상태 변경·버전 증가는 모두 같은 트랜잭션에 포함한다.
+- 납부 변경 트랜잭션은 `READ_COMMITTED`를 사용한다. 잠금 대기 전에 생성된 스냅샷으로 이전 납부액을 집계하지 않도록 잠금 획득 후 최신 기록을 읽는다.
+- 같은 청구·같은 버전으로 동시에 요청하면 하나만 성공하고 다른 요청은 HTTP 409로 거부한다. 버전 비교만 한 뒤 잠금 없이 저장하는 방식은 사용하지 않는다.
+- 실패한 요청은 납부 기록·청구 상태·버전 모두 롤백한다. 버전 증가가 불가능한 범위 초과도 부분 저장하지 않는다.
+- 프론트는 청구별 요청 처리 중 제출 버튼을 비활성화한다. 409 또는 타임아웃 발생 시 자동으로 새 버전을 붙여 재등록하지 않고 상세·납부 이력을 갱신해 실제 반영 여부를 확인한다.
+
+### 청구별 납부 이력 조회 계약
+
+`SettlementReqDTO.PaymentSearch`와 `SettlementResDTO.PaymentPage`·`PaymentHistory`·`PaymentActor`, 성공 코드 `PAYMENT_HISTORY_FETCHED`, 조회 Repository·QueryService·Converter·Controller·Swagger가 구현되어 HTTP로 호출할 수 있다. 기존 모임·정산·청구 없음 및 인증·권한 오류 코드를 재사용한다.
+
+`PaymentSearch`는 쿼리 파라미터를 받는 DTO로, JSON 본문용 deserializer를 사용하지 않는다. null인 `page`·`size`에만 기본값을 적용하며, 잘못된 형식은 `COMMON400_1`, 범위를 벗어난 값은 `VALID400_1`과 필드별 메시지를 반환한다. QueryService는 기존 목록과 같이 offset이 `Integer.MAX_VALUE`를 넘으면 `COMMON400_1`로 거부한다.
+
+쿼리는 `page` 기본 0, `size` 기본 20을 사용하며 `page >= 0`, `1 <= size <= 100`을 검증한다. 기존 목록과 동일하게 조회 offset 범위도 검증한다. `createdAt DESC, paymentId DESC` 순으로 조회하며 취소된 기록도 포함한다. 실제 입금 시각의 순서와 등록 순서는 다를 수 있다.
+
+HTTP 200 / `SETTLEMENT200_5`, 메시지 `납부 이력 조회에 성공했습니다.`와 기존 페이지 형태를 사용한다. `result.items`의 각 항목은 다음과 같다.
+
+```json
+{
+  "paymentId": 501,
+  "settlementItemId": 101,
+  "paymentType": "PAYMENT",
+  "source": "MANUAL",
+  "status": "CANCELLED",
+  "amount": 4000,
+  "occurredAt": "2026-10-29T14:00:00",
+  "createdAt": "2026-10-29T14:05:00",
+  "recordedBy": { "groupMemberId": 11, "nickname": "정규" },
+  "cancelledAt": "2026-10-29T15:00:00",
+  "cancelledBy": { "groupMemberId": 11, "nickname": "정규" },
+  "cancelReason": "다른 회원의 입금을 잘못 등록했습니다."
+}
+```
+
+- 페이지 응답은 기존 목록처럼 `items`, `page`, `size`, `totalElements`, `totalPages`, `hasNext`를 반환한다. 기록이 없으면 빈 페이지다.
+- 취소되지 않았으면 `cancelledAt`·`cancelledBy`·`cancelReason`은 null이다.
+- 신규 수동 기록의 `recordedBy`는 필수다. 기존 데이터에서 등록자를 알 수 없거나 향후 시스템이 처리한 기록은 null로 표현하며 임의의 회원을 넣지 않는다.
+- 표시 이름은 기존 상세 조회처럼 연결된 회원에 저장된 현재 닉네임을 사용한다. 등록자·취소자가 탈퇴하거나 계정이 삭제되어도 기록을 제외하지 않는다.
+- 모든 활성 모임 회원에게 위 이력을 공개하되 은행 API 인증정보·계좌 비밀값·원본 은행 거래 응답은 반환하지 않는다.
+- 기존 데이터에서 입금 시각을 알 수 없으면 `occurredAt`은 null이며, 기존 취소 기록에 감사 정보가 없으면 취소 시각·취소자·사유도 null일 수 있다. 알려지지 않은 정보를 임의로 생성하지 않는다.
+
+#### 납부 이력 조회 호출 방법
+
+```http
+GET /api/v1/groups/1/settlements/31/items/101/payments?page=0&size=20
+```
+
+- 로그인으로 받은 `moeasy_access_token` 쿠키를 포함한다. 프론트에서는 `credentials: 'include'` 또는 Axios의 `withCredentials: true`를 적용한다.
+- `groupId`·`settlementId`·`settlementItemId`는 모두 양수다. 요청 본문은 없으며 `page`·`size`는 쿼리 파라미터로 전달한다. 생략하면 첫 페이지 20개를 조회한다.
+- GET 요청이므로 CSRF 발급·쿠키·헤더가 필요하지 않다. Swagger에서도 로그인 쿠키가 있는 상태로 경로·페이지 조건만 입력하여 실행한다.
+- HTTP 200 / `SETTLEMENT200_5`의 `result.items`와 페이지 정보를 사용한다. 존재하는 청구에 기록이 없으면 빈 페이지, 청구가 없거나 다른 정산에 속하면 404다.
+- 기록의 `status`는 `COMPLETED`·`CANCELLED` 등 납부 기록 상태다. 정산·청구 상태나 최신 청구 버전은 이 응답에 포함하지 않는다.
+
+`SettlementController.getPaymentHistory`는 세 경로 ID·`@ModelAttribute PaymentSearch`·JWT principal을 QueryService에 전달한다. `@Positive`·`@Valid`는 Docs 인터페이스에 선언하고 실제 Controller는 `@Validated`로 검증 계약을 상속한다. Swagger는 실제 `ApiResponse<SettlementResDTO.PaymentPage>` 스키마와 오류 예시를 제공한다. HTTP 통합 테스트로 실제 JWT 필터를 거친 CSRF 없는 일반 회원 조회, 페이지 기본값·취소 감사 응답, 대표 인증·권한·입력·청구 없음 오류와 생성된 명세를 확인한다.
+
+#### 조회 처리 흐름
+
+`SettlementQueryService.getPaymentHistory`는 읽기 전용 트랜잭션에서 다음 순서로 처리한다.
+
+1. 모임을 `findById`로 조회한다. 폐쇄 시 `deletedAt`이 설정된 모임도 기존 조회 정책에 따라 허용한다.
+2. 기존 `requireMember`로 요청자가 해당 모임의 활성 회원이며 계정과 모임 회원 정보가 삭제되지 않았는지 검증한다. 모임장·운영진·일반 회원 모두 조회할 수 있다.
+3. 정산이 요청한 모임에 속하고 삭제되지 않았는지 확인한다. 없거나 다른 모임의 정산이면 `SETTLEMENT404_1`이다. 정산 상태에 따른 조회 제한은 없다.
+4. 청구가 해당 정산에 속하는지 확인한다. 없거나 다른 정산의 청구이면 `SETTLEMENT404_2`다. 청구 대상자의 현재 가입·계정 상태는 제한하지 않는다.
+5. `SettlementPaymentRepository.findAllBySettlementItemId`로 청구의 모든 기록을 페이지 조회한다. 납부 합산과 달리 종류·출처·상태로 제외하지 않는다. `@EntityGraph`로 등록자·취소자와 연결된 회원을 함께 로딩하여 닉네임별 추가 조회를 피하고, 등록자가 없는 기록도 유지한다.
+6. `SettlementConverter.toPaymentPage`·`toPaymentHistory`·`toPaymentActor`로 페이지 정보와 감사 정보를 조립한다. 선택 정보는 null을 유지하며 은행 인증정보나 원본 거래 데이터는 노출하지 않는다.
+
+조회는 행 잠금을 사용하거나 납부 기록·청구 상태·버전을 변경하지 않는다. MySQL 통합 테스트로 폐쇄 모임의 일반 회원 조회, 과거 등록자·취소자와 취소·은행·실패 이력 보존, 청구별 페이지 정렬·건수, 소속·권한 거부와 연관 회원 로딩을 확인한다.
+
+### 기존 정산 목록·상세의 현황 확장 계약
+
+기존 목록·상세 응답의 `SettlementResDTO.Summary`·`Detail`·`Item`에 다음 현황 필드가 연결되어 실제 집계값을 반환한다. 현황 전용 엔드포인트는 추가하지 않는다. Repository·QueryService·Converter, Swagger 응답 예시와 MySQL·HTTP 통합 검증이 구현되어 있다.
+
+| 위치 | 추가 필드 | 의미 |
+| --- | --- | --- |
+| 목록의 각 요약·상세 최상위 | `paidAmount` | 정산에 속한 유효 납부액 합계 |
+| 목록의 각 요약·상세 최상위 | `remainingAmount` | 정산에 속한 청구별 미납 잔액 합계 |
+| 목록의 각 요약·상세 최상위 | `paidCount` | 청구 상태 `PAID` 인원수 |
+| 목록의 각 요약·상세 최상위 | `pendingCount` | 청구 상태 `PENDING` 인원수. 부분 납부 포함 |
+| 상세의 각 청구 | `paidAmount`, `remainingAmount`, `version` | 청구별 납부액·잔액과 변경 요청에 사용할 현재 버전 |
+
+금액과 버전은 `Long`, 인원수는 `Integer`를 사용하며 실제 조회에서는 모두 숫자로 반환한다. 유효 납부가 없으면 `paidAmount=0`, 청구별 잔액은 `amount - paidAmount`, 신규 청구 버전은 0이다. 청구 자체가 없는 기존 정산은 합계·인원수·대상 수가 모두 0이다. 기존 필드와 성공 코드는 유지한다. 조회 DTO에는 DB 접근·집계·상태 변경 로직을 두지 않고 서비스에서 준비한 값을 Converter로 조립한다.
+
+목록은 현재 페이지의 정산 ID로 `SettlementItemRepository.summarizeBySettlementIds`에서 청구 금액·전체/완납/미납 인원수를, `SettlementPaymentRepository.sumAmountsBySettlementIdsAndTypeAndStatus`에서 유효 납부액을 각각 집계한다. 납부가 여러 건이어도 청구 금액·인원수가 중복되지 않는다. 빈 페이지에서는 집계하지 않으며 전체 청구·납부 엔티티를 로딩하지 않는다. 상세는 조회한 전체 청구와 `sumAmountsBySettlementIdAndTypeAndStatus`의 청구별 납부 합계로 현황을 조립하고 청구 엔티티의 현재 버전을 반환한다. 서비스의 내부 집계 결과는 `service.result.SettlementPaymentSummary`로 Converter에 전달한다.
+
+두 조회 모두 `PAYMENT / COMPLETED` 기록만 합산하며 MANUAL·BANK 출처를 모두 포함한다. 취소·대기·실패·환불 기록은 합산하지 않는다. 인원수는 금액으로 상태를 추정하지 않고 저장된 청구 상태 `PAID`·`PENDING`으로 집계한다. 서비스의 합산·차감은 정수 오버플로를 검사하며 조회 과정에서 청구액·상태·버전·납부 기록을 수정하지 않는다.
+
+청구액 10,000원 중 4,000원을 납부한 상세 항목 예시:
+
+```json
+{
+  "settlementItemId": 101,
+  "groupMemberId": 12,
+  "nickname": "민지",
+  "amount": 10000,
+  "status": "PENDING",
+  "paidAmount": 4000,
+  "remainingAmount": 6000,
+  "version": 1
+}
+```
+
+기존 필드는 유지한다. 대상자의 현재 회원 상태로 금액·인원수를 줄이지 않는다. 목록은 현재 페이지의 정산 ID로 일괄 집계해 정산별 반복 조회를 방지한다. 조회는 납부 상태나 버전을 변경하지 않는다. 환불·청구 취소의 금액 반영은 해당 기능 구현 시 확장하며, 이번 API는 해당 상태를 생성하지 않는다.
+
+HTTP 통합 테스트는 실제 JWT와 CSRF 발급 API를 사용하여 10,000원 청구에 4,000원을 등록한 뒤, 일반 회원이 CSRF 헤더 없이 목록·상세를 조회하는 흐름을 검증한다. 상세에서 받은 버전으로 6,000원을 추가 등록하면 완납 인원이 증가하고 잔액이 0이 되며, 최초 4,000원 기록을 취소하면 유효 납부액 6,000원·잔액 4,000원·미납 상태·버전 3을 반환한다. 각 단계에서 목록·상세 합계가 일치하고 조회만으로 정산 상태·청구 버전이 변하지 않는지 확인한다. OpenAPI 검증은 현황·버전 스키마와 Swagger 예시의 청구별 금액·전체 합계·인원수가 일치하는지 확인한다.
+
+### 납부 오류 응답 계약
+
+기존 공개 코드는 유지한다. 등록용 `SETTLEMENT400_6`, `SETTLEMENT400_7`, `SETTLEMENT404_2`, `SETTLEMENT409_1`, `SETTLEMENT409_2`는 등록 서비스와 엔티티에 발생 조건이 연결되어 있다. 취소용 `PAYMENT_CANCELLED`(200 / `SETTLEMENT200_4`), `PAYMENT_NOT_FOUND`(404 / `SETTLEMENT404_3`), `PAYMENT_CANCELLATION_NOT_ALLOWED`(409 / `SETTLEMENT409_3`)도 취소 서비스·Controller·Swagger에 연결되어 있다.
+
+| 상황 | HTTP | 코드 |
+| --- | --- | --- |
+| JWT 누락·만료·유효하지 않음 | 401 | `AUTH401_1` |
+| 활성 회원이 아님·등록/취소 권한 없음·CSRF 검증 실패 | 403 | `AUTH403_1` |
+| 모임 없음 | 404 | `GROUP404_1` |
+| 정산 없음·삭제 또는 다른 모임의 정산 | 404 | `SETTLEMENT404_1` |
+| 청구 없음 또는 다른 정산의 청구 | 404 | `SETTLEMENT404_2` |
+| 납부 기록 없음 또는 다른 청구의 기록 | 404 | `SETTLEMENT404_3` |
+| 필수값·양수 ID·금액·버전·사유 길이·페이지 범위 위반 | 400 | `VALID400_1` |
+| 잘못된 JSON/쿼리 타입·정수 범위 초과·날짜 형식/저장 범위 위반 | 400 | `COMMON400_1` |
+| 납부 금액이 현재 잔액 초과 | 400 | `SETTLEMENT400_6` |
+| 실제 입금 시각이 미래 | 400 | `SETTLEMENT400_7` |
+| 청구 버전 불일치·버전 증가 범위 초과 | 409 | `SETTLEMENT409_1` |
+| 변경할 수 없는 정산·청구 상태 | 409 | `SETTLEMENT409_2` |
+| 이미 취소한 납부 또는 취소 대상이 아닌 종류·상태 | 409 | `SETTLEMENT409_3` |
+
+### 저장 구조와 후속 은행 연동 경계
+
+- `V20261030111343__add_settlement_payment_audit_and_item_version.sql`로 청구 `version`과 납부 `source`·등록자·취소자·취소 시각·취소 사유를 추가했다. 이미 적용된 초기 스키마는 수정하지 않는다.
+- 납부 출처는 `MANUAL`·`BANK`로 구분한다. 이번 등록 API는 `MANUAL`만 생성하며 계좌 거래 연결은 null이다.
+- 기존 `account_transaction_id`는 후속 은행 거래 연결을 위해 유지한다. 은행 거래의 중복 반영 방지는 청구 `expectedVersion`과 별개의 책임이다.
+- 후속 자동 매칭은 취소 이력을 고려하여 취소한 은행 납부를 즉시 재생성하지 않아야 한다. 거래 재매칭 절차와 중복 방지 구현은 은행 연동 시 정의한다.
+- Bank API 인증정보 보관·동기화·거래 대조·자동 납부 확정은 이번 구현에 포함하지 않는다. 화면 조회나 수동 납부 API에서 은행 API를 호출하지 않는다.
+- 실제 환불·정산 수정·취소·마감은 별도 후속 기능이다.
+
+### 구현 순서와 검증
+
+1. 납부 계약·정책과 현재 구현 상태를 문서화한다.
+2. 납부 엔티티·Enum·Flyway 및 청구 버전을 구현하고 저장 제약을 검증한다.
+3. 등록 요청·응답 DTO·코드와 금액·상태 규칙을 구현하고 단위 테스트한다.
+4. 등록 Repository·Service·Converter를 연결하고 MySQL 동시 요청·롤백을 검증한다.
+5. 등록 Controller·Swagger와 JWT·CSRF·요청/응답 통합 검증을 추가한다.
+6. 취소 API를 DTO·도메인/서비스·Controller 단위로 나눠 구현·검증한다.
+7. 이력 조회를 Repository·QueryService·Controller 단위로 구현하고 페이지·권한·취소 이력 보존을 검증한다.
+8. 기존 목록·상세의 현황을 확장하고 생성·미리보기·조회 회귀 검증을 완료한다.
+
+각 단위에서 관련 테스트를 함께 추가한다. 금액은 0·음수·소수·오버플로·잔액 초과, 시각은 과거·현재·미래·DB 연도 경계, 권한은 폐쇄 모임·일반 회원·비활성 요청자·삭제된 청구 대상, 동시성은 같은 버전의 병렬 등록과 등록/취소 경쟁을 검증한다.
+
 ## 현재 데이터 구조
 
-Flyway 초기 스키마에는 다음 테이블이 존재한다. `Settlement`, `SettlementItem` 엔티티와 분할 방식·상태 Enum, DTO·오류 코드, 금액 계산기, 정산 생성·미리보기·목록·상세 조회 API는 구현되어 있다. 납부·영수증 엔티티는 후속 기능에서 구현한다.
+Flyway 초기 스키마에는 다음 테이블이 존재한다. `Settlement`, `SettlementItem` 엔티티와 분할 방식·상태 Enum, DTO·오류 코드, 금액 계산기, 정산 생성·미리보기·목록·상세 조회 API는 구현되어 있다. `SettlementPayment` 엔티티와 종류·상태·출처 Enum, 납부 등록·취소·이력 조회 API 및 기존 조회의 납부 현황 집계·응답 연결도 구현되어 있다. 현황의 Swagger 예시·HTTP 통합 검증도 구현되어 있으며 영수증 엔티티는 미구현이다.
 
 | 테이블 | 현재 저장 정보 |
 | --- | --- |
 | `settlement` | 모임·일정·회비 규칙 연결, 생성자 모임 회원, 제목·설명·기한·총액·분할 방식·상태 |
-| `settlement_item` | 정산별 대상 모임 회원·청구 금액·상태. `(settlement_id, group_member_id)` 유니크 제약 |
-| `settlement_payment` | 청구 항목별 납부·환불 기록, 금액·상태·발생 시각·멱등 키, 선택적 계좌 거래 연결 |
+| `settlement_item` | 정산별 대상 모임 회원·청구 금액·상태·업무 버전(기본 0). `(settlement_id, group_member_id)` 유니크 제약 |
+| `settlement_payment` | 청구 항목별 납부·환불 기록, 금액·상태·출처·발생 시각, 선택적 계좌 거래 연결, 등록자와 취소 감사 정보 |
 | `receipt` | 정산별 이미지 키·상호명·금액·결제 시각 |
 
 `V20261019003905__add_settlement_total_amount_and_split_mode.sql`은 생성 당시 총액과 분할 방식을 보존할 `total_amount`, `split_mode` 필수 컬럼을 추가한다. 총액과 회원별 청구액은 DB에서도 1~9,223,372,036,854,775,807원으로 제한하며, 분할 방식은 `EQUAL`·`CUSTOM`만 허용한다. 총액과 청구액 합계의 일치 여부는 계산기에서 보장하며 생성 서비스는 검증된 계산 결과를 저장한다.
 
 이 마이그레이션은 정산 기능 도입 전의 빈 정산 테이블을 대상으로 한다. 기존 정산 행이 있으면 총액·분할 방식을 임의로 추정하지 않고 실패한다. 해당 환경은 기존 데이터의 이관 정책을 정한 후 적용해야 한다.
 
-`Settlement`는 `BaseEntity`의 생성·수정·삭제 시각을 사용한다. `settlement_item`에는 삭제 시각 컬럼이 없으므로 `SettlementItem`은 생성·수정 시각만 매핑한다. 두 엔티티의 생성 기본 상태는 각각 `OPEN`, `PENDING`이며, 현재 단계에서는 상태 변경 메서드를 제공하지 않는다. 모임·생성자·대상 회원·일정은 지연 로딩 연관 관계를 사용한다. 일정은 선택적 `ManyToOne`으로 기존 nullable `schedule_id` 컬럼과 외래 키를 그대로 사용하며, 요청·응답 DTO는 `scheduleId`를 유지한다. 회비 규칙은 ID로 매핑한다. 일정 연관관계 전환은 기존 컬럼·제약을 유지하므로 별도 스키마 변경은 없다.
+`Settlement`는 `BaseEntity`의 생성·수정·삭제 시각을 사용한다. `settlement_item`에는 삭제 시각 컬럼이 없으므로 `SettlementItem`은 생성·수정 시각만 매핑한다. 두 엔티티의 생성 기본 상태는 각각 `OPEN`, `PENDING`이다. `SettlementItem.applyPayment`·`cancelPayment`는 납부 반영·취소 시 청구 상태·버전을 변경하며 정산 상태는 변경하지 않는다. 모임·생성자·대상 회원·일정은 지연 로딩 연관 관계를 사용한다. 일정은 선택적 `ManyToOne`으로 기존 nullable `schedule_id` 컬럼과 외래 키를 그대로 사용하며, 요청·응답 DTO는 `scheduleId`를 유지한다. 회비 규칙은 ID로 매핑한다. 일정 연관관계 전환은 기존 컬럼·제약을 유지하므로 별도 스키마 변경은 없다.
 
-정산 상태는 `OPEN`·`CLOSED`·`CANCELLED`, 회원별 청구 상태는 `PENDING`·`PAID`·`REFUNDED`·`CANCELLED`로 관리한다. 초안 저장은 지원하지 않는다. 미납과 부분 납부는 모두 `PENDING`이며, 청구액을 전액 납부했을 때 `PAID`로 구분한다. 납부 금액·잔액은 후속 납부 기능에서 납부·환불 기록을 바탕으로 처리한다.
+`SettlementPayment`도 삭제 시각 없이 생성·수정 시각을 감사 필드로 매핑한다. 빌더는 수동 납부용으로 `PAYMENT / COMPLETED / MANUAL`을 설정한다. 등록 서비스는 청구 반영 검증과 납부 기록 생성을 같은 트랜잭션으로 연결하고 권한·입금 시각을 검증한다. 청구·등록자·취소자는 지연 로딩 연관 관계이며, 은행 거래는 아직 엔티티가 없어 `accountTransactionId`와 기존 DB 외래키를 유지한다.
+
+납부 마이그레이션은 기존 청구의 버전을 0으로 초기화한다. `version`은 `@Version` 자동 증가 필드가 아닌 업무 버전이며 `applyPayment`·`cancelPayment`에서 명시적으로 증가시킨다. 등록·취소 서비스의 행 잠금·변경 트랜잭션과 두 API의 HTTP 연결은 구현되어 있다. 기존 납부의 출처는 `account_transaction_id`가 있으면 `BANK`, 없으면 `MANUAL`로 이관한다. 알 수 없는 기존 등록자·취소 감사 정보는 null로 보존한다.
+
+DB는 음수 버전과 양수 `Long` 범위를 벗어난 납부액을 거부한다. 애플리케이션의 `SettlementPaymentMigrationGuard`는 납부 마이그레이션 `20261030111343`의 첫 DDL 전에 기존 범위 초과 납부액을 검사한다. 발견하면 테이블 변경 전에 중단하며 금액을 임의로 자르지 않는다. 원본 데이터를 확인·정정한 뒤 다시 실행해야 한다. 이미 적용된 SQL과 체크섬은 변경하지 않으며, 적용이 완료된 DB에는 이 검사를 다시 실행하지 않는다. 등록자·취소자 외래키는 기존 정책과 동일하게 `RESTRICT`다. 취소 감사 정보는 세 필드를 모두 비우거나 `CANCELLED` 상태에서 취소자·시각·공백이 아닌 사유를 함께 기록해야 한다. 과거 취소 기록의 감사 정보 부재는 허용하며 신규 취소에서는 서비스가 입력을 보장한다. 청구별 이력 조회를 위해 `(settlement_item_id, created_at, id)` 인덱스를 추가했다.
+
+검사는 Spring Boot가 등록하는 Java Flyway 콜백이다. 별도 Flyway CLI로 직접 `migrate`할 때는 이 콜백이 자동 등록되지 않으므로, 운영 적용은 애플리케이션 기동 경로를 사용한다. 외부 도구로 적용해야 한다면 같은 사전 검사와 중단 절차를 먼저 갖춰야 한다.
+
+정산 상태는 `OPEN`·`CLOSED`·`CANCELLED`, 회원별 청구 상태는 `PENDING`·`PAID`·`REFUNDED`·`CANCELLED`로 관리한다. 초안 저장은 지원하지 않는다. 미납과 부분 납부는 모두 `PENDING`이며, 청구액을 전액 납부했을 때 `PAID`로 구분한다. 등록 서비스는 완료된 PAYMENT 기록으로 납부 금액·잔액을 계산한다. 실제 환불과 그에 따른 집계 확장은 후속 기능이다.
 
 같은 마이그레이션에서 상태 제약을 위 목록으로 변경하고 기존 `PARTIALLY_PAID`를 `PENDING`으로 전환한다.
 
@@ -555,7 +943,7 @@ Flyway 초기 스키마에는 다음 테이블이 존재한다. `Settlement`, `S
 
 아래 기능은 아직 구현되지 않았다. 구현할 때 API 계약과 상태·데이터 구조를 이 문서에 추가한다.
 
-- 납부 기록·부분 납부·납부 취소·환불 및 중복 요청 방지.
+- 실제 환불과 환불 금액의 집계·청구 상태 반영.
 - 정산 생성 요청의 중복 방지: 요청 식별 방식, 동시 요청·내용 변경·재시도 시 처리와 기존 결과 재응답 계약.
 - 영수증 이미지 업로드·등록·조회·삭제.
 - 정산 수정·취소·마감과 납부 이력이 있는 정산의 변경 정책.
