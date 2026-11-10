@@ -12,6 +12,8 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,6 +21,19 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 @Tag(name = "Group", description = "그룹 생성·조회·수정·폐쇄 및 가입 신청 관리 API")
 public interface GroupControllerDocs {
+
+    @Operation(summary = "전체 모임 회원 목록 조회", description = "활성 모임 회원만 조회할 수 있습니다. "
+            + "활성·미삭제 회원을 groupMemberId 오름차순으로 반환합니다. 일정 필터와 페이지네이션은 지원하지 않습니다.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "GROUP200_9: 조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "groupId는 양수여야 함"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "인증 필요"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "활성 모임 회원이 아님"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "모임 없음·폐쇄·삭제")
+    })
+    ResponseEntity<ApiResponse<GroupResDTO.Members>> getMembers(
+            @Positive(message = "모임 ID는 양수여야 합니다.") Long groupId,
+            @Parameter(hidden = true) Long memberId);
 
     @Operation(summary = "그룹 커버 이미지 업로드 URL 발급", description = "인증 회원에게 Group 커버 이미지용 S3 PUT URL을 발급합니다.")
     @ApiResponses({
@@ -28,7 +43,7 @@ public interface GroupControllerDocs {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "503", description = "저장소 장애")
     })
     ResponseEntity<ApiResponse<GroupResDTO.CoverImageUploadIssue>> issueCoverImageUpload(
-            @RequestBody GroupReqDTO.CoverImageUploadIssue request,
+            @RequestBody @Valid GroupReqDTO.CoverImageUploadIssue request,
             @Parameter(hidden = true) Long memberId
     );
 
@@ -48,7 +63,7 @@ public interface GroupControllerDocs {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "503", description = "STORAGE503_1: S3 저장소 장애")
     })
     ResponseEntity<ApiResponse<GroupResDTO.Created>> createGroup(
-            @RequestBody GroupReqDTO.Create request,
+            @RequestBody @Valid GroupReqDTO.Create request,
             @Parameter(hidden = true) Long memberId
     );
 
@@ -90,7 +105,7 @@ public interface GroupControllerDocs {
     ResponseEntity<ApiResponse<GroupResDTO.Detail>> updateGroup(
             @Parameter(description = "수정할 그룹 ID", required = true)
             @PathVariable Long groupId,
-            @RequestBody GroupReqDTO.Update request,
+            @RequestBody @Valid GroupReqDTO.Update request,
             @Parameter(hidden = true) Long memberId
     );
 
@@ -108,7 +123,7 @@ public interface GroupControllerDocs {
     ResponseEntity<ApiResponse<Void>> closeGroup(
             @Parameter(description = "폐쇄할 그룹 ID", required = true)
             @PathVariable Long groupId,
-            @RequestBody GroupReqDTO.Close request,
+            @RequestBody @Valid GroupReqDTO.Close request,
             @Parameter(hidden = true) Long memberId
     );
 
@@ -130,7 +145,7 @@ public interface GroupControllerDocs {
     })
     ResponseEntity<ApiResponse<GroupJoinRequestResDTO.Created>> createJoinRequest(
             @Parameter(description = "그룹 ID", required = true) Long groupId,
-            GroupJoinRequestReqDTO.Create request,
+            @Valid GroupJoinRequestReqDTO.Create request,
             @Parameter(hidden = true) Long memberId
     );
 
@@ -165,7 +180,7 @@ public interface GroupControllerDocs {
     })
     ResponseEntity<ApiResponse<GroupJoinRequestResDTO.PendingList>> getPendingJoinRequests(
             @Parameter(description = "그룹 ID", required = true) Long groupId,
-            @ParameterObject GroupJoinRequestReqDTO.Page pagination,
+            @ParameterObject @Valid GroupJoinRequestReqDTO.Page pagination,
             @Parameter(hidden = true) Long memberId
     );
 
@@ -222,7 +237,7 @@ public interface GroupControllerDocs {
     ResponseEntity<ApiResponse<Void>> rejectJoinRequest(
             @Parameter(description = "그룹 ID", required = true) Long groupId,
             @Parameter(description = "가입 신청 ID", required = true) Long requestId,
-            GroupJoinRequestReqDTO.Reject request,
+            @Valid GroupJoinRequestReqDTO.Reject request,
             @Parameter(hidden = true) Long memberId
     );
 }
