@@ -1,5 +1,7 @@
 package com.moeasy.moeasybe.domain.schedule.service.command;
 
+import com.moeasy.moeasybe.domain.schedule.service.support.ScheduleAccess.Access;
+
 import com.moeasy.moeasybe.domain.group.repository.GroupRepository;
 import com.moeasy.moeasybe.domain.schedule.converter.AvailabilityConverter;
 import com.moeasy.moeasybe.domain.schedule.dto.request.AvailabilityReqDTO;
@@ -158,7 +160,7 @@ public class AvailabilityCommandService {
     private void requireOpen(AvailabilityPoll poll) {
         if (poll.effectiveStatus(support.now()) != AvailabilityStatus.OPEN) fail(AvailabilityErrorCode.NOT_OPEN);
     }
-    private void changed(AvailabilitySupport.Access access, String type) {
+    private void changed(Access access, String type) {
         events.publishEvent(new AvailabilityChanged(access.group().getId(), access.schedule().getId(), type));
     }
     private void fail(AvailabilityErrorCode code) {

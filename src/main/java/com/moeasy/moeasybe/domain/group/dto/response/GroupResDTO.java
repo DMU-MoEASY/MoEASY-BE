@@ -1,5 +1,6 @@
 package com.moeasy.moeasybe.domain.group.dto.response;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import com.moeasy.moeasybe.domain.group.enums.GroupJoinPolicy;
 import com.moeasy.moeasybe.domain.group.enums.GroupMemberRole;
 import com.moeasy.moeasybe.domain.group.enums.GroupStatus;
@@ -30,7 +31,8 @@ public final class GroupResDTO {
     public record Detail(Long groupId, Long categoryId, String name, String description,
             String regionCode, String placeName, String address, BigDecimal latitude,
             BigDecimal longitude, Integer maxMembers, GroupJoinPolicy joinPolicy,
-            GroupStatus status, String coverImageUrl) {
+            GroupStatus status, String coverImageUrl, @Schema(allowableValues = {"bronze", "silver", "gold"},
+                    accessMode = Schema.AccessMode.READ_ONLY) String tier) {
     }
 
     @Builder

@@ -13,8 +13,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class P0SchemaMigrationIntegrationTest {
 
     private static final int P0_TABLE_COUNT = 32;
-    // develop의 정산 FK와 가용시간 응답 FK를 모두 포함한다.
-    private static final int SCHEMA_FOREIGN_KEY_COUNT = 60;
+    private static final int SCHEMA_FOREIGN_KEY_COUNT = 68;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -153,7 +152,7 @@ class P0SchemaMigrationIntegrationTest {
         assertThat(memberColumnCount).isEqualTo(5);
         assertThat(deprecatedMemberColumnCount).isZero();
         assertThat(nullableNicknameCount).isEqualTo(1);
-        assertThat(memberGroupForeignKeyCount).isEqualTo(10);
+        assertThat(memberGroupForeignKeyCount).isEqualTo(11);
         assertThat(foreignKeyCount).isEqualTo(SCHEMA_FOREIGN_KEY_COUNT);
         assertThat(nonRestrictForeignKeyCount).isZero();
         assertThat(softDeleteColumns).isGreaterThanOrEqualTo(10);

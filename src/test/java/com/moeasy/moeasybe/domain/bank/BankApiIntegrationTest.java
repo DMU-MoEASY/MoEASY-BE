@@ -620,6 +620,10 @@ class BankApiIntegrationTest {
                             + " group_bank_account WHERE group_id=?)",
                     group);
             jdbc.update("DELETE FROM group_bank_account WHERE group_id=?", group);
+            jdbc.update(
+                    "DELETE period FROM membership_period period JOIN group_member membership"
+                            + " ON membership.id=period.group_member_id WHERE membership.group_id=?",
+                    group);
             jdbc.update("DELETE FROM group_member WHERE group_id=?", group);
             jdbc.update("DELETE FROM member_group WHERE id=?", group);
         }

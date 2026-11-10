@@ -60,6 +60,7 @@ Non-sensitive values such as `AWS_REGION`, `AWS_S3_BUCKET`, `EC2_APP_DIR`, and t
 기존 CORS 허용 Origin과 JWT 쿠키를 사용하며 Redis `moeasy:availability:changed` Pub/Sub으로 인스턴스 간 변경을 전달한다.
 자동 마감·권한 재검사의 기본 주기는 1초다. `availability.close-delay-ms`, `availability.socket-check-ms`로 조정할 수 있다.
 두 작업은 `availabilityDeadlineScheduler`와 `availabilitySocketScheduler`의 별도 단일 스레드에서 실행된다.
-권한 재검사의 DB 조회는 점검 회차·알림별로 같은 일정·회원에 대해 공유하며, JWT 만료는 각 연결에서 검사한다.
+권한 재검사는 점검 회차·알림별로 일정·회원 조합을 중복 제거해 최대 128개씩 일괄 조회한다.
+권한 결과는 다음 검사에 재사용하지 않으며 JWT 만료는 DB 조회 전후와 각 연결의 전송 직전에 확인한다.
 프록시 유휴 제한과 재연결·60초 REST 재동기화, 기존 투표가 있는 환경의 마이그레이션 중단 조건은
 [가용시간 투표 운영 문서](api/availability.md)를 확인한다.

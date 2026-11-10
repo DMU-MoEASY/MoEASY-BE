@@ -7,6 +7,7 @@ import static org.mockito.Mockito.*;
 import com.moeasy.moeasybe.domain.schedule.realtime.AvailabilityDeadlineJob;
 import com.moeasy.moeasybe.domain.schedule.realtime.AvailabilitySocketHandler;
 import com.moeasy.moeasybe.domain.schedule.realtime.AvailabilitySubscriptionAccess;
+import com.moeasy.moeasybe.domain.schedule.realtime.AvailabilitySubscriptionAccess.Subscription;
 import com.moeasy.moeasybe.domain.schedule.repository.AvailabilityPollRepository;
 import com.moeasy.moeasybe.domain.schedule.service.command.AvailabilityCommandService;
 import com.moeasy.moeasybe.domain.schedule.service.support.AvailabilitySupport;
@@ -17,6 +18,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
@@ -50,13 +52,15 @@ class AvailabilitySchedulingTest {
         when(session.getId()).thenReturn("slow");
         when(session.getAttributes()).thenReturn(Map.of("groupId", 1L, "scheduleId", 2L,
                 "memberId", 3L, "expiresAt", now.plusSeconds(60)));
+        var subscription = new Subscription(2L, 3L);
+        when(access.findAuthorized(Set.of(subscription))).thenReturn(Set.of(subscription));
         handler.afterConnectionEstablished(session);
-        when(access.require(2L, 3L)).thenAnswer(invocation -> {
+        when(access.findAuthorized(Set.of(subscription))).thenAnswer(invocation -> {
             socketChecking.countDown();
             if (!releaseSocket.await(5, TimeUnit.SECONDS)) {
                 throw new IllegalStateException("Socket check was not released");
             }
-            return 1L;
+            return Set.of(subscription);
         });
         when(support.now()).thenReturn(LocalDateTime.ofInstant(now, ZoneOffset.UTC));
         when(polls.findDueScheduleIds(any(LocalDateTime.class), eq(org.springframework.data.domain.PageRequest.of(0, 100))))

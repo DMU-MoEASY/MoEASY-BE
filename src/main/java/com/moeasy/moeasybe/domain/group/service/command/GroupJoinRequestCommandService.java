@@ -1,5 +1,6 @@
 package com.moeasy.moeasybe.domain.group.service.command;
 
+import java.time.ZoneId;
 import com.moeasy.moeasybe.domain.group.converter.GroupJoinRequestConverter;
 import com.moeasy.moeasybe.domain.group.dto.request.GroupJoinRequestReqDTO;
 import com.moeasy.moeasybe.domain.group.dto.response.GroupJoinRequestResDTO;
@@ -89,10 +90,11 @@ public class GroupJoinRequestCommandService {
         requireCapacity(group);
         LocalDateTime approvedAt = now();
         if (existing == null) {
-            groupMemberRepository.save(GroupJoinRequestConverter.toMember(group, request.getMember(), approvedAt));
+            existing = groupMemberRepository.save(GroupJoinRequestConverter.toMember(group, request.getMember(), approvedAt));
         } else {
             existing.rejoin(approvedAt);
         }
+        groupMemberRepository.openPeriod(existing.getId(), approvedAt);
         request.approve(processor, approvedAt);
         events.publishEvent(new com.moeasy.moeasybe.domain.schedule.realtime.AvailabilityChanged(groupId, null, "ROSTER_CHANGED"));
     }
@@ -150,7 +152,7 @@ public class GroupJoinRequestCommandService {
     }
 
     private LocalDateTime now() {
-        return LocalDateTime.now(clock).truncatedTo(ChronoUnit.MICROS);
+        return LocalDateTime.now(clock.withZone(ZoneId.of("Asia/Seoul"))).truncatedTo(ChronoUnit.MICROS);
     }
 
     private boolean isPendingConstraintViolation(DataIntegrityViolationException exception) {

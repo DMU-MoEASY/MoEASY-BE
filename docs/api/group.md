@@ -46,9 +46,9 @@ Group API의 공통 접두사는 `/api/v1`이다. 아래 표의 `/groups` 경로
 
 `GET /groups/{groupId}`는 인증된 회원에게 Group 정보를 반환한다. 해당 Group의 멤버인지 여부는 이 API의 조건이 아니다. `deleted_at`이 있거나 `status=CLOSED`인 Group은 반환하지 않으며, 존재하지 않는 Group과 동일한 `GROUP404_1` 응답을 사용한다.
 
-성공 시 HTTP 200, `GROUP200_1`로 `groupId`, `categoryId`, 이름, 설명, 지역·장소·좌표, 정원, 가입 정책, 상태 및 `coverImageUrl`을 반환한다. `coverImageUrl`은 커버 키가 없으면 `null`이며, 있으면 비공개 S3 객체에 대한 만료되는 presigned GET URL이다. S3 객체 키나 영구 공개 URL은 응답에 포함하지 않는다. 이미지 URL 생성 기능의 선행 조건은 [커버 이미지](#커버-이미지)에 적는다.
+성공 시 HTTP 200, `GROUP200_1`로 `groupId`, `categoryId`, 이름, 설명, 지역·장소·좌표, 정원, 가입 정책, 상태, 티어 및 `coverImageUrl`을 반환한다. `coverImageUrl`은 커버 키가 없으면 `null`이며, 있으면 비공개 S3 객체에 대한 만료되는 presigned GET URL이다. S3 객체 키나 영구 공개 URL은 응답에 포함하지 않는다. 이미지 URL 생성 기능의 선행 조건은 [커버 이미지](#커버-이미지)에 적는다.
 
-`result` 필드: `groupId`, `categoryId`, `name`, `description`, `regionCode`, `placeName`, `address`, `latitude`, `longitude`, `maxMembers`, `joinPolicy`, `status`, `coverImageUrl`.
+`result` 필드: `groupId`, `categoryId`, `name`, `description`, `regionCode`, `placeName`, `address`, `latitude`, `longitude`, `maxMembers`, `joinPolicy`, `status`, `coverImageUrl`, `tier`.
 
 ## 부분 수정
 
@@ -246,3 +246,10 @@ PENDING만 APPROVED·REJECTED·CANCELLED로 전이할 수 있다. 승인·거절
 모임장·운영진·요청자도 포함하며 페이지네이션·검색·일정 필터는 제공하지 않는다.
 HTTP 200 / `GROUP200_9`, `result.members[]`에는 `groupMemberId`, `memberId`, `nickname`, `role`을 포함한다.
 정산 대상에는 계정 ID가 아닌 `groupMemberId`를 전달한다. 비회원은 403, 모임 없음·폐쇄·삭제는 404이다.
+
+## 활동 티어 (#32)
+
+GET 및 PATCH `/api/v1/groups/{groupId}` 성공 응답의 `result.tier`는 읽기 전용 문자열이다.
+프런트엔드는 `bronze`, `silver`, `gold`를 각각 브론즈·실버·골드로 표시한다.
+초기값은 bronze이며 한국 시간 00시부터 모임별 계산이 커밋될 때 새 값이 보인다.
+상세 조회와 수정은 마지막 성공 결과를 읽는다. 산정과 장애 복구 절차는 [티어 배치 운영](../group-tier-operations.md)을 따른다.
